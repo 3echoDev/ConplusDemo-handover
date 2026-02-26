@@ -1,10 +1,10 @@
 import { useState } from "react";
 import {
-  BarChart3, Package, FileText, AlertTriangle, TrendingUp, DollarSign, Briefcase, Clock, MoreHorizontal, Filter
+  BarChart3, Package, FileText, TrendingUp, DollarSign, Briefcase, Clock, ShoppingCart, CheckCircle, ArrowRight
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { MetricCard, StatusBadge } from "@/components/shared/UIComponents";
-import { projects, alerts, claimsData, formatCurrency } from "@/data/sampleData";
+import { projects, claimsData, claims, purchaseOrders, formatCurrency } from "@/data/sampleData";
 import { cn } from "@/lib/utils";
 
 type ProjectFilter = "all" | "active" | "completed" | "delayed";
@@ -32,9 +32,9 @@ export default function DashboardPage() {
         <MetricCard title="Inventory Exposure" value={formatCurrency(totalExposure)} subtitle="2 critical items" icon={<Package className="h-5 w-5" />} trend={{ value: "Needs attention", positive: false }} />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Project table - 2 cols */}
-        <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm">
+      <div className="grid grid-cols-1 gap-6">
+        {/* Project table */}
+        <div className="rounded-xl border border-border bg-card shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-border">
             <h2 className="text-base font-heading font-semibold text-card-foreground">Project Overview</h2>
             <div className="flex gap-1.5">
@@ -62,7 +62,6 @@ export default function DashboardPage() {
                   <th className="text-left p-4 font-medium">Progress</th>
                   <th className="text-left p-4 font-medium">Budget vs Actual</th>
                   <th className="text-center p-4 font-medium">Materials</th>
-                  <th className="text-left p-4 font-medium">Claims</th>
                   <th className="text-center p-4 font-medium">Alerts</th>
                 </tr>
               </thead>
@@ -89,7 +88,6 @@ export default function DashboardPage() {
                       </div>
                     </td>
                     <td className="p-4 text-center font-medium text-card-foreground">{p.materialsAllocated}</td>
-                    <td className="p-4"><StatusBadge status={p.claimsStatus} /></td>
                     <td className="p-4 text-center">
                       {p.alerts > 0 ? (
                         <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-destructive/10 text-destructive text-xs font-bold">{p.alerts}</span>
@@ -101,36 +99,6 @@ export default function DashboardPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        {/* Alerts sidebar */}
-        <div className="rounded-xl border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between p-5 border-b border-border">
-            <h2 className="text-base font-heading font-semibold text-card-foreground flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-warning" /> Alerts
-            </h2>
-            <span className="text-xs font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">{alerts.length}</span>
-          </div>
-          <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
-            {alerts.map((a) => (
-              <div key={a.id} className="p-4 hover:bg-secondary/40 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className={cn(
-                    "mt-0.5 h-2 w-2 rounded-full shrink-0",
-                    a.severity === "high" ? "bg-destructive" : a.severity === "medium" ? "bg-warning" : "bg-info"
-                  )} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-card-foreground">{a.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</p>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-[10px] text-muted-foreground">{a.timestamp}</span>
-                      <button className="text-[10px] font-medium text-primary hover:underline">View</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -155,6 +123,109 @@ export default function DashboardPage() {
             <Bar dataKey="paid" name="Paid" fill="hsl(38, 92%, 50%)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Claims & PO Summary Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Claims Summary */}
+        <div className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="p-5 border-b border-border flex items-center justify-between">
+            <h2 className="text-base font-heading font-semibold text-card-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-success" /> Claims Summary
+            </h2>
+            <button className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
+              View All <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="p-5 space-y-3">
+            {(() => {
+              const recentClaims = claims.slice(0, 4);
+              const pendingCount = claims.filter(c => c.status === "pending" || c.status === "submitted").length;
+              const totalValue = claims.reduce((sum, c) => sum + c.amount, 0);
+
+              return (
+                <>
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Value</p>
+                      <p className="text-xl font-heading font-bold text-card-foreground mt-0.5">{formatCurrency(totalValue)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Pending Review</p>
+                      <p className="text-xl font-bold text-warning mt-0.5">{pendingCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent Claims</p>
+                    {recentClaims.map((claim) => (
+                      <div key={claim.id} className="flex items-start justify-between p-3 rounded-lg border border-border hover:bg-secondary/40 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-card-foreground">{claim.claimNumber}</p>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">{claim.projectName}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="text-xs font-semibold text-card-foreground">{formatCurrency(claim.amount)}</span>
+                            <StatusBadge status={claim.status} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Purchase Orders Summary */}
+        <div className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="p-5 border-b border-border flex items-center justify-between">
+            <h2 className="text-base font-heading font-semibold text-card-foreground flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-primary" /> Purchase Orders
+            </h2>
+            <button className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
+              View All <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="p-5 space-y-3">
+            {(() => {
+              const recentPOs = purchaseOrders.slice(0, 4);
+              const pendingCount = purchaseOrders.filter(po => po.status === "pending" || po.status === "draft").length;
+              const totalValue = purchaseOrders.reduce((sum, po) => sum + po.amount, 0);
+
+              return (
+                <>
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Value</p>
+                      <p className="text-xl font-heading font-bold text-card-foreground mt-0.5">{formatCurrency(totalValue)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Pending Approval</p>
+                      <p className="text-xl font-bold text-warning mt-0.5">{pendingCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent Orders</p>
+                    {recentPOs.map((po) => (
+                      <div key={po.id} className="flex items-start justify-between p-3 rounded-lg border border-border hover:bg-secondary/40 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-card-foreground">{po.poNumber}</p>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">{po.supplier}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="text-xs font-semibold text-card-foreground">{formatCurrency(po.amount)}</span>
+                            <StatusBadge status={po.status} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
       </div>
     </div>
   );

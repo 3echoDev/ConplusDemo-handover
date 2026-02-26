@@ -9,15 +9,18 @@ export interface Project {
   materialsAllocated: number;
   claimsStatus: "submitted" | "certified" | "paid" | "pending";
   alerts: number;
+  location: string;
+  startDate: string;
+  endDate: string;
 }
 
 export const projects: Project[] = [
-  { id: "P-001", name: "Marina Bay Infrastructure Phase 2", status: "active", progress: 72, budget: 4500000, actual: 3240000, materialsAllocated: 156, claimsStatus: "certified", alerts: 2 },
-  { id: "P-002", name: "Clementi Road Expansion", status: "active", progress: 45, budget: 2800000, actual: 1540000, materialsAllocated: 89, claimsStatus: "submitted", alerts: 1 },
-  { id: "P-003", name: "Woodlands MRT Extension", status: "delayed", progress: 38, budget: 8200000, actual: 4100000, materialsAllocated: 234, claimsStatus: "pending", alerts: 5 },
-  { id: "P-004", name: "Tuas Industrial Complex B7", status: "active", progress: 91, budget: 1200000, actual: 1080000, materialsAllocated: 45, claimsStatus: "paid", alerts: 0 },
-  { id: "P-005", name: "Jurong East HDB Renovation", status: "completed", progress: 100, budget: 960000, actual: 920000, materialsAllocated: 32, claimsStatus: "paid", alerts: 0 },
-  { id: "P-006", name: "Changi Airport T5 Support", status: "on-hold", progress: 15, budget: 12000000, actual: 1800000, materialsAllocated: 67, claimsStatus: "pending", alerts: 3 },
+  { id: "P-001", name: "Marina Bay Infrastructure Phase 2", status: "active", progress: 72, budget: 4500000, actual: 3240000, materialsAllocated: 156, claimsStatus: "certified", alerts: 2, location: "Marina Bay, Singapore", startDate: "Jan 2024", endDate: "Dec 2025" },
+  { id: "P-002", name: "Clementi Road Expansion", status: "active", progress: 45, budget: 2800000, actual: 1540000, materialsAllocated: 89, claimsStatus: "submitted", alerts: 1, location: "Clementi, West Region", startDate: "Jun 2024", endDate: "Aug 2025" },
+  { id: "P-003", name: "Woodlands MRT Extension", status: "delayed", progress: 38, budget: 8200000, actual: 4100000, materialsAllocated: 234, claimsStatus: "pending", alerts: 5, location: "Woodlands, North Region", startDate: "Mar 2024", endDate: "Mar 2026" },
+  { id: "P-004", name: "Tuas Industrial Complex B7", status: "active", progress: 91, budget: 1200000, actual: 1080000, materialsAllocated: 45, claimsStatus: "paid", alerts: 0, location: "Tuas, West Region", startDate: "Oct 2024", endDate: "Apr 2025" },
+  { id: "P-005", name: "Jurong East HDB Renovation", status: "completed", progress: 100, budget: 960000, actual: 920000, materialsAllocated: 32, claimsStatus: "paid", alerts: 0, location: "Jurong East, West Region", startDate: "May 2024", endDate: "Dec 2024" },
+  { id: "P-006", name: "Changi Airport T5 Support", status: "on-hold", progress: 15, budget: 12000000, actual: 1800000, materialsAllocated: 67, claimsStatus: "pending", alerts: 3, location: "Changi, East Region", startDate: "Feb 2025", endDate: "Dec 2027" },
 ];
 
 // ─── Inventory ───
@@ -121,6 +124,26 @@ export const claimsData = [
   { month: "Feb", submitted: 480000, certified: 420000, paid: 0 },
 ];
 
+// ─── Individual Claims ───
+export interface Claim {
+  id: string;
+  claimNumber: string;
+  projectId: string;
+  projectName: string;
+  amount: number;
+  submittedDate: string;
+  status: "submitted" | "certified" | "paid" | "pending";
+  description: string;
+}
+
+export const claims: Claim[] = [
+  { id: "CLM-001", claimNumber: "CLM-2025-001", projectId: "P-001", projectName: "Marina Bay Infrastructure Phase 2", amount: 180000, submittedDate: "2025-02-20", status: "certified", description: "Progress Claim #3 - Foundation Works" },
+  { id: "CLM-002", claimNumber: "CLM-2025-002", projectId: "P-002", projectName: "Clementi Road Expansion", amount: 95000, submittedDate: "2025-02-22", status: "submitted", description: "Progress Claim #2 - Road Base Layer" },
+  { id: "CLM-003", claimNumber: "CLM-2025-003", projectId: "P-003", projectName: "Woodlands MRT Extension", amount: 205000, submittedDate: "2025-02-15", status: "pending", description: "Progress Claim #4 - Overdue" },
+  { id: "CLM-004", claimNumber: "CLM-2025-004", projectId: "P-004", projectName: "Tuas Industrial Complex B7", amount: 65000, submittedDate: "2025-02-18", status: "paid", description: "Final Progress Claim" },
+  { id: "CLM-005", claimNumber: "CLM-2025-005", projectId: "P-001", projectName: "Marina Bay Infrastructure Phase 2", amount: 142000, submittedDate: "2025-02-25", status: "submitted", description: "Progress Claim #4 - Structural Works" },
+];
+
 // ─── Performance Data ───
 export interface TeamMember {
   id: string;
@@ -140,6 +163,42 @@ export const teamMembers: TeamMember[] = [
   { id: "T-004", name: "David Lim", role: "Site Supervisor", department: "Operations", score: 65, tasksCompleted: 22, tasksTotal: 35, trend: "down" },
   { id: "T-005", name: "Rachel Wong", role: "Sales Manager", department: "Sales", score: 85, tasksCompleted: 19, tasksTotal: 22, trend: "up" },
   { id: "T-006", name: "Ahmad Ibrahim", role: "QA Inspector", department: "Operations", score: 71, tasksCompleted: 30, tasksTotal: 40, trend: "down" },
+];
+
+// ─── Project Tasks ───
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  status: "pending" | "in-progress" | "completed" | "blocked";
+  priority: "high" | "medium" | "low";
+  assignedTo: string;
+  dueDate: string;
+  completedDate?: string;
+}
+
+export const projectTasks: ProjectTask[] = [
+  // P-001 - Marina Bay Infrastructure Phase 2
+  { id: "TASK-001", projectId: "P-001", title: "Foundation Inspection", description: "Conduct structural integrity assessment of foundation work", status: "completed", priority: "high", assignedTo: "Ahmad Ibrahim", dueDate: "2025-02-15", completedDate: "2025-02-14" },
+  { id: "TASK-002", projectId: "P-001", title: "Cement Reorder", description: "Place urgent order for 500 bags of Portland Cement", status: "in-progress", priority: "high", assignedTo: "Marcus Tan", dueDate: "2025-02-28" },
+  { id: "TASK-003", projectId: "P-001", title: "Progress Claim Submission", description: "Submit monthly progress claim for certification", status: "pending", priority: "medium", assignedTo: "Priya Sharma", dueDate: "2025-03-05" },
+  { id: "TASK-004", projectId: "P-001", title: "Waterproofing Application", description: "Apply waterproofing membrane to basement level", status: "in-progress", priority: "high", assignedTo: "David Lim", dueDate: "2025-03-10" },
+
+  // P-002 - Clementi Road Expansion
+  { id: "TASK-005", projectId: "P-002", title: "Road Survey Completion", description: "Complete topographical survey of road expansion area", status: "completed", priority: "high", assignedTo: "Sarah Chen", dueDate: "2025-02-20", completedDate: "2025-02-18" },
+  { id: "TASK-006", projectId: "P-002", title: "Concrete Delivery Coordination", description: "Schedule ready-mix concrete delivery with Pacific Concrete", status: "in-progress", priority: "medium", assignedTo: "Marcus Tan", dueDate: "2025-03-08" },
+  { id: "TASK-007", projectId: "P-002", title: "Traffic Management Plan", description: "Finalize traffic diversion plan with LTA", status: "pending", priority: "high", assignedTo: "Sarah Chen", dueDate: "2025-03-01" },
+
+  // P-003 - Woodlands MRT Extension
+  { id: "TASK-008", projectId: "P-003", title: "Steel Reinforcement Installation", description: "Install steel reinforcement bars for tunnel support", status: "blocked", priority: "high", assignedTo: "David Lim", dueDate: "2025-03-15" },
+  { id: "TASK-009", projectId: "P-003", title: "Resolve Material Shortage", description: "Address scaffolding shortage affecting work progress", status: "in-progress", priority: "high", assignedTo: "Marcus Tan", dueDate: "2025-02-27" },
+  { id: "TASK-010", projectId: "P-003", title: "Delay Impact Assessment", description: "Assess impact of 3-day delivery delay on project timeline", status: "pending", priority: "high", assignedTo: "Sarah Chen", dueDate: "2025-02-26" },
+  { id: "TASK-011", projectId: "P-003", title: "Progress Claim (Overdue)", description: "Submit overdue monthly progress claim", status: "pending", priority: "high", assignedTo: "Priya Sharma", dueDate: "2025-02-24" },
+
+  // P-004 - Tuas Industrial Complex B7
+  { id: "TASK-012", projectId: "P-004", title: "Final Safety Inspection", description: "Conduct final safety inspection before handover", status: "in-progress", priority: "high", assignedTo: "Ahmad Ibrahim", dueDate: "2025-03-15" },
+  { id: "TASK-013", projectId: "P-004", title: "Handover Documentation", description: "Prepare handover documentation and certificates", status: "pending", priority: "medium", assignedTo: "Sarah Chen", dueDate: "2025-04-01" },
 ];
 
 // ─── Suppliers ───

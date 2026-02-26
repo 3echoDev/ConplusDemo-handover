@@ -1,12 +1,14 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Search, Filter, Package, Plus, ArrowRightLeft, RefreshCw } from "lucide-react";
 import { StatusBadge, StockBar } from "@/components/shared/UIComponents";
 import { inventory, projects, formatCurrency } from "@/data/sampleData";
 import { cn } from "@/lib/utils";
 
 export default function InventoryPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"master" | "project">("master");
+  const [tab, setTab] = useState<"master" | "project">("project");
   const [selectedProject, setSelectedProject] = useState(projects[0].id);
 
   const filtered = inventory.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()));
@@ -90,57 +92,53 @@ export default function InventoryPage() {
           </table>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-foreground">Project:</label>
-            <select
-              value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              className="rounded-lg border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {activeProjects.map((project) => {
+            const projectMaterials = inventory.filter((i) =>
+              i.projectAllocations.some((a) => a.projectId === project.id)
+            );
 
-          <div className="rounded-xl border border-border bg-card shadow-sm">
-            <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="text-sm font-heading font-semibold text-card-foreground">{selectedProjectName}</h3>
-              <button className="rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
-                Mark Project Complete
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wider">
-                    <th className="text-left p-4 font-medium">Material</th>
-                    <th className="text-right p-4 font-medium">Allocated Qty</th>
-                    <th className="text-left p-4 font-medium">Unit</th>
-                    <th className="text-left p-4 font-medium w-40">Usage</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projectItems.map((item) => {
-                    const alloc = item.projectAllocations.find((a) => a.projectId === selectedProject);
-                    const usagePct = Math.round(Math.random() * 40 + 40);
-                    return (
-                      <tr key={item.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors">
-                        <td className="p-4 font-medium text-card-foreground">{item.name}</td>
-                        <td className="p-4 text-right font-medium text-card-foreground">{alloc?.qty.toLocaleString()}</td>
-                        <td className="p-4 text-muted-foreground">{item.unit}</td>
-                        <td className="p-4"><StockBar level={usagePct} /></td>
-                      </tr>
-                    );
-                  })}
-                  {projectItems.length === 0 && (
-                    <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No materials allocated to this project</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            return (
+              <div
+                key={project.id}
+                className="rounded-xl border border-border bg-card shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                onClick={() => navigate(`/projects/${project.id}`)}
+              >
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h3 className="text-sm font-heading font-semibold text-card-foreground group-hover:text-primary transition-colors">{project.name}</h3>
+                      <p className="text-xs text-muted-foreground mt-1">{project.location}</p>
+                    </div>
+                    <StatusBadge status={project.status} />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Progress</span>
+                        <span className="font-medium text-card-foreground">{project.progress}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-secondary">
+                        <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${project.progress}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-border">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Materials</p>
+                        <p className="text-sm font-semibold text-card-foreground">{projectMaterials.length}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Budget</p>
+                        <p className="text-sm font-semibold text-card-foreground">{formatCurrency(project.budget)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Package, ShoppingCart, FileText, BarChart3, Settings, Menu, X, Bell, ChevronDown, RefreshCw, Building2
+  LayoutDashboard, ShoppingCart, FileText, BarChart3, Menu, X, Bell, ChevronDown, RefreshCw, Building2, FolderKanban
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", badge: "VISION" },
-  { label: "Inventory", icon: Package, path: "/inventory", badge: "FLOW" },
+  { label: "Projects", icon: FolderKanban, path: "/projects", badge: "VISION" },
   { label: "Purchase Orders", icon: ShoppingCart, path: "/purchase-orders", badge: "FLOW" },
   { label: "Documents", icon: FileText, path: "/documents", badge: "ASSET" },
-  { label: "Performance", icon: BarChart3, path: "/performance", badge: "STRIKE" },
-  { label: "Settings", icon: Settings, path: "/settings" },
+  { label: "STRIKE", icon: BarChart3, path: "/performance", badge: "STRIKE" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
