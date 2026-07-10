@@ -1,73 +1,56 @@
-# Welcome to your Lovable project
+# ConPlus AI Transformation — Demo App
 
-## Project info
+React app for the ConPlus AI Transformation Suite, connected live to the shared Supabase database. It serves **both build plans** from one codebase:
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+| Mode | URL | What it is |
+|---|---|---|
+| **v1 — Full app** | `/` (Dashboard, Projects, Inventory, Purchase Orders, Documents) | Build Plan v1: the full web application. All buttons write to Supabase — create/approve/reject POs, update/add/transfer stock, approve/reject invoices, submit/certify claims. |
+| **v2 — Live view** | `/v2` | Build Plan v2 companion: a lightweight read-only presentation screen. Operations are performed by talking to Claude (Claude Desktop + Supabase MCP, see `../claude-desktop-setup/`); this screen polls the database every ~7s so changes appear live. |
 
-## How can I edit this code?
+Both modes read and write the **same Supabase database**, so anything Claude does shows up in v1, and anything clicked in v1 shows up on the v2 screen.
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Setup
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+npm install
 ```
 
-**Edit a file directly in GitHub**
+Create `.env.local` (not committed) with:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_KEY=<key>
+```
 
-**Use GitHub Codespaces**
+> ⚠️ The demo currently uses the **service-role key** for simplicity. That is acceptable only for a locally-run demo — never deploy this publicly with that key. For a deployed version, switch to the anon key + RLS policies.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Run
 
-## What technologies are used for this project?
+```sh
+npm run dev   # http://localhost:8080  (v1) and http://localhost:8080/v2 (live view)
+```
 
-This project is built with:
+## Client deployment (Vercel) — live view only
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+The public client deployment serves **only the live view, at the root URL** and uses the **anon key** (read-only via RLS — anon has SELECT-only policies). Set these environment variables in Vercel:
 
-## How can I deploy this project?
+```
+VITE_SUPABASE_URL   = https://<project>.supabase.co
+VITE_SUPABASE_KEY   = <anon public key>        # Dashboard → Settings → API. NEVER the service_role key.
+VITE_LIVE_VIEW_ONLY = true
+```
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+With `VITE_LIVE_VIEW_ONLY=true` every path renders the live view; the full app is not reachable. `vercel.json` handles the SPA rewrite.
 
-## Can I connect a custom domain to my Lovable project?
+## Data layer
 
-Yes, you can!
+- `src/lib/supabase.ts` — Supabase client
+- `src/data/db.ts` — row types, DB→UI mappers, and all mutations (PO numbering follows ConPlus format `YYMM-NNNN`, GST 9%)
+- `src/data/AppDataContext.tsx` — react-query polling (7s) + mutation wrappers with toasts
+- `src/data/sampleData.ts` — UI types and formatting helpers only (mock arrays removed)
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Stock status rule (matches the Claude Desktop project instructions): `qty <= 0` out, `<= 2` critical, `< threshold` low, else sufficient.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Tech
+
+Vite · React 18 · TypeScript · shadcn-ui · Tailwind CSS · TanStack Query · Supabase

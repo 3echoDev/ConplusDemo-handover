@@ -2,20 +2,25 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, Package, Plus, ArrowRightLeft, RefreshCw } from "lucide-react";
 import { StatusBadge, StockBar } from "@/components/shared/UIComponents";
-import { inventory, projects, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import { useAppData } from "@/data/AppDataContext";
+import { AddMaterialDialog, TransferDialog, UpdateStockDialog } from "@/components/InventoryDialogs";
 import { cn } from "@/lib/utils";
 
 export default function InventoryPage() {
   const navigate = useNavigate();
+  const { inventory, projects, isLoading } = useAppData();
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"master" | "project">("project");
-  const [selectedProject, setSelectedProject] = useState(projects[0].id);
+  const [tab, setTab] = useState<"master" | "project">("master");
+  const [dialog, setDialog] = useState<"add" | "transfer" | "stock" | null>(null);
 
-  const filtered = inventory.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()));
+  const filtered = inventory.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()) || i.supplier.toLowerCase().includes(search.toLowerCase()));
 
-  const activeProjects = projects.filter((p) => p.status === "active" || p.status === "delayed");
-  const projectItems = inventory.filter((i) => i.projectAllocations.some((a) => a.projectId === selectedProject));
-  const selectedProjectName = projects.find((p) => p.id === selectedProject)?.name || "";
+  const activeProjects = projects.filter(
+    (p) =>
+      (p.status === "active" || p.status === "delayed") &&
+      inventory.some((i) => i.projectAllocations.some((a) => a.projectId === p.id || a.projectCode === p.code))
+  );
 
   return (
     <div className="space-y-6 animate-slide-in">
@@ -25,13 +30,13 @@ export default function InventoryPage() {
           <p className="text-sm text-muted-foreground mt-1">FLOW — Supply Chain Management</p>
         </div>
         <div className="flex gap-2">
-          <button className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+          <button onClick={() => setDialog("add")} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
             <Plus className="h-4 w-4" /> Add Material
           </button>
-          <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <button onClick={() => setDialog("transfer")} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
             <ArrowRightLeft className="h-4 w-4" /> Transfer
           </button>
-          <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <button onClick={() => setDialog("stock")} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
             <RefreshCw className="h-4 w-4" /> Update Stock
           </button>
         </div>
@@ -66,6 +71,8 @@ export default function InventoryPage() {
               <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wider">
                 <th className="text-left p-4 font-medium">Material</th>
                 <th className="text-left p-4 font-medium">Category</th>
+                <th className="text-left p-4 font-medium">Supplier</th>
+                <th className="text-left p-4 font-medium">Location</th>
                 <th className="text-right p-4 font-medium">Qty</th>
                 <th className="text-left p-4 font-medium">Unit</th>
                 <th className="text-right p-4 font-medium">Value</th>
@@ -78,24 +85,40 @@ export default function InventoryPage() {
                 <tr key={item.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors">
                   <td className="p-4">
                     <p className="font-medium text-card-foreground">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.id}</p>
+                    <p className="text-xs text-muted-foreground">{item.code}</p>
                   </td>
                   <td className="p-4 text-muted-foreground">{item.category}</td>
+                  <td className="p-4 text-muted-foreground">{item.supplier}</td>
+                  <td className="p-4 text-xs text-muted-foreground">{item.location}</td>
                   <td className="p-4 text-right font-medium text-card-foreground">{item.totalQty.toLocaleString()}</td>
                   <td className="p-4 text-muted-foreground">{item.unit}</td>
-                  <td className="p-4 text-right font-medium text-card-foreground">{formatCurrency(item.value)}</td>
+                  <td className="p-4 text-right font-medium text-card-foreground">
+                    {item.value > 0 ? formatCurrency(item.value) : <span className="text-muted-foreground" title="No price on record — fills in from PO pricing">—</span>}
+                  </td>
                   <td className="p-4"><StockBar level={item.stockLevel} /></td>
                   <td className="p-4"><StatusBadge status={item.status} /></td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                    {isLoading ? "Loading inventory from database..." : "No materials match your search."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {activeProjects.length === 0 && (
+            <div className="col-span-full rounded-xl border border-border bg-card p-12 text-center">
+              <p className="text-muted-foreground">No project allocations yet. Use the Transfer button to issue stock to a project.</p>
+            </div>
+          )}
           {activeProjects.map((project) => {
             const projectMaterials = inventory.filter((i) =>
-              i.projectAllocations.some((a) => a.projectId === project.id)
+              i.projectAllocations.some((a) => a.projectId === project.id || a.projectCode === project.code)
             );
 
             return (
@@ -141,6 +164,10 @@ export default function InventoryPage() {
           })}
         </div>
       )}
+
+      <AddMaterialDialog open={dialog === "add"} onClose={() => setDialog(null)} />
+      <TransferDialog open={dialog === "transfer"} onClose={() => setDialog(null)} />
+      <UpdateStockDialog open={dialog === "stock"} onClose={() => setDialog(null)} />
     </div>
   );
 }

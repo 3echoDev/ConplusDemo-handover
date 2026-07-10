@@ -1,17 +1,129 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Calendar, DollarSign, MapPin, TrendingUp, Users } from "lucide-react";
+import { Plus, Search, Calendar, DollarSign, MapPin, TrendingUp, Users, X } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
-import { projects, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import { useAppData } from "@/data/AppDataContext";
 import { cn } from "@/lib/utils";
+
+const inputCls =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+const labelCls = "block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5";
+
+function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { projects, createProject } = useAppData();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [client, setClient] = useState("");
+  const [scope, setScope] = useState("");
+  const [salesManager, setSalesManager] = useState("");
+  const [contractValue, setContractValue] = useState("");
+  const [voValue, setVoValue] = useState("0");
+  const [startDate, setStartDate] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+  const codeTaken = projects.some((p) => p.code.toLowerCase() === code.trim().toLowerCase());
+  const valid = code.trim() !== "" && name.trim() !== "" && !codeTaken;
+
+  const submit = async () => {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await createProject({
+        projectCode: code.trim(),
+        name: name.trim(),
+        clientName: client.trim(),
+        scope: scope.trim(),
+        salesManager: salesManager.trim().toUpperCase(),
+        contractValue: Number(contractValue) || 0,
+        voValue: Number(voValue) || 0,
+        startDate,
+      });
+      setCode(""); setName(""); setClient(""); setScope(""); setSalesManager(""); setContractValue(""); setVoValue("0"); setStartDate("");
+      onClose();
+    } catch {
+      // toast shown by context
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="text-lg font-heading font-semibold text-card-foreground">New Project</h2>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Project Code</label>
+            <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. E26001" className={inputCls} />
+            {codeTaken && <p className="text-xs text-destructive mt-1">This project code already exists.</p>}
+          </div>
+          <div>
+            <label className={labelCls}>Sales Manager</label>
+            <input type="text" value={salesManager} onChange={(e) => setSalesManager(e.target.value)} placeholder="e.g. JENSEN" className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Project / Site Name</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tampines Industrial Park B" className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Client (Main Contractor)</label>
+            <input type="text" value={client} onChange={(e) => setClient(e.target.value)} className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Scope of Work</label>
+            <input type="text" value={scope} onChange={(e) => setScope(e.target.value)} placeholder="e.g. Supply And Apply Of Epoxy Floor Coating System" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Contract Value (SGD)</label>
+            <input type="number" min={0} step={0.01} value={contractValue} onChange={(e) => setContractValue(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>VO Value (SGD)</label>
+            <input type="number" min={0} step={0.01} value={voValue} onChange={(e) => setVoValue(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Commencement Date</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-border">
+          <button onClick={onClose} className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!valid || saving}
+            className={cn(
+              "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              valid && !saving ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-muted-foreground cursor-not-allowed"
+            )}
+          >
+            {saving ? "Creating..." : "Create Project"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const { projects, isLoading } = useAppData();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
+  const [showNew, setShowNew] = useState(false);
 
   const filtered = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(search.toLowerCase()) ||
+                         project.client.toLowerCase().includes(search.toLowerCase()) ||
+                         project.code.toLowerCase().includes(search.toLowerCase()) ||
                          project.location.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === "all" || project.status === filter;
     return matchesSearch && matchesFilter;
@@ -22,6 +134,7 @@ export default function ProjectsPage() {
     active: projects.filter((p) => p.status === "active" || p.status === "delayed").length,
     completed: projects.filter((p) => p.status === "completed").length,
     totalBudget: projects.reduce((sum, p) => sum + p.budget, 0),
+    totalContract: projects.reduce((sum, p) => sum + p.budget, 0),
   };
 
   return (
@@ -31,7 +144,7 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-heading font-bold text-foreground">Projects</h1>
           <p className="text-sm text-muted-foreground mt-1">VISION — Project Management & Tracking</p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+        <button onClick={() => setShowNew(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
           <Plus className="h-4 w-4" /> New Project
         </button>
       </div>
@@ -64,7 +177,7 @@ export default function ProjectsPage() {
 
         <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Budget</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Contract</span>
             <DollarSign className="h-4 w-4 text-warning" />
           </div>
           <p className="text-2xl font-heading font-bold text-card-foreground">{formatCurrency(stats.totalBudget)}</p>
@@ -130,7 +243,7 @@ export default function ProjectsPage() {
                   </h3>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <MapPin className="h-3 w-3" />
-                    {project.location}
+                    {project.client} · {project.code}
                   </div>
                 </div>
                 <StatusBadge status={project.status} />
@@ -175,9 +288,13 @@ export default function ProjectsPage() {
 
       {filtered.length === 0 && (
         <div className="rounded-xl border border-border bg-card p-12 text-center">
-          <p className="text-muted-foreground">No projects found matching your criteria.</p>
+          <p className="text-muted-foreground">
+            {isLoading ? "Loading projects from database..." : "No projects found matching your criteria."}
+          </p>
         </div>
       )}
+
+      <NewProjectDialog open={showNew} onClose={() => setShowNew(false)} />
     </div>
   );
 }

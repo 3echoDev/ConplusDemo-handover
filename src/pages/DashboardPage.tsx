@@ -1,42 +1,95 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   BarChart3, Package, FileText, TrendingUp, DollarSign, Briefcase, Clock, ShoppingCart, CheckCircle, ArrowRight
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { MetricCard, StatusBadge } from "@/components/shared/UIComponents";
-import { projects, claimsData, claims, purchaseOrders, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import { useAppData } from "@/data/AppDataContext";
 import { cn } from "@/lib/utils";
 
 type ProjectFilter = "all" | "active" | "completed" | "delayed";
 
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 export default function DashboardPage() {
+  const navigate = useNavigate();
+  const { projects, purchaseOrders, invoices, claims, inventory } = useAppData();
   const [filter, setFilter] = useState<ProjectFilter>("all");
-  const filtered = filter === "all" ? projects : projects.filter((p) => p.status === filter);
+  const filtered = (filter === "all" ? projects : projects.filter((p) => p.status === filter)).slice(0, 12);
 
   const activeCount = projects.filter((p) => p.status === "active").length;
-  const totalExposure = 163500;
+
+  // Claims KPIs
+  const pendingClaimsValue = claims
+    .filter((c) => c.status === "submitted" || c.status === "pending")
+    .reduce((s, c) => s + c.amount, 0);
+
+  // Invoice KPIs
+  const outstandingInvoices = invoices.filter((i) => i.status === "received" || i.status === "pending-review");
+  const outstandingValue = outstandingInvoices.reduce((s, i) => s + i.amount, 0);
+
+  // Stock KPIs
+  const criticalItems = inventory.filter((i) => i.status === "critical" || i.status === "out").length;
+  const lowItems = inventory.filter((i) => i.status === "low").length;
+  const inStockQty = inventory.reduce((s, i) => s + i.totalQty, 0);
+
+  // Claims chart: last 6 months from claims table
+  const claimsData = (() => {
+    const now = new Date();
+    const months: { key: string; month: string; submitted: number; certified: number; paid: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        month: MONTH_LABELS[d.getMonth()],
+        submitted: 0,
+        certified: 0,
+        paid: 0,
+      });
+    }
+    const byKey = new Map(months.map((m) => [m.key, m]));
+    for (const c of claims) {
+      const sub = byKey.get(c.submittedDate?.slice(0, 7) ?? "");
+      if (sub) sub.submitted += c.amount;
+      const cert = byKey.get(c.certifiedDate?.slice(0, 7) ?? "");
+      if (cert) cert.certified += c.amount;
+      const paid = byKey.get(c.paidDate?.slice(0, 7) ?? "");
+      if (paid) paid.paid += c.amount;
+    }
+    return months;
+  })();
 
   return (
     <div className="space-y-6 animate-slide-in">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-heading font-bold text-foreground">Welcome back, John</h1>
-        <p className="text-sm text-muted-foreground mt-1">Tuesday, 25 February 2025 · Operations Overview</p>
+        <h1 className="text-2xl font-heading font-bold text-foreground">Welcome back, Jensen</h1>
+        <p className="text-sm text-muted-foreground mt-1">Operations Overview · ConPlus Resources</p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Active Projects" value={activeCount} icon={<Briefcase className="h-5 w-5" />} trend={{ value: "2 new this month", positive: true }} />
-        <MetricCard title="Pending Claims" value={formatCurrency(480000)} subtitle="Feb 2025" icon={<DollarSign className="h-5 w-5" />} trend={{ value: "12% vs last month", positive: true }} />
-        <MetricCard title="Outstanding Invoices" value="3" subtitle="Total: SGD 206,200" icon={<FileText className="h-5 w-5" />} />
-        <MetricCard title="Inventory Exposure" value={formatCurrency(totalExposure)} subtitle="2 critical items" icon={<Package className="h-5 w-5" />} trend={{ value: "Needs attention", positive: false }} />
+        <MetricCard title="Active Projects" value={activeCount} subtitle={`${projects.length} total`} icon={<Briefcase className="h-5 w-5" />} />
+        <MetricCard title="Pending Claims" value={formatCurrency(pendingClaimsValue)} subtitle={`${claims.length} claims on record`} icon={<DollarSign className="h-5 w-5" />} />
+        <MetricCard title="Outstanding Invoices" value={outstandingInvoices.length} subtitle={`Total: ${formatCurrency(outstandingValue)}`} icon={<FileText className="h-5 w-5" />} />
+        <MetricCard
+          title="Stock Alerts"
+          value={criticalItems}
+          subtitle={`${lowItems} low · ${inStockQty.toLocaleString()} units on hand`}
+          icon={<Package className="h-5 w-5" />}
+          trend={criticalItems > 0 ? { value: "Needs attention", positive: false } : undefined}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6">
         {/* Project table */}
         <div className="rounded-xl border border-border bg-card shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-border">
-            <h2 className="text-base font-heading font-semibold text-card-foreground">Project Overview</h2>
+            <h2 className="text-base font-heading font-semibold text-card-foreground">
+              Project Overview <span className="text-xs font-normal text-muted-foreground">(top 12 by contract value)</span>
+            </h2>
             <div className="flex gap-1.5">
               {(["all", "active", "completed", "delayed"] as ProjectFilter[]).map((f) => (
                 <button
@@ -67,10 +120,10 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors">
+                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors cursor-pointer" onClick={() => navigate(`/projects/${p.id}`)}>
                     <td className="p-4">
                       <p className="font-medium text-card-foreground">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.id}</p>
+                      <p className="text-xs text-muted-foreground">{p.code} · {p.client}</p>
                     </td>
                     <td className="p-4"><StatusBadge status={p.status} /></td>
                     <td className="p-4">
@@ -133,7 +186,7 @@ export default function DashboardPage() {
             <h2 className="text-base font-heading font-semibold text-card-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-success" /> Claims Summary
             </h2>
-            <button className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
+            <button onClick={() => navigate("/documents")} className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
               View All <ArrowRight className="h-3 w-3" />
             </button>
           </div>
@@ -158,6 +211,9 @@ export default function DashboardPage() {
 
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent Claims</p>
+                    {recentClaims.length === 0 && (
+                      <p className="text-xs text-muted-foreground p-3">No claims yet — submit one from Documents → Claim Management.</p>
+                    )}
                     {recentClaims.map((claim) => (
                       <div key={claim.id} className="flex items-start justify-between p-3 rounded-lg border border-border hover:bg-secondary/40 transition-colors">
                         <div className="flex-1 min-w-0">
@@ -183,7 +239,7 @@ export default function DashboardPage() {
             <h2 className="text-base font-heading font-semibold text-card-foreground flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-primary" /> Purchase Orders
             </h2>
-            <button className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
+            <button onClick={() => navigate("/purchase-orders")} className="text-xs text-primary hover:text-primary/80 font-medium transition-colors flex items-center gap-1">
               View All <ArrowRight className="h-3 w-3" />
             </button>
           </div>

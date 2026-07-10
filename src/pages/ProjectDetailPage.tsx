@@ -1,19 +1,31 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MapPin, Calendar, DollarSign, AlertCircle, TrendingUp, Package, CheckCircle2, Circle, Clock, Ban, AlertTriangle } from "lucide-react";
 import { StatusBadge, StockBar } from "@/components/shared/UIComponents";
-import { projects, inventory, purchaseOrders, projectTasks, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import { useAppData } from "@/data/AppDataContext";
 import { cn } from "@/lib/utils";
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const { projects, inventory, purchaseOrders, projectTasks, materialPrices, isLoading } = useAppData();
 
-  const project = projects.find((p) => p.id === projectId);
+  const project = projects.find((p) => p.id === projectId || p.code === projectId);
+  const matchesProject = (id: string, code: string) =>
+    (project && (id === project.id || (code !== "" && code === project.code))) ?? false;
+
+  // VO / phase grouping: the client's project list stores variation orders as
+  // separate rows like "F22023 (VO)" — group them with their base project.
+  const baseCode = (code: string) => code.split(" (")[0].trim();
+  const family = project ? projects.filter((p) => baseCode(p.code) === baseCode(project.code)) : [];
+  const voRows = family.filter((p) => p.id !== project?.id);
+  const familyTotal = family.reduce((s, p) => s + p.budget, 0);
+
   const projectMaterials = inventory.filter((i) =>
-    i.projectAllocations.some((a) => a.projectId === projectId)
+    i.projectAllocations.some((a) => matchesProject(a.projectId, a.projectCode))
   );
-  const projectPOs = purchaseOrders.filter((po) => po.projectId === projectId);
-  const tasks = projectTasks.filter((task) => task.projectId === projectId);
+  const projectPOs = purchaseOrders.filter((po) => matchesProject(po.projectId, po.projectCode));
+  const tasks = projectTasks.filter((task) => matchesProject(task.projectId, task.projectCode));
 
   const taskStats = {
     total: tasks.length,
@@ -27,7 +39,7 @@ export default function ProjectDetailPage() {
     return (
       <div className="space-y-6 animate-slide-in">
         <div className="rounded-xl border border-border bg-card p-12 text-center">
-          <p className="text-muted-foreground">Project not found.</p>
+          <p className="text-muted-foreground">{isLoading ? "Loading project..." : "Project not found."}</p>
           <button
             onClick={() => navigate("/projects")}
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -39,7 +51,7 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const budgetUsage = (project.actual / project.budget) * 100;
+  const budgetUsage = project.budget > 0 ? (project.actual / project.budget) * 100 : 0;
 
   return (
     <div className="space-y-6 animate-slide-in">
@@ -54,12 +66,14 @@ export default function ProjectDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-heading font-bold text-foreground">{project.name}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{project.client} · {project.code}</p>
             <div className="flex flex-wrap items-center gap-3 mt-2">
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4" />
                 {project.location}
               </div>
               <StatusBadge status={project.status} />
+              <span className="text-xs text-muted-foreground">PM: {project.manager}</span>
             </div>
           </div>
         </div>
@@ -113,6 +127,39 @@ export default function ProjectDetailPage() {
           <p className="text-xs text-muted-foreground mt-1">{project.alerts} alerts</p>
         </div>
       </div>
+
+      {/* Variation Orders / Phases (from the client's project list) */}
+      {voRows.length > 0 && (
+        <div className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="p-5 border-b border-border flex items-center justify-between">
+            <h2 className="text-base font-heading font-semibold text-card-foreground">
+              Variation Orders & Phases ({voRows.length})
+            </h2>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Combined Contract Value</p>
+              <p className="text-sm font-bold text-card-foreground">{formatCurrency(familyTotal)}</p>
+            </div>
+          </div>
+          <div className="divide-y divide-border">
+            {voRows.map((vo) => (
+              <div
+                key={vo.id}
+                onClick={() => navigate(`/projects/${vo.id}`)}
+                className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-secondary/40 transition-colors cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-card-foreground">{vo.code}</p>
+                  <p className="text-xs text-muted-foreground truncate">{vo.name}</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm font-semibold text-card-foreground">{formatCurrency(vo.budget)}</span>
+                  <StatusBadge status={vo.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Alerts (if any) */}
       {project.alerts > 0 && (
@@ -227,13 +274,19 @@ export default function ProjectDetailPage() {
             </thead>
             <tbody>
               {projectMaterials.map((item) => {
-                const alloc = item.projectAllocations.find((a) => a.projectId === projectId);
-                const allocValue = alloc ? (alloc.qty / item.totalQty) * item.value : 0;
+                const alloc = item.projectAllocations.find((a) => matchesProject(a.projectId, a.projectCode));
+                // Raw materials: prefer the price THIS project actually paid (its own PO
+                // line); fall back to the material's general unit value.
+                const projectPrice = (materialPrices.get(item.id) ?? []).find(
+                  (p) => p.projectCode && project && p.projectCode === project.code
+                );
+                const unitVal = projectPrice?.price ?? item.unitValue;
+                const allocValue = alloc ? alloc.qty * unitVal : 0;
                 return (
                   <tr key={item.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors">
                     <td className="p-4">
                       <p className="font-medium text-card-foreground">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.id}</p>
+                      <p className="text-xs text-muted-foreground">{item.code}</p>
                     </td>
                     <td className="p-4 text-muted-foreground">{item.category}</td>
                     <td className="p-4 text-right font-medium text-card-foreground">
@@ -241,7 +294,7 @@ export default function ProjectDetailPage() {
                     </td>
                     <td className="p-4 text-muted-foreground">{item.unit}</td>
                     <td className="p-4 text-right font-medium text-card-foreground">
-                      {formatCurrency(allocValue)}
+                      {allocValue > 0 ? formatCurrency(allocValue) : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="p-4">
                       <StockBar level={item.stockLevel} />
