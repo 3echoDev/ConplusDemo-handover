@@ -12,6 +12,7 @@ import type {
   Claim,
   ProjectTask,
   DocumentRecord,
+  ProjectVO,
 } from "./sampleData";
 import {
   fetchProjects,
@@ -24,6 +25,7 @@ import {
   fetchAlerts,
   fetchTasks,
   fetchDocuments,
+  fetchVOs,
   fetchSuppliers,
   fetchTeamMemberNames,
   mapProject,
@@ -34,8 +36,10 @@ import {
   mapAlert,
   mapTask,
   mapDocument,
+  mapVO,
   dbCreatePO,
   dbUpdatePOStatus,
+  dbUpdatePOFields,
   dbUpdateInvoiceStatus,
   dbUpdateStock,
   dbAddMaterial,
@@ -47,6 +51,7 @@ import {
   dbResolveAlert,
   type AddMaterialInput,
   type CreateProjectInput,
+  type POFieldUpdates,
   type POLineRow,
 } from "./db";
 
@@ -58,6 +63,7 @@ interface NewPOData {
   projectId: string;
   items: { material: string; qty: number; unitPrice: number }[];
   deliveryDate: string;
+  worksOrder: string;
   shipTo: string;
   paymentTerms: string;
   requestedBy: string;
@@ -73,6 +79,7 @@ interface AppData {
   claims: Claim[];
   projectTasks: ProjectTask[];
   documents: DocumentRecord[];
+  projectVOs: ProjectVO[];
   suppliers: string[];
   supplierDetails: Map<string, { paymentTerms: string; address: string }>;
   teamMembers: string[];
@@ -83,6 +90,7 @@ interface AppData {
 
   createPO: (data: NewPOData) => Promise<void>;
   updatePOStatus: (poId: string, status: POStatus) => Promise<void>;
+  updatePOFields: (poId: string, fields: POFieldUpdates) => Promise<void>;
   updateInvoiceStatus: (invoiceId: string, status: InvoiceStatus) => Promise<void>;
   updateStock: (itemId: string, newQty: number) => Promise<void>;
   addMaterial: (input: AddMaterialInput) => Promise<void>;
@@ -117,6 +125,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const alertsQ = useQuery({ queryKey: ["alerts"], queryFn: fetchAlerts, ...Q });
   const tasksQ = useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...Q });
   const documentsQ = useQuery({ queryKey: ["documents"], queryFn: fetchDocuments, ...Q });
+  const vosQ = useQuery({ queryKey: ["projectVOs"], queryFn: fetchVOs, ...Q });
   const suppliersQ = useQuery({ queryKey: ["suppliers"], queryFn: fetchSuppliers, staleTime: 5 * 60_000 });
   const teamQ = useQuery({ queryKey: ["teamMembers"], queryFn: fetchTeamMemberNames, staleTime: 5 * 60_000 });
 
@@ -224,6 +233,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const alerts = useMemo(() => (alertsQ.data ?? []).map(mapAlert), [alertsQ.data]);
   const projectTasks = useMemo(() => (tasksQ.data ?? []).map(mapTask), [tasksQ.data]);
   const documents = useMemo(() => (documentsQ.data ?? []).map(mapDocument), [documentsQ.data]);
+  const projectVOs = useMemo(() => (vosQ.data ?? []).map(mapVO), [vosQ.data]);
 
   /* ── mutations ── */
 
@@ -252,6 +262,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             projectCode: project?.code ?? "",
             projectName: project?.name ?? "",
             deliveryDate: data.deliveryDate,
+            worksOrder: data.worksOrder,
             shipTo: data.shipTo,
             paymentTerms: data.paymentTerms,
             requestedBy: data.requestedBy,
@@ -268,6 +279,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const updatePOStatus = useCallback(
     (poId: string, status: POStatus) =>
       run(() => dbUpdatePOStatus(poId, status), `PO ${status}`, ["pos", "alerts"]),
+    [run]
+  );
+
+  const updatePOFields = useCallback(
+    (poId: string, fields: POFieldUpdates) =>
+      run(() => dbUpdatePOFields(poId, fields), "PO details updated", ["pos"]),
     [run]
   );
 
@@ -380,6 +397,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         claims,
         projectTasks,
         documents,
+        projectVOs,
         suppliers: (suppliersQ.data ?? []).map((s) => s.name),
         supplierDetails: new Map(
           (suppliersQ.data ?? []).map((s) => [s.name, { paymentTerms: s.payment_terms ?? "", address: s.address ?? "" }])
@@ -390,6 +408,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         lastSyncedAt,
         createPO,
         updatePOStatus,
+        updatePOFields,
         updateInvoiceStatus,
         updateStock,
         addMaterial,

@@ -8,6 +8,45 @@ import CreatePODialog from "@/components/CreatePODialog";
 import { cn } from "@/lib/utils";
 
 function PODetailDialog({ po, onClose }: { po: PurchaseOrder; onClose: () => void }) {
+  const { updatePOFields } = useAppData();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    worksOrder: po.worksOrder,
+    deliveryDate: po.deliveryDate === "—" ? "" : po.deliveryDate,
+    shipTo: po.shipTo,
+    paymentTerms: po.paymentTerms,
+    requestedBy: po.requestedBy,
+    remarks: po.remarks,
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm({ ...form, [k]: e.target.value });
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updatePOFields(po.id, form);
+      setEditing(false);
+    } catch {
+      // toast shown by context
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editCls = "w-full rounded border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring";
+  const field = (label: string, key: keyof typeof form, display: string, type = "text") => (
+    <div className="rounded-lg border border-border p-3">
+      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
+      {editing ? (
+        <input type={type} value={form[key]} onChange={set(key)} className={editCls} />
+      ) : (
+        <p className="font-medium text-card-foreground">{display}</p>
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -16,7 +55,23 @@ function PODetailDialog({ po, onClose }: { po: PurchaseOrder; onClose: () => voi
             <h2 className="text-lg font-heading font-semibold text-card-foreground">{po.poNumber}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">{po.supplier} · {po.project}</p>
           </div>
-          <StatusBadge status={po.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={po.status} />
+            {!editing ? (
+              <button onClick={() => setEditing(true)} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-card-foreground hover:bg-secondary transition-colors">
+                Edit
+              </button>
+            ) : (
+              <>
+                <button onClick={save} disabled={saving} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                  {saving ? "Saving..." : "Save"}
+                </button>
+                <button onClick={() => setEditing(false)} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-card-foreground hover:bg-secondary transition-colors">
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -24,26 +79,12 @@ function PODetailDialog({ po, onClose }: { po: PurchaseOrder; onClose: () => voi
               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Created</p>
               <p className="font-medium text-card-foreground">{po.createdDate}</p>
             </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Delivery Date</p>
-              <p className="font-medium text-card-foreground">{po.deliveryDate}</p>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Ship To</p>
-              <p className="font-medium text-card-foreground">{po.shipTo || po.project}</p>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Payment Terms</p>
-              <p className="font-medium text-card-foreground">{po.paymentTerms || "—"}</p>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Requested By</p>
-              <p className="font-medium text-card-foreground">{po.requestedBy || "—"}</p>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Remarks</p>
-              <p className="font-medium text-card-foreground">{po.remarks || "—"}</p>
-            </div>
+            {field("Works Order No", "worksOrder", po.worksOrder || "—")}
+            {field("Delivery Date", "deliveryDate", po.deliveryDate, "date")}
+            {field("Ship To", "shipTo", po.shipTo || po.project)}
+            {field("Payment Terms", "paymentTerms", po.paymentTerms || "—")}
+            {field("Requested By", "requestedBy", po.requestedBy || "—")}
+            <div className="col-span-2">{field("Remarks", "remarks", po.remarks || "—")}</div>
             {po.supplierAddress && (
               <div className="col-span-2 rounded-lg border border-border p-3">
                 <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Vendor Address</p>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X,
+  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import { useAppData } from "@/data/AppDataContext";
@@ -29,6 +29,98 @@ function Field({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-lg border border-border p-3">
       <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
       <p className="text-sm font-medium text-card-foreground break-words">{value}</p>
+    </div>
+  );
+}
+
+// Project popup: contract value expands into main + VO breakdown; cum progress
+// claims expand into the claim-by-claim list (client amendment items 7–9).
+function ProjectDetailBody({ project }: { project: Project }) {
+  const { projects, projectVOs, claims } = useAppData();
+  const [showVOs, setShowVOs] = useState(false);
+  const [showClaims, setShowClaims] = useState(false);
+
+  const tableVOs = projectVOs.filter((v) => v.projectId === project.id || v.projectCode === project.code);
+  const familyKey = (code: string) => code.split(" (")[0].trim().replace(/^[A-Z]+/i, "");
+  const legacyVOs = projects.filter((p) => p.id !== project.id && familyKey(p.code) === familyKey(project.code));
+  const mainContract = Math.max(0, project.budget - tableVOs.reduce((s, v) => s + v.amount, 0));
+
+  const projClaims = claims.filter((c) => c.projectId === project.id || c.projectName === project.name);
+  const cumClaims = projClaims.reduce((s, c) => s + c.amount, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Project Code" value={project.code} />
+        <Field label="Client" value={project.client} />
+        <div className="rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/40 transition-colors" onClick={() => setShowVOs(!showVOs)}>
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Contract Value {tableVOs.length + legacyVOs.length > 0 ? "▾" : ""}</p>
+          <p className="text-sm font-medium text-primary">{formatCurrency(project.budget)}</p>
+        </div>
+        <div className="rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/40 transition-colors" onClick={() => setShowClaims(!showClaims)}>
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Cum Progress Claim {projClaims.length > 0 ? "▾" : ""}</p>
+          <p className="text-sm font-medium text-primary">{formatCurrency(cumClaims)}</p>
+        </div>
+        <Field label="Sales Manager" value={project.manager} />
+        <Field label="Contact" value={project.contactPerson} />
+        <Field label="Client PO" value={project.clientPo || "—"} />
+        <Field label="Awarded / Start" value={project.startDate} />
+        {project.location !== "Singapore" && <div className="col-span-2"><Field label="Site Address" value={project.location} /></div>}
+        {project.companyAddress && <div className="col-span-2"><Field label="Company Address" value={project.companyAddress} /></div>}
+        <div className="col-span-2"><Field label="Scope of Work" value={project.scope} /></div>
+      </div>
+
+      {showVOs && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <div className="bg-secondary/50 px-3 py-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Contract Value Breakdown</div>
+          <div className="divide-y divide-border text-sm">
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-card-foreground">Main Contract</span>
+              <span className="font-medium text-card-foreground">{formatCurrency(mainContract)}</span>
+            </div>
+            {tableVOs.map((vo) => (
+              <div key={vo.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-card-foreground min-w-0 truncate">{vo.voNumber || "VO"}{vo.quotationRef ? ` · ${vo.quotationRef}` : ""}</span>
+                <span className="font-medium text-card-foreground shrink-0">{formatCurrency(vo.amount)}</span>
+              </div>
+            ))}
+            {legacyVOs.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-card-foreground min-w-0 truncate">{p.code}</span>
+                <span className="font-medium text-card-foreground shrink-0">{formatCurrency(p.budget)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between px-3 py-2 bg-secondary/30">
+              <span className="font-semibold text-card-foreground">Total{legacyVOs.length > 0 ? " (family combined)" : ""}</span>
+              <span className="font-bold text-card-foreground">{formatCurrency(project.budget + legacyVOs.reduce((s, p) => s + p.budget, 0))}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClaims && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <div className="bg-secondary/50 px-3 py-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Progress Claims</div>
+          <div className="divide-y divide-border text-sm">
+            {projClaims.length === 0 && <p className="px-3 py-3 text-muted-foreground text-xs">No claims recorded for this project yet.</p>}
+            {projClaims.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-card-foreground min-w-0 truncate">{c.claimNumber} · {c.submittedDate}</span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="font-medium text-card-foreground">{formatCurrency(c.amount)}</span>
+                  <StatusBadge status={c.status} />
+                </span>
+              </div>
+            ))}
+            {projClaims.length > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 bg-secondary/30">
+                <span className="font-semibold text-card-foreground">Cumulative</span>
+                <span className="font-bold text-card-foreground">{formatCurrency(cumClaims)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -114,19 +206,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
             </>
           )}
 
-          {detail.type === "project" && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Project Code" value={detail.item.code} />
-              <Field label="Client" value={detail.item.client} />
-              <Field label="Contract Value" value={formatCurrency(detail.item.budget)} />
-              <Field label="Progress" value={`${detail.item.progress}%`} />
-              <Field label="Sales Manager" value={detail.item.manager} />
-              <Field label="Contact" value={detail.item.contactPerson} />
-              <Field label="Awarded / Start" value={detail.item.startDate} />
-              <Field label="Materials Allocated" value={detail.item.materialsAllocated} />
-              <div className="col-span-2"><Field label="Scope of Work" value={detail.item.scope} /></div>
-            </div>
-          )}
+          {detail.type === "project" && <ProjectDetailBody project={detail.item} />}
 
           {detail.type === "material" && (
             <>
@@ -194,14 +274,30 @@ const PIPELINE: { status: POStatus; label: string }[] = [
   { status: "closed", label: "Closed" },
 ];
 
-function Section({ title, icon, children, className }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Section({ title, icon, children, className, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card shadow-sm", className)}>
-      <div className="flex items-center gap-2 p-4 border-b border-border">
+      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border">
         <span className="text-primary">{icon}</span>
-        <h2 className="text-sm font-heading font-semibold text-card-foreground">{title}</h2>
+        <h2 className="text-sm font-heading font-semibold text-card-foreground flex-1">{title}</h2>
+        {action}
       </div>
       {children}
+    </div>
+  );
+}
+
+function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div className="relative">
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "Search..."}
+        className="w-44 rounded-lg border border-input bg-background pl-8 pr-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+      />
     </div>
   );
 }
@@ -219,30 +315,76 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
 export default function LiveViewPage() {
   const { projects, inventory, purchaseOrders, invoices, claims, alerts, lastSyncedAt, isLoading } = useAppData();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [poSearch, setPoSearch] = useState("");
+  const [projSearch, setProjSearch] = useState("");
+  const [stockSearch, setStockSearch] = useState("");
+  const [invSearch, setInvSearch] = useState("");
+  const [claimSearch, setClaimSearch] = useState("");
+  const [yearFrom, setYearFrom] = useState("");
+  const [yearTo, setYearTo] = useState("");
 
   useEffect(() => {
     document.title = "ConPlus — Live View";
     return () => { document.title = "ConPlus Operations"; };
   }, []);
 
+  const has = (hay: string | null | undefined, needle: string) =>
+    (hay ?? "").toLowerCase().includes(needle.toLowerCase());
+
   const activeProjects = projects.filter((p) => p.status === "active");
   const contractValue = projects.reduce((s, p) => s + p.budget, 0);
   const pendingPOs = purchaseOrders.filter((po) => po.status === "pending" || po.status === "draft");
   const stockIssues = inventory.filter((i) => i.status === "critical" || i.status === "out").length;
-  const lowStock = inventory
-    .filter((i) => (i.status === "low" || i.status === "critical") && i.totalQty > 0)
-    .sort((a, b) => a.totalQty - b.totalQty)
-    .slice(0, 8);
   const outstandingClaims = claims.filter((c) => c.status !== "paid").reduce((s, c) => s + c.amount, 0);
   const unpaidInvoices = invoices.filter((i) => i.status !== "paid" && i.status !== "rejected").length;
 
-  const recentPOs = purchaseOrders.slice(0, 6);
-  const recentClaims = claims.slice(0, 5);
+  const lowStock = useMemo(() => {
+    const base = stockSearch
+      ? inventory.filter((i) => has(i.name, stockSearch) || has(i.supplier, stockSearch) || has(i.code, stockSearch))
+      : inventory.filter((i) => (i.status === "low" || i.status === "critical") && i.totalQty > 0);
+    return [...base].sort((a, b) => a.totalQty - b.totalQty).slice(0, stockSearch ? 15 : 8);
+  }, [inventory, stockSearch]);
 
-  const topProjects = useMemo(
-    () => [...projects].filter((p) => p.status === "active").sort((a, b) => b.budget - a.budget).slice(0, 8),
-    [projects]
-  );
+  const recentPOs = useMemo(() => {
+    const base = poSearch
+      ? purchaseOrders.filter((po) => has(po.poNumber, poSearch) || has(po.supplier, poSearch) || has(po.project, poSearch) || has(po.projectCode, poSearch))
+      : purchaseOrders;
+    return base.slice(0, poSearch ? 15 : 6);
+  }, [purchaseOrders, poSearch]);
+
+  const recentClaims = useMemo(() => {
+    const base = claimSearch
+      ? claims.filter((c) => has(c.claimNumber, claimSearch) || has(c.projectName, claimSearch) || has(c.description, claimSearch))
+      : claims;
+    return base.slice(0, claimSearch ? 15 : 5);
+  }, [claims, claimSearch]);
+
+  const shownInvoices = useMemo(() => {
+    const base = invSearch
+      ? invoices.filter((i) => has(i.invoiceNumber, invSearch) || has(i.vendor, invSearch) || has(i.poMatch, invSearch))
+      : invoices;
+    return base.slice(0, invSearch ? 15 : 8);
+  }, [invoices, invSearch]);
+
+  // Projects: search + From/To (year awarded) filter show ALL matches;
+  // otherwise the default view is the top active projects by contract value.
+  const projFiltered = projSearch !== "" || yearFrom !== "" || yearTo !== "";
+  const topProjects = useMemo(() => {
+    const yearOf = (p: { yearAwarded: string; code: string }) => {
+      const m = (p.yearAwarded || "").match(/\d{4}/);
+      if (m) return parseInt(m[0], 10);
+      const c = p.code.match(/^[A-Z]+(\d{2})/i);
+      return c ? 2000 + parseInt(c[1], 10) : 0;
+    };
+    let base = projects.filter((p) => p.status === "active");
+    if (projSearch) {
+      base = base.filter((p) => has(p.name, projSearch) || has(p.code, projSearch) || has(p.client, projSearch));
+    }
+    if (yearFrom) base = base.filter((p) => yearOf(p) >= parseInt(yearFrom, 10));
+    if (yearTo) base = base.filter((p) => yearOf(p) <= parseInt(yearTo, 10));
+    const sorted = [...base].sort((a, b) => b.budget - a.budget);
+    return projFiltered ? sorted : sorted.slice(0, 8);
+  }, [projects, projSearch, yearFrom, yearTo, projFiltered]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -289,7 +431,11 @@ export default function LiveViewPage() {
         </div>
 
         {/* PO Pipeline */}
-        <Section title="Purchase Order Pipeline" icon={<ShoppingCart className="h-4 w-4" />}>
+        <Section
+          title="Purchase Order Pipeline"
+          icon={<ShoppingCart className="h-4 w-4" />}
+          action={<SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." />}
+        >
           <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-border border-b border-border">
             {PIPELINE.map((col) => {
               const count = purchaseOrders.filter((po) => po.status === col.status).length;
@@ -324,7 +470,17 @@ export default function LiveViewPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Projects */}
-          <Section title="Top Active Projects" icon={<Briefcase className="h-4 w-4" />}>
+          <Section
+            title={projFiltered ? `Projects (${topProjects.length} match)` : "Top Active Projects"}
+            icon={<Briefcase className="h-4 w-4" />}
+            action={
+              <div className="flex items-center gap-1.5">
+                <SearchBox value={projSearch} onChange={setProjSearch} placeholder="Search projects..." />
+                <input type="number" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} placeholder="From" title="Year awarded from" className="w-16 rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
+                <input type="number" value={yearTo} onChange={(e) => setYearTo(e.target.value)} placeholder="To" title="Year awarded to" className="w-16 rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+            }
+          >
             <div className="divide-y divide-border">
               {topProjects.map((p) => (
                 <div key={p.id} onClick={() => setDetail({ type: "project", item: p })} className="px-4 py-3 cursor-pointer hover:bg-secondary/40 transition-colors">
@@ -347,7 +503,11 @@ export default function LiveViewPage() {
           </Section>
 
           {/* Low stock */}
-          <Section title="Stock Watchlist" icon={<Package className="h-4 w-4" />}>
+          <Section
+            title={stockSearch ? "Stock Search" : "Stock Watchlist"}
+            icon={<Package className="h-4 w-4" />}
+            action={<SearchBox value={stockSearch} onChange={setStockSearch} placeholder="Search all stock..." />}
+          >
             <div className="divide-y divide-border">
               {lowStock.length === 0 && (
                 <p className="p-6 text-center text-sm text-muted-foreground">No low-stock items right now.</p>
@@ -368,7 +528,11 @@ export default function LiveViewPage() {
           </Section>
 
           {/* Claims */}
-          <Section title="Claims" icon={<DollarSign className="h-4 w-4" />}>
+          <Section
+            title="Claims"
+            icon={<DollarSign className="h-4 w-4" />}
+            action={<SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." />}
+          >
             <div className="divide-y divide-border">
               {recentClaims.length === 0 && (
                 <p className="p-6 text-center text-sm text-muted-foreground">No claims on record yet — ask Claude to submit one.</p>
@@ -408,7 +572,11 @@ export default function LiveViewPage() {
         </div>
 
         {/* Recent invoices */}
-        <Section title="Supplier Invoices" icon={<FileText className="h-4 w-4" />}>
+        <Section
+          title="Supplier Invoices"
+          icon={<FileText className="h-4 w-4" />}
+          action={<SearchBox value={invSearch} onChange={setInvSearch} placeholder="Search invoices..." />}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -422,7 +590,7 @@ export default function LiveViewPage() {
                 </tr>
               </thead>
               <tbody>
-                {invoices.slice(0, 8).map((inv) => (
+                {shownInvoices.map((inv) => (
                   <tr key={inv.id} onClick={() => setDetail({ type: "invoice", item: inv })} className="border-b border-border last:border-0 cursor-pointer hover:bg-secondary/40 transition-colors">
                     <td className="px-4 py-2.5 font-medium text-primary">{inv.invoiceNumber}</td>
                     <td className="px-4 py-2.5 text-card-foreground">{inv.vendor}</td>

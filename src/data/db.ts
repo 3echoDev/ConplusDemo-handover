@@ -12,6 +12,7 @@ import type {
   Claim,
   ProjectTask,
   DocumentRecord,
+  ProjectVO,
 } from "./sampleData";
 import { timeAgo } from "./sampleData";
 import { buildPOHtml } from "@/lib/poDocument";
@@ -28,12 +29,15 @@ export interface ProjectRow {
   manager: string | null;
   sales_manager: string | null;
   contact_person: string | null;
+  quotation_ref: string | null;
   contract_value: number | null;
   vo_value: number | null;
   total_contract_value: number | null;
   actual_cost: number | null;
   progress: number | null;
   status: string;
+  company_address?: string | null;
+  client_po?: string | null;
   claims_status: string | null;
   alerts_count: number | null;
   year_awarded: string | null;
@@ -90,6 +94,17 @@ export interface PORow {
   delivery_date: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface VORow {
+  id: string;
+  project_id: string;
+  project_code: string | null;
+  vo_number: string | null;
+  quotation_ref: string | null;
+  description: string | null;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
 }
 
 export interface SupplierRow {
@@ -186,6 +201,7 @@ async function selectAll<T>(table: string, query: string, order?: { column: stri
 
 export const fetchProjects = () => selectAll<ProjectRow>("projects", "*", { column: "total_contract_value" });
 export const fetchDocuments = () => selectAll<DocumentRow>("documents", "*", { column: "created_at" });
+export const fetchVOs = () => selectAll<VORow>("project_vos", "*", { column: "created_at", ascending: true });
 export const fetchMaterials = () => selectAll<MaterialRow>("materials", "*", { column: "qty_on_hand" });
 export const fetchAllocations = () => selectAll<AllocationRow>("material_allocations", "*", { column: "updated_at" });
 export const fetchPOs = () => selectAll<PORow>("purchase_orders", "*", { column: "created_date" });
@@ -247,6 +263,10 @@ export function mapProject(row: ProjectRow, allocCount: number, alertCount: numb
     claimsStatus: (row.claims_status ?? "pending") as Project["claimsStatus"],
     alerts: alertCount || (row.alerts_count ?? 0),
     location: row.location ?? "Singapore",
+    companyAddress: row.company_address ?? "",
+    clientPo: row.client_po ?? "",
+    quotationRef: row.quotation_ref ?? "",
+    yearAwarded: row.year_awarded ?? "",
     startDate: row.start_date ?? row.year_awarded ?? "—",
     endDate: row.end_date ?? "—",
     scope: row.scope ?? "—",
@@ -364,6 +384,19 @@ export function mapAlert(row: AlertRow): Alert {
   };
 }
 
+export function mapVO(row: VORow): ProjectVO {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    projectCode: row.project_code ?? "",
+    voNumber: row.vo_number ?? "",
+    quotationRef: row.quotation_ref ?? "",
+    description: row.description ?? "",
+    amount: row.amount,
+    status: row.status,
+  };
+}
+
 export function mapDocument(row: DocumentRow): DocumentRecord {
   return {
     id: row.id,
@@ -435,6 +468,7 @@ export interface CreatePOInput {
   projectCode: string;
   projectName: string;
   deliveryDate: string;
+  worksOrder: string;
   shipTo: string;
   paymentTerms: string;
   requestedBy: string;
@@ -452,6 +486,7 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
     project_id: input.projectId || null,
     project_code: input.projectCode,
     project_site: input.projectName,
+    works_order: input.worksOrder || null,
     supplier_name: input.supplierName,
     status: "pending",
     total_amount: subtotal,
@@ -507,7 +542,7 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
     project: input.projectName,
     projectId: input.projectId,
     projectCode: input.projectCode,
-    worksOrder: "",
+    worksOrder: input.worksOrder,
     shipTo: input.shipTo,
     paymentTerms: input.paymentTerms,
     requestedBy: input.requestedBy,
@@ -682,31 +717,84 @@ export async function dbRegisterInvoiceUpload(file: File): Promise<void> {
   });
 }
 
+export interface NewVOInput {
+  voNumber: string;
+  quotationRef: string;
+  amount: number;
+}
+
 export interface CreateProjectInput {
   projectCode: string;
   name: string;
   clientName: string;
+  clientPo: string;
   scope: string;
   salesManager: string;
   contractValue: number;
-  voValue: number;
+  siteAddress: string;
+  companyAddress: string;
   startDate: string;
+  vos: NewVOInput[];
 }
 
 export async function dbCreateProject(input: CreateProjectInput): Promise<void> {
-  const { error } = await supabase.from("projects").insert({
+  const insertBody: Record<string, unknown> = {
     project_code: input.projectCode,
     name: input.name,
     client_name: input.clientName || null,
+    client_po: input.clientPo || null,
     scope: input.scope || null,
     sales_manager: input.salesManager || null,
     contract_value: input.contractValue,
-    vo_value: input.voValue,
-    total_contract_value: input.contractValue + input.voValue,
+    vo_value: 0,
+    total_contract_value: input.contractValue,
+    location: input.siteAddress || null,
+    company_address: input.companyAddress || null,
     year_awarded: String(new Date().getFullYear()),
     start_date: input.startDate || null,
     status: "active",
-  });
+  };
+  const { data: proj, error } = await supabase.from("projects").insert(insertBody).select("id").single();
+  if (error) throw new Error(error.message);
+
+  const vos = input.vos.filter((v) => v.amount > 0 || v.quotationRef.trim() !== "");
+  if (vos.length > 0) {
+    // The DB trigger recomputes vo_value and total_contract_value on insert.
+    const { error: voErr } = await supabase.from("project_vos").insert(
+      vos.map((v, i) => ({
+        project_id: proj.id,
+        project_code: input.projectCode,
+        vo_number: v.voNumber || `VO${i + 1}`,
+        quotation_ref: v.quotationRef || null,
+        amount: v.amount,
+      }))
+    );
+    if (voErr) throw new Error(voErr.message);
+  }
+}
+
+export interface POFieldUpdates {
+  worksOrder: string;
+  deliveryDate: string;
+  shipTo: string;
+  paymentTerms: string;
+  requestedBy: string;
+  remarks: string;
+}
+
+export async function dbUpdatePOFields(poId: string, f: POFieldUpdates): Promise<void> {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({
+      works_order: f.worksOrder || null,
+      delivery_date: f.deliveryDate || null,
+      ship_to: f.shipTo || null,
+      payment_terms: f.paymentTerms || null,
+      requested_by: f.requestedBy || null,
+      remarks: f.remarks || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", poId);
   if (error) throw new Error(error.message);
 }
 

@@ -15,11 +15,26 @@ export interface Project {
   claimsStatus: "submitted" | "certified" | "paid" | "pending";
   alerts: number;
   location: string;
+  companyAddress: string;
+  clientPo: string;
+  quotationRef: string;
+  yearAwarded: string;
   startDate: string;
   endDate: string;
   scope: string;
   manager: string;
   contactPerson: string;
+}
+
+export interface ProjectVO {
+  id: string;
+  projectId: string;
+  projectCode: string;
+  voNumber: string;
+  quotationRef: string;
+  description: string;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
 }
 
 export interface ProjectAllocation {

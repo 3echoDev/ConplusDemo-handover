@@ -19,6 +19,7 @@ export default function CreatePODialog({ open, onClose }: Props) {
   const [supplier, setSupplier] = useState("");
   const [projectId, setProjectId] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
+  const [worksOrder, setWorksOrder] = useState("");
   const [shipTo, setShipTo] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [requestedBy, setRequestedBy] = useState("");
@@ -57,10 +58,11 @@ export default function CreatePODialog({ open, onClose }: Props) {
     if (saving || !supplier || !projectId || !deliveryDate || items.some((i) => !i.material || i.qty <= 0)) return;
     setSaving(true);
     try {
-      await createPO({ supplier, projectId, items, deliveryDate, shipTo, paymentTerms, requestedBy, remarks });
+      await createPO({ supplier, projectId, items, deliveryDate, worksOrder, shipTo, paymentTerms, requestedBy, remarks });
       setSupplier("");
       setProjectId("");
       setDeliveryDate("");
+      setWorksOrder("");
       setShipTo("");
       setPaymentTerms("");
       setRequestedBy("");
@@ -141,6 +143,16 @@ export default function CreatePODialog({ open, onClose }: Props) {
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Works Order No</label>
+              <input
+                type="text"
+                value={worksOrder}
+                onChange={(e) => setWorksOrder(e.target.value)}
+                placeholder="e.g. 25026"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Ship To</label>

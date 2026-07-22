@@ -8,18 +8,23 @@ import { cn } from "@/lib/utils";
 export default function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, inventory, purchaseOrders, projectTasks, materialPrices, isLoading } = useAppData();
+  const { projects, inventory, purchaseOrders, projectTasks, materialPrices, projectVOs, isLoading } = useAppData();
 
   const project = projects.find((p) => p.id === projectId || p.code === projectId);
   const matchesProject = (id: string, code: string) =>
     (project && (id === project.id || (code !== "" && code === project.code))) ?? false;
 
-  // VO / phase grouping: the client's project list stores variation orders as
-  // separate rows like "F22023 (VO)" — group them with their base project.
-  const baseCode = (code: string) => code.split(" (")[0].trim();
-  const family = project ? projects.filter((p) => baseCode(p.code) === baseCode(project.code)) : [];
+  // Grouping (per client convention): a project family shares the same numeric
+  // part — "(VO)"-suffixed rows AND dual-prefix codes (E25067 / F25067) belong
+  // together, while each code is still tracked individually.
+  const familyKey = (code: string) => code.split(" (")[0].trim().replace(/^[A-Z]+/i, "");
+  const family = project ? projects.filter((p) => familyKey(p.code) === familyKey(project.code)) : [];
   const voRows = family.filter((p) => p.id !== project?.id);
   const familyTotal = family.reduce((s, p) => s + p.budget, 0);
+
+  // VOs recorded in the new project_vos table (multiple VOs per project,
+  // each with its own quotation ref; totals auto-sync via DB trigger).
+  const tableVOs = projectVOs.filter((v) => v.projectId === project?.id || (project && v.projectCode === project.code));
 
   const projectMaterials = inventory.filter((i) =>
     i.projectAllocations.some((a) => matchesProject(a.projectId, a.projectCode))
@@ -128,19 +133,57 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Variation Orders / Phases (from the client's project list) */}
-      {voRows.length > 0 && (
+      {/* Addresses & client PO (per client enhancement request) */}
+      {(project.companyAddress || project.clientPo || project.location !== "Singapore") && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Site Address</p>
+            <p className="text-sm text-card-foreground whitespace-pre-line">{project.location}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Company Address</p>
+            <p className="text-sm text-card-foreground whitespace-pre-line">{project.companyAddress || "—"}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Client PO</p>
+            <p className="text-sm text-card-foreground">{project.clientPo || "—"}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-3 mb-1">Quotation Ref</p>
+            <p className="text-sm text-card-foreground">{project.quotationRef || "—"}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Variation Orders — project_vos table + related project rows */}
+      {(tableVOs.length > 0 || voRows.length > 0) && (
         <div className="rounded-xl border border-border bg-card shadow-sm">
           <div className="p-5 border-b border-border flex items-center justify-between">
             <h2 className="text-base font-heading font-semibold text-card-foreground">
-              Variation Orders & Phases ({voRows.length})
+              Variation Orders & Related Codes ({tableVOs.length + voRows.length})
             </h2>
             <div className="text-right">
-              <p className="text-xs text-muted-foreground">Combined Contract Value</p>
-              <p className="text-sm font-bold text-card-foreground">{formatCurrency(familyTotal)}</p>
+              <p className="text-xs text-muted-foreground">This code incl. VOs: {formatCurrency(project.budget)}</p>
+              {voRows.length > 0 && (
+                <p className="text-xs text-muted-foreground">Family combined: <span className="font-bold text-card-foreground">{formatCurrency(familyTotal)}</span></p>
+              )}
             </div>
           </div>
           <div className="divide-y divide-border">
+            {tableVOs.map((vo) => (
+              <div key={vo.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-card-foreground">{vo.voNumber || "VO"}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {vo.quotationRef && <span className="text-primary">{vo.quotationRef}</span>}
+                    {vo.quotationRef && vo.description && " · "}
+                    {vo.description}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm font-semibold text-card-foreground">{formatCurrency(vo.amount)}</span>
+                  <StatusBadge status={vo.status} />
+                </div>
+              </div>
+            ))}
             {voRows.map((vo) => (
               <div
                 key={vo.id}

@@ -10,21 +10,33 @@ const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 const labelCls = "block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5";
 
+interface VORowInput {
+  voNumber: string;
+  quotationRef: string;
+  amount: string;
+}
+
 function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { projects, createProject } = useAppData();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
+  const [clientPo, setClientPo] = useState("");
   const [scope, setScope] = useState("");
   const [salesManager, setSalesManager] = useState("");
   const [contractValue, setContractValue] = useState("");
-  const [voValue, setVoValue] = useState("0");
+  const [siteAddress, setSiteAddress] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [vos, setVos] = useState<VORowInput[]>([]);
   const [saving, setSaving] = useState(false);
 
   if (!open) return null;
   const codeTaken = projects.some((p) => p.code.toLowerCase() === code.trim().toLowerCase());
   const valid = code.trim() !== "" && name.trim() !== "" && !codeTaken;
+
+  const setVo = (i: number, k: keyof VORowInput, v: string) =>
+    setVos(vos.map((row, n) => (n === i ? { ...row, [k]: v } : row)));
 
   const submit = async () => {
     if (!valid || saving) return;
@@ -34,13 +46,17 @@ function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => voi
         projectCode: code.trim(),
         name: name.trim(),
         clientName: client.trim(),
+        clientPo: clientPo.trim(),
         scope: scope.trim(),
         salesManager: salesManager.trim().toUpperCase(),
         contractValue: Number(contractValue) || 0,
-        voValue: Number(voValue) || 0,
+        siteAddress: siteAddress.trim(),
+        companyAddress: companyAddress.trim(),
         startDate,
+        vos: vos.map((v) => ({ voNumber: v.voNumber.trim(), quotationRef: v.quotationRef.trim(), amount: Number(v.amount) || 0 })),
       });
-      setCode(""); setName(""); setClient(""); setScope(""); setSalesManager(""); setContractValue(""); setVoValue("0"); setStartDate("");
+      setCode(""); setName(""); setClient(""); setClientPo(""); setScope(""); setSalesManager("");
+      setContractValue(""); setSiteAddress(""); setCompanyAddress(""); setStartDate(""); setVos([]);
       onClose();
     } catch {
       // toast shown by context
@@ -72,25 +88,61 @@ function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <label className={labelCls}>Project / Site Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tampines Industrial Park B" className={inputCls} />
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className={labelCls}>Client (Main Contractor)</label>
             <input type="text" value={client} onChange={(e) => setClient(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Client PO No</label>
+            <input type="text" value={clientPo} onChange={(e) => setClientPo(e.target.value)} placeholder="e.g. PO-0022344" className={inputCls} />
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls}>Scope of Work</label>
             <input type="text" value={scope} onChange={(e) => setScope(e.target.value)} placeholder="e.g. Supply And Apply Of Epoxy Floor Coating System" className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Site Address</label>
+            <textarea rows={2} value={siteAddress} onChange={(e) => setSiteAddress(e.target.value)} placeholder="Project / site address" className={inputCls} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Company Address (client's registered address)</label>
+            <textarea rows={2} value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Contract Value (SGD)</label>
             <input type="number" min={0} step={0.01} value={contractValue} onChange={(e) => setContractValue(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>VO Value (SGD)</label>
-            <input type="number" min={0} step={0.01} value={voValue} onChange={(e) => setVoValue(e.target.value)} className={inputCls} />
-          </div>
-          <div>
             <label className={labelCls}>Commencement Date</label>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+          </div>
+
+          {/* Variation Orders — each with its own quotation reference */}
+          <div className="sm:col-span-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className={labelCls + " mb-0"}>Variation Orders</label>
+              <button type="button" onClick={() => setVos([...vos, { voNumber: "", quotationRef: "", amount: "" }])} className="text-xs text-primary hover:text-primary/80 font-medium transition-colors">
+                + Add VO
+              </button>
+            </div>
+            {vos.length === 0 && <p className="text-xs text-muted-foreground">None — add VOs now or later; the total contract value updates automatically.</p>}
+            <div className="space-y-2">
+              {vos.map((vo, i) => (
+                <div key={i} className="grid grid-cols-[1fr_2fr_1fr_auto] gap-2 items-center">
+                  <input type="text" value={vo.voNumber} onChange={(e) => setVo(i, "voNumber", e.target.value)} placeholder={`VO${i + 1}`} className={inputCls} />
+                  <input type="text" value={vo.quotationRef} onChange={(e) => setVo(i, "quotationRef", e.target.value)} placeholder="Quotation ref" className={inputCls} />
+                  <input type="number" min={0} step={0.01} value={vo.amount} onChange={(e) => setVo(i, "amount", e.target.value)} placeholder="Amount" className={inputCls} />
+                  <button type="button" onClick={() => setVos(vos.filter((_, n) => n !== i))} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {vos.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Total contract value will be {formatCurrency((Number(contractValue) || 0) + vos.reduce((s, v) => s + (Number(v.amount) || 0), 0))}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-end gap-3 p-5 border-t border-border">
