@@ -3,6 +3,8 @@ import {
   Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
+import ExportMenu from "@/components/ExportMenu";
+import type { ExportColumn } from "@/lib/exportData";
 import { useAppData } from "@/data/AppDataContext";
 import {
   formatCurrency,
@@ -284,6 +286,61 @@ const WO_PIPELINE: { status: WOStatus; label: string }[] = [
   { status: "completed", label: "Completed" },
 ];
 
+const COLS = {
+  works: [
+    { header: "WO No", value: (w: WorksOrder) => w.woNumber },
+    { header: "Project", value: (w: WorksOrder) => w.projectCode },
+    { header: "Client", value: (w: WorksOrder) => w.clientName },
+    { header: "Site", value: (w: WorksOrder) => w.siteAddress },
+    { header: "Areas", value: (w: WorksOrder) => w.areas.length },
+    { header: "Total Sets", value: (w: WorksOrder) => woTotalOf(w) },
+    { header: "Status", value: (w: WorksOrder) => w.status.replace(/_/g, " ") },
+  ] as ExportColumn<WorksOrder>[],
+  pos: [
+    { header: "PO No", value: (p: PurchaseOrder) => p.poNumber },
+    { header: "Supplier", value: (p: PurchaseOrder) => p.supplier },
+    { header: "Project Code", value: (p: PurchaseOrder) => p.projectCode },
+    { header: "Project", value: (p: PurchaseOrder) => p.project },
+    { header: "Works Order", value: (p: PurchaseOrder) => p.worksOrder },
+    { header: "Amount", value: (p: PurchaseOrder) => p.amount },
+    { header: "Status", value: (p: PurchaseOrder) => p.status },
+    { header: "Delivery Date", value: (p: PurchaseOrder) => p.deliveryDate },
+  ] as ExportColumn<PurchaseOrder>[],
+  projects: [
+    { header: "Project Code", value: (p: Project) => p.code },
+    { header: "Project Name", value: (p: Project) => p.name },
+    { header: "Client Name", value: (p: Project) => p.client },
+    { header: "Contract Sum", value: (p: Project) => p.budget },
+    { header: "Actual Cost", value: (p: Project) => p.actual },
+    { header: "Progress %", value: (p: Project) => p.progress },
+    { header: "Claims Status", value: (p: Project) => p.claimsStatus },
+    { header: "Quotation Ref", value: (p: Project) => p.quotationRef },
+    { header: "Year Awarded", value: (p: Project) => p.yearAwarded },
+    { header: "Status", value: (p: Project) => p.status },
+  ] as ExportColumn<Project>[],
+  claims: [
+    { header: "Claim No", value: (c: Claim) => c.claimNumber },
+    { header: "Project", value: (c: Claim) => c.projectName },
+    { header: "Description", value: (c: Claim) => c.description },
+    { header: "Amount", value: (c: Claim) => c.amount },
+    { header: "Submitted", value: (c: Claim) => c.submittedDate },
+    { header: "Certified", value: (c: Claim) => c.certifiedDate ?? "" },
+    { header: "Paid", value: (c: Claim) => c.paidDate ?? "" },
+    { header: "Status", value: (c: Claim) => c.status },
+  ] as ExportColumn<Claim>[],
+  invoices: [
+    { header: "Invoice No", value: (i: Invoice) => i.invoiceNumber },
+    { header: "Supplier", value: (i: Invoice) => i.vendor },
+    { header: "PO Ref", value: (i: Invoice) => i.poMatch ?? "" },
+    { header: "Amount", value: (i: Invoice) => i.amount },
+    { header: "Date", value: (i: Invoice) => i.date },
+    { header: "Status", value: (i: Invoice) => i.status },
+  ] as ExportColumn<Invoice>[],
+};
+
+const woTotalOf = (wo: WorksOrder) =>
+  wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+
 const woTotal = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
 
@@ -462,7 +519,7 @@ export default function LiveViewPage() {
         <Section
           title="Works Orders"
           icon={<ClipboardList className="h-4 w-4" />}
-          action={<SearchBox value={woSearch} onChange={setWoSearch} placeholder="Search WO, project, site..." />}
+          action={<div className="flex items-center gap-1.5"><SearchBox value={woSearch} onChange={setWoSearch} placeholder="Search WO, project, site..." /><ExportMenu rows={woFiltered} columns={COLS.works} title="Works Orders" /></div>}
         >
           <div className="grid grid-cols-3 md:grid-cols-5 divide-x divide-border border-b border-border">
             {WO_PIPELINE.map((col) => {
@@ -550,7 +607,7 @@ export default function LiveViewPage() {
         <Section
           title="Purchase Order Pipeline"
           icon={<ShoppingCart className="h-4 w-4" />}
-          action={<SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." />}
+          action={<div className="flex items-center gap-1.5"><SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." /><ExportMenu rows={recentPOs} columns={COLS.pos} title="Purchase Orders" /></div>}
         >
           <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-border border-b border-border">
             {PIPELINE.map((col) => {
@@ -594,6 +651,7 @@ export default function LiveViewPage() {
                 <SearchBox value={projSearch} onChange={setProjSearch} placeholder="Search projects..." />
                 <input type="number" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} placeholder="From" title="Year awarded from" className="w-16 rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
                 <input type="number" value={yearTo} onChange={(e) => setYearTo(e.target.value)} placeholder="To" title="Year awarded to" className="w-16 rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring" />
+                <ExportMenu rows={topProjects} columns={COLS.projects} title="Project List" />
               </div>
             }
           >
@@ -647,7 +705,7 @@ export default function LiveViewPage() {
           <Section
             title="Claims"
             icon={<DollarSign className="h-4 w-4" />}
-            action={<SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." />}
+            action={<div className="flex items-center gap-1.5"><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={recentClaims} columns={COLS.claims} title="Claims" /></div>}
           >
             <div className="divide-y divide-border">
               {recentClaims.length === 0 && (
@@ -691,7 +749,7 @@ export default function LiveViewPage() {
         <Section
           title="Supplier Invoices"
           icon={<FileText className="h-4 w-4" />}
-          action={<SearchBox value={invSearch} onChange={setInvSearch} placeholder="Search invoices..." />}
+          action={<div className="flex items-center gap-1.5"><SearchBox value={invSearch} onChange={setInvSearch} placeholder="Search invoices..." /><ExportMenu rows={shownInvoices} columns={COLS.invoices} title="Supplier Invoices" /></div>}
         >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
