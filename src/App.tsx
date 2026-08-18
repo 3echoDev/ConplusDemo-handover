@@ -10,6 +10,7 @@ import ProjectsPage from "@/pages/ProjectsPage";
 import ProjectDetailPage from "@/pages/ProjectDetailPage";
 import InventoryPage from "@/pages/InventoryPage";
 import PurchaseOrdersPage from "@/pages/PurchaseOrdersPage";
+import WorksOrdersPage from "@/pages/WorksOrdersPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import LiveViewPage from "@/pages/LiveViewPage";
 import NotFound from "@/pages/NotFound";
@@ -46,6 +47,7 @@ const App = () => (
                       <Route path="/projects" element={<ProjectsPage />} />
                       <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
                       <Route path="/inventory" element={<InventoryPage />} />
+                      <Route path="/works-orders" element={<WorksOrdersPage />} />
                       <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
                       <Route path="*" element={<NotFound />} />

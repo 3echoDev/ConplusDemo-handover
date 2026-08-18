@@ -13,6 +13,8 @@ import type {
   ProjectTask,
   DocumentRecord,
   ProjectVO,
+  WorksOrder,
+  WOStatus,
 } from "./sampleData";
 import {
   fetchProjects,
@@ -26,6 +28,9 @@ import {
   fetchTasks,
   fetchDocuments,
   fetchVOs,
+  fetchWorksOrders,
+  fetchWOAreas,
+  fetchWOLines,
   fetchSuppliers,
   fetchTeamMemberNames,
   mapProject,
@@ -37,6 +42,7 @@ import {
   mapTask,
   mapDocument,
   mapVO,
+  mapWorksOrder,
   dbCreatePO,
   dbUpdatePOStatus,
   dbUpdatePOFields,
@@ -49,10 +55,14 @@ import {
   dbRegisterInvoiceUpload,
   dbCreateProject,
   dbResolveAlert,
+  dbCreateWorksOrder,
+  dbUpdateWOStatus,
+  nextWONumber,
   type AddMaterialInput,
   type CreateProjectInput,
   type POFieldUpdates,
   type POLineRow,
+  type CreateWOInput,
 } from "./db";
 
 // Poll so that changes made outside the app (e.g. by Claude via MCP) show up live.
@@ -80,6 +90,7 @@ interface AppData {
   projectTasks: ProjectTask[];
   documents: DocumentRecord[];
   projectVOs: ProjectVO[];
+  worksOrders: WorksOrder[];
   suppliers: string[];
   supplierDetails: Map<string, { paymentTerms: string; address: string }>;
   teamMembers: string[];
@@ -100,6 +111,9 @@ interface AppData {
   registerInvoiceUpload: (file: File) => Promise<void>;
   createProject: (input: CreateProjectInput) => Promise<void>;
   resolveAlert: (alertId: string) => Promise<void>;
+  createWorksOrder: (input: CreateWOInput) => Promise<void>;
+  updateWOStatus: (woId: string, status: WOStatus) => Promise<void>;
+  getNextWONumber: () => Promise<string>;
 }
 
 const AppDataContext = createContext<AppData | null>(null);
@@ -126,6 +140,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const tasksQ = useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...Q });
   const documentsQ = useQuery({ queryKey: ["documents"], queryFn: fetchDocuments, ...Q });
   const vosQ = useQuery({ queryKey: ["projectVOs"], queryFn: fetchVOs, ...Q });
+  const wosQ = useQuery({ queryKey: ["worksOrders"], queryFn: fetchWorksOrders, ...Q });
+  const woAreasQ = useQuery({ queryKey: ["woAreas"], queryFn: fetchWOAreas, ...Q });
+  const woLinesQ = useQuery({ queryKey: ["woLines"], queryFn: fetchWOLines, ...Q });
   const suppliersQ = useQuery({ queryKey: ["suppliers"], queryFn: fetchSuppliers, staleTime: 5 * 60_000 });
   const teamQ = useQuery({ queryKey: ["teamMembers"], queryFn: fetchTeamMemberNames, staleTime: 5 * 60_000 });
 
@@ -234,6 +251,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const projectTasks = useMemo(() => (tasksQ.data ?? []).map(mapTask), [tasksQ.data]);
   const documents = useMemo(() => (documentsQ.data ?? []).map(mapDocument), [documentsQ.data]);
   const projectVOs = useMemo(() => (vosQ.data ?? []).map(mapVO), [vosQ.data]);
+
+  const worksOrders = useMemo(
+    () => (wosQ.data ?? []).map((w) => mapWorksOrder(w, woAreasQ.data ?? [], woLinesQ.data ?? [])),
+    [wosQ.data, woAreasQ.data, woLinesQ.data],
+  );
 
   /* ── mutations ── */
 
@@ -378,6 +400,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [run]
   );
 
+  const createWorksOrder = useCallback(
+    (input: CreateWOInput) =>
+      run(() => dbCreateWorksOrder(input), "Works order created", [
+        "worksOrders",
+        "woAreas",
+        "woLines",
+      ]),
+    [run]
+  );
+
+  const updateWOStatus = useCallback(
+    (woId: string, status: WOStatus) =>
+      run(() => dbUpdateWOStatus(woId, status), "Works order updated", ["worksOrders"]),
+    [run]
+  );
+
+  const getNextWONumber = useCallback(() => nextWONumber(), []);
+
   const lastSyncedAt = Math.max(
     projectsQ.dataUpdatedAt,
     materialsQ.dataUpdatedAt,
@@ -398,6 +438,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         projectTasks,
         documents,
         projectVOs,
+        worksOrders,
         suppliers: (suppliersQ.data ?? []).map((s) => s.name),
         supplierDetails: new Map(
           (suppliersQ.data ?? []).map((s) => [s.name, { paymentTerms: s.payment_terms ?? "", address: s.address ?? "" }])
@@ -418,6 +459,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         registerInvoiceUpload,
         createProject,
         resolveAlert,
+        createWorksOrder,
+        updateWOStatus,
+        getNextWONumber,
       }}
     >
       {children}

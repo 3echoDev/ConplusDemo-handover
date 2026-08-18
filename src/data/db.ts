@@ -13,6 +13,10 @@ import type {
   ProjectTask,
   DocumentRecord,
   ProjectVO,
+  WorksOrder,
+  WorksOrderArea,
+  WorksOrderLine,
+  WOStatus,
 } from "./sampleData";
 import { timeAgo } from "./sampleData";
 import { buildPOHtml } from "@/lib/poDocument";
@@ -188,6 +192,50 @@ export interface TaskRow {
   completed_date: string | null;
 }
 
+export interface WORow {
+  id: string;
+  wo_number: string;
+  project_id: string;
+  project_code: string | null;
+  client_name: string | null;
+  job_no: string | null;
+  sales: string | null;
+  project_ic: string | null;
+  site_address: string | null;
+  quotation_ref: string | null;
+  start_date: string | null;
+  status: WOStatus;
+  remarks: string | null;
+  updated_at: string;
+}
+
+export interface WOAreaRow {
+  id: string;
+  wo_id: string;
+  seq: number;
+  area_name: string;
+  area_sqm: number | null;
+  ral_colour: string | null;
+  prep_note: string | null;
+}
+
+export interface WOLineRow {
+  id: string;
+  area_id: string;
+  wo_id: string;
+  seq: number;
+  description: string;
+  colour: string | null;
+  dosage: number | null;
+  dosage_unit: string | null;
+  packing_size: number | null;
+  packing_unit: string | null;
+  required_qty: number | null;
+  qty_unit: string | null;
+  is_mix_component: boolean;
+  remarks: string | null;
+}
+
 /* ─────────────── Fetchers ─────────────── */
 
 async function selectAll<T>(table: string, query: string, order?: { column: string; ascending?: boolean }): Promise<T[]> {
@@ -208,6 +256,9 @@ export const fetchPOs = () => selectAll<PORow>("purchase_orders", "*", { column:
 export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price");
 export const fetchInvoices = () => selectAll<InvoiceRow>("supplier_invoices", "*", { column: "invoice_date" });
 export const fetchClaims = () => selectAll<ClaimRow>("claims", "*", { column: "submitted_date" });
+export const fetchWorksOrders = () => selectAll<WORow>("works_orders", "*", { column: "created_at" });
+export const fetchWOAreas = () => selectAll<WOAreaRow>("works_order_areas", "*", { column: "seq", ascending: true });
+export const fetchWOLines = () => selectAll<WOLineRow>("works_order_lines", "*", { column: "seq", ascending: true });
 export const fetchTasks = () => selectAll<TaskRow>("project_tasks", "*", { column: "due_date", ascending: true });
 
 export async function fetchAlerts(): Promise<AlertRow[]> {
@@ -395,6 +446,67 @@ export function mapVO(row: VORow): ProjectVO {
     amount: row.amount,
     status: row.status,
   };
+}
+
+export function mapWorksOrder(row: WORow, areas: WOAreaRow[], lines: WOLineRow[]): WorksOrder {
+  const woAreas: WorksOrderArea[] = areas
+    .filter((a) => a.wo_id === row.id)
+    .sort((a, b) => a.seq - b.seq)
+    .map((a) => ({
+      id: a.id,
+      seq: a.seq,
+      areaName: a.area_name,
+      areaSqm: a.area_sqm,
+      ralColour: a.ral_colour ?? "",
+      prepNote: a.prep_note ?? "",
+      lines: lines
+        .filter((l) => l.area_id === a.id)
+        .sort((x, y) => x.seq - y.seq)
+        .map(
+          (l): WorksOrderLine => ({
+            id: l.id,
+            areaId: l.area_id,
+            seq: l.seq,
+            description: l.description,
+            colour: l.colour ?? "",
+            dosage: l.dosage,
+            dosageUnit: l.dosage_unit ?? "kg/m2",
+            packingSize: l.packing_size,
+            packingUnit: l.packing_unit ?? "kg/set",
+            requiredQty: l.required_qty,
+            qtyUnit: l.qty_unit ?? "sets",
+            isMixComponent: l.is_mix_component,
+            remarks: l.remarks ?? "",
+          }),
+        ),
+    }));
+
+  return {
+    id: row.id,
+    woNumber: row.wo_number,
+    projectId: row.project_id,
+    projectCode: row.project_code ?? "",
+    clientName: row.client_name ?? "",
+    jobNo: row.job_no ?? "",
+    sales: row.sales ?? "",
+    projectIc: row.project_ic ?? "",
+    siteAddress: row.site_address ?? "",
+    quotationRef: row.quotation_ref ?? "",
+    startDate: row.start_date ?? undefined,
+    status: row.status,
+    remarks: row.remarks ?? "",
+    areas: woAreas,
+  };
+}
+
+/** area x dosage / packing, rounded up. Mirrors calc_wo_line_qty() in Postgres. */
+export function calcRequiredQty(
+  areaSqm: number | null,
+  dosage: number | null,
+  packing: number | null,
+): number | null {
+  if (areaSqm == null || dosage == null || packing == null || packing === 0) return null;
+  return Math.ceil((areaSqm * dosage) / packing);
 }
 
 export function mapDocument(row: DocumentRow): DocumentRecord {
@@ -804,4 +916,118 @@ export async function dbResolveAlert(alertId: string): Promise<void> {
     .update({ is_resolved: true, resolved_at: new Date().toISOString() })
     .eq("id", alertId);
   if (error) throw new Error(error.message);
+}
+
+/* ─────────────── Works Orders ─────────────── */
+
+export interface CreateWOAreaInput {
+  areaName: string;
+  areaSqm: number | null;
+  ralColour: string;
+  prepNote: string;
+  lines: {
+    description: string;
+    colour: string;
+    dosage: number | null;
+    packingSize: number | null;
+    requiredQty: number | null;
+    isMixComponent: boolean;
+    remarks: string;
+  }[];
+}
+
+export interface CreateWOInput {
+  woNumber: string;
+  projectId: string;
+  projectCode: string;
+  clientName: string;
+  jobNo: string;
+  sales: string;
+  projectIc: string;
+  siteAddress: string;
+  quotationRef: string;
+  startDate: string;
+  remarks: string;
+  areas: CreateWOAreaInput[];
+}
+
+export async function dbCreateWorksOrder(input: CreateWOInput): Promise<string> {
+  const { data: wo, error: woErr } = await supabase
+    .from("works_orders")
+    .insert({
+      wo_number: input.woNumber,
+      project_id: input.projectId,
+      project_code: input.projectCode || null,
+      client_name: input.clientName || null,
+      job_no: input.jobNo || null,
+      sales: input.sales || null,
+      project_ic: input.projectIc || null,
+      site_address: input.siteAddress || null,
+      quotation_ref: input.quotationRef || null,
+      start_date: input.startDate || null,
+      status: "created",
+      remarks: input.remarks || null,
+    })
+    .select("id")
+    .single();
+  if (woErr) throw new Error(woErr.message);
+  const woId = (wo as { id: string }).id;
+
+  for (const [i, a] of input.areas.entries()) {
+    const { data: area, error: aErr } = await supabase
+      .from("works_order_areas")
+      .insert({
+        wo_id: woId,
+        seq: i + 1,
+        area_name: a.areaName,
+        area_sqm: a.areaSqm,
+        ral_colour: a.ralColour || null,
+        prep_note: a.prepNote || null,
+      })
+      .select("id")
+      .single();
+    if (aErr) throw new Error(aErr.message);
+    const areaId = (area as { id: string }).id;
+
+    if (a.lines.length) {
+      const { error: lErr } = await supabase.from("works_order_lines").insert(
+        a.lines.map((l, j) => ({
+          area_id: areaId,
+          wo_id: woId,
+          seq: j + 1,
+          description: l.description,
+          colour: l.colour || null,
+          dosage: l.dosage,
+          packing_size: l.packingSize,
+          // left null so the DB trigger computes it; set to override
+          required_qty: l.requiredQty,
+          is_mix_component: l.isMixComponent,
+          remarks: l.remarks || null,
+        })),
+      );
+      if (lErr) throw new Error(lErr.message);
+    }
+  }
+  return woId;
+}
+
+export async function dbUpdateWOStatus(woId: string, status: WOStatus): Promise<void> {
+  const { error } = await supabase
+    .from("works_orders")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", woId);
+  if (error) throw new Error(error.message);
+}
+
+/** Next WO number, continuing the client's existing numbering. */
+export async function nextWONumber(): Promise<string> {
+  const { data, error } = await supabase
+    .from("works_orders")
+    .select("wo_number")
+    .order("wo_number", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const last = data?.[0]?.wo_number as string | undefined;
+  const n = last ? parseInt(last.replace(/\D/g, ""), 10) : 25000;
+  return String((Number.isFinite(n) ? n : 25000) + 1);
 }

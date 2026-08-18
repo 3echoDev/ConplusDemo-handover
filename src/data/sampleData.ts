@@ -37,6 +37,58 @@ export interface ProjectVO {
   status: "pending" | "approved" | "rejected";
 }
 
+export type WOStatus =
+  | "draft"
+  | "created"
+  | "confirmed"
+  | "pending_completion"
+  | "completed"
+  | "pending_invoice"
+  | "cancelled";
+
+export interface WorksOrderLine {
+  id: string;
+  areaId: string;
+  seq: number;
+  description: string;
+  colour: string;
+  dosage: number | null;
+  dosageUnit: string;
+  packingSize: number | null;
+  packingUnit: string;
+  requiredQty: number | null;
+  qtyUnit: string;
+  isMixComponent: boolean;
+  remarks: string;
+}
+
+export interface WorksOrderArea {
+  id: string;
+  seq: number;
+  areaName: string;
+  areaSqm: number | null;
+  ralColour: string;
+  prepNote: string;
+  lines: WorksOrderLine[];
+}
+
+export interface WorksOrder {
+  id: string;
+  woNumber: string;
+  projectId: string;
+  projectCode: string;
+  clientName: string;
+  jobNo: string;
+  sales: string;
+  projectIc: string;
+  siteAddress: string;
+  quotationRef: string;
+  startDate?: string;
+  status: WOStatus;
+  remarks: string;
+  areas: WorksOrderArea[];
+}
+
 export interface ProjectAllocation {
   projectId: string;
   projectCode: string;

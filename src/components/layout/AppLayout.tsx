@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, ShoppingCart, FileText, Menu, X, Bell, RefreshCw, Building2, FolderKanban, Package, Radio
+  LayoutDashboard, ShoppingCart, FileText, Menu, X, Bell, RefreshCw, Building2, FolderKanban, Package, Radio, ClipboardList
 } from "lucide-react";
 import { useAppData } from "@/data/AppDataContext";
 import { timeAgo } from "@/data/sampleData";
@@ -11,6 +11,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", badge: "VISION" },
   { label: "Projects", icon: FolderKanban, path: "/projects", badge: "VISION" },
   { label: "Inventory", icon: Package, path: "/inventory", badge: "FLOW" },
+  { label: "Works Orders", icon: ClipboardList, path: "/works-orders", badge: "FLOW" },
   { label: "Purchase Orders", icon: ShoppingCart, path: "/purchase-orders", badge: "FLOW" },
   { label: "Documents", icon: FileText, path: "/documents", badge: "ASSET" },
 ];
