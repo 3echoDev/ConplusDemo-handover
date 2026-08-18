@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search,
+  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import { useAppData } from "@/data/AppDataContext";
@@ -9,6 +9,8 @@ import {
   timeAgo,
   type POStatus,
   type PurchaseOrder,
+  type WorksOrder,
+  type WOStatus,
   type Project,
   type InventoryItem,
   type Claim,
@@ -274,6 +276,17 @@ const PIPELINE: { status: POStatus; label: string }[] = [
   { status: "closed", label: "Closed" },
 ];
 
+const WO_PIPELINE: { status: WOStatus; label: string }[] = [
+  { status: "draft", label: "Draft" },
+  { status: "created", label: "Created" },
+  { status: "confirmed", label: "Confirmed" },
+  { status: "pending_completion", label: "In Progress" },
+  { status: "completed", label: "Completed" },
+];
+
+const woTotal = (wo: WorksOrder) =>
+  wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+
 function Section({ title, icon, children, className, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card shadow-sm", className)}>
@@ -313,9 +326,11 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
 }
 
 export default function LiveViewPage() {
-  const { projects, inventory, purchaseOrders, invoices, claims, alerts, lastSyncedAt, isLoading } = useAppData();
+  const { projects, inventory, purchaseOrders, invoices, claims, alerts, worksOrders, lastSyncedAt, isLoading } = useAppData();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [poSearch, setPoSearch] = useState("");
+  const [woSearch, setWoSearch] = useState("");
+  const [openWO, setOpenWO] = useState<string | null>(null);
   const [projSearch, setProjSearch] = useState("");
   const [stockSearch, setStockSearch] = useState("");
   const [invSearch, setInvSearch] = useState("");
@@ -344,6 +359,19 @@ export default function LiveViewPage() {
       : inventory.filter((i) => (i.status === "low" || i.status === "critical") && i.totalQty > 0);
     return [...base].sort((a, b) => a.totalQty - b.totalQty).slice(0, stockSearch ? 15 : 8);
   }, [inventory, stockSearch]);
+
+  const woFiltered = useMemo(() => {
+    const base = woSearch
+      ? worksOrders.filter(
+          (w) =>
+            has(w.woNumber, woSearch) ||
+            has(w.projectCode, woSearch) ||
+            has(w.clientName, woSearch) ||
+            has(w.siteAddress, woSearch),
+        )
+      : worksOrders;
+    return base.slice(0, woSearch ? 15 : 6);
+  }, [worksOrders, woSearch]);
 
   const recentPOs = useMemo(() => {
     const base = poSearch
@@ -429,6 +457,94 @@ export default function LiveViewPage() {
           <Kpi label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} />
           <Kpi label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} />
         </div>
+
+        {/* Works Orders — what each job needs, before anything is ordered */}
+        <Section
+          title="Works Orders"
+          icon={<ClipboardList className="h-4 w-4" />}
+          action={<SearchBox value={woSearch} onChange={setWoSearch} placeholder="Search WO, project, site..." />}
+        >
+          <div className="grid grid-cols-3 md:grid-cols-5 divide-x divide-border border-b border-border">
+            {WO_PIPELINE.map((col) => {
+              const count = worksOrders.filter((w) => w.status === col.status).length;
+              return (
+                <div key={col.status} className="p-4 text-center">
+                  <p className="text-2xl font-heading font-bold text-card-foreground">{count}</p>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-1">{col.label}</p>
+                </div>
+              );
+            })}
+          </div>
+          {woFiltered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No works orders yet — a works order records what a job needs before anything is ordered.
+            </p>
+          ) : (
+            <div className="divide-y divide-border">
+              {woFiltered.map((wo) => {
+                const isOpen = openWO === wo.id;
+                const sets = woTotal(wo);
+                return (
+                  <div key={wo.id}>
+                    <div
+                      onClick={() => setOpenWO(isOpen ? null : wo.id)}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-medium text-primary shrink-0">WO {wo.woNumber}</span>
+                        <span className="text-muted-foreground truncate">{wo.projectCode}</span>
+                        <span className="text-xs text-muted-foreground/70 truncate hidden md:inline">{wo.siteAddress || wo.clientName}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-medium text-card-foreground">{sets} sets</span>
+                        <StatusBadge status={wo.status.replace(/_/g, "-")} />
+                      </div>
+                    </div>
+
+                    {isOpen && (
+                      <div className="bg-secondary/20 px-4 py-3 space-y-3">
+                        {wo.areas.map((area) => (
+                          <div key={area.id} className="rounded-lg border border-border bg-card overflow-hidden">
+                            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border">
+                              <span className="flex items-center gap-1.5 text-sm font-medium text-card-foreground">
+                                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                                {area.areaName}
+                                {area.ralColour && (
+                                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{area.ralColour}</span>
+                                )}
+                              </span>
+                              {area.areaSqm != null && (
+                                <span className="text-xs text-muted-foreground">{area.areaSqm.toLocaleString()} m²</span>
+                              )}
+                            </div>
+                            <table className="w-full text-sm">
+                              <tbody className="divide-y divide-border">
+                                {area.lines.map((l) => (
+                                  <tr key={l.id}>
+                                    <td className="px-3 py-1.5 text-card-foreground">{l.description}</td>
+                                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
+                                      {l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : ""}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
+                                      {l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : ""}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-semibold text-card-foreground whitespace-nowrap">
+                                      {l.isMixComponent ? <span className="text-xs font-normal text-muted-foreground">mix</span> : `${l.requiredQty ?? "—"} ${l.qtyUnit}`}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Section>
 
         {/* PO Pipeline */}
         <Section
