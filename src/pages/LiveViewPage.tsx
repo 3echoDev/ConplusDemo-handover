@@ -11,6 +11,7 @@ import {
   timeAgo,
   type POStatus,
   type PurchaseOrder,
+  type POStatus,
   type WorksOrder,
   type WOStatus,
   type Project,
@@ -348,6 +349,31 @@ const woTotalOf = (wo: WorksOrder) =>
 const woTotal = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
 
+function PipelineCell({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={active ? "Showing this status — click to clear" : `Show only ${label}`}
+      className={`p-4 text-center transition-colors ${
+        active ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "hover:bg-secondary/50"
+      }`}
+    >
+      <p className={`text-2xl font-heading font-bold ${active ? "text-primary" : "text-card-foreground"}`}>{count}</p>
+      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-1">{label}</p>
+    </button>
+  );
+}
+
 function Section({ title, icon, children, className, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card shadow-sm", className)}>
@@ -391,6 +417,8 @@ export default function LiveViewPage() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [poSearch, setPoSearch] = useState("");
   const [woSearch, setWoSearch] = useState("");
+  const [poStatus, setPoStatus] = useState<POStatus | "all">("all");
+  const [woStatus, setWoStatus] = useState<WOStatus | "all">("all");
   const [openWO, setOpenWO] = useState<string | null>(null);
   const [projSearch, setProjSearch] = useState("");
   const [stockSearch, setStockSearch] = useState("");
@@ -431,15 +459,21 @@ export default function LiveViewPage() {
             has(w.siteAddress, woSearch),
         )
       : worksOrders;
-    return base.slice(0, woSearch ? 15 : 6);
-  }, [worksOrders, woSearch]);
+    const withStatus = woStatus === "all" ? base : base.filter((w) => w.status === woStatus);
+    const filtering = woSearch !== "" || woStatus !== "all";
+    return withStatus.slice(0, filtering ? 40 : 6);
+  }, [worksOrders, woSearch, woStatus]);
 
   const recentPOs = useMemo(() => {
-    const base = poSearch
-      ? purchaseOrders.filter((po) => has(po.poNumber, poSearch) || has(po.supplier, poSearch) || has(po.project, poSearch) || has(po.projectCode, poSearch))
-      : purchaseOrders;
-    return base.slice(0, poSearch ? 15 : 6);
-  }, [purchaseOrders, poSearch]);
+    let base = purchaseOrders;
+    if (poStatus !== "all") base = base.filter((po) => po.status === poStatus);
+    if (poSearch)
+      base = base.filter(
+        (po) => has(po.poNumber, poSearch) || has(po.supplier, poSearch) || has(po.project, poSearch) || has(po.projectCode, poSearch),
+      );
+    const filtering = poSearch !== "" || poStatus !== "all";
+    return base.slice(0, filtering ? 40 : 6);
+  }, [purchaseOrders, poSearch, poStatus]);
 
   const recentClaims = useMemo(() => {
     const base = claimSearch
@@ -525,16 +559,22 @@ export default function LiveViewPage() {
           icon={<ClipboardList className="h-4 w-4" />}
           action={<div className="flex items-center gap-1.5"><SearchBox value={woSearch} onChange={setWoSearch} placeholder="Search WO, project, site..." /><ExportMenu rows={woFiltered} columns={COLS.works} title="Works Orders" /></div>}
         >
-          <div className="grid grid-cols-3 md:grid-cols-5 divide-x divide-border border-b border-border">
-            {WO_PIPELINE.map((col) => {
-              const count = worksOrders.filter((w) => w.status === col.status).length;
-              return (
-                <div key={col.status} className="p-4 text-center">
-                  <p className="text-2xl font-heading font-bold text-card-foreground">{count}</p>
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-1">{col.label}</p>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-border border-b border-border">
+            <PipelineCell
+              label="All"
+              count={worksOrders.length}
+              active={woStatus === "all"}
+              onClick={() => setWoStatus("all")}
+            />
+            {WO_PIPELINE.map((col) => (
+              <PipelineCell
+                key={col.status}
+                label={col.label}
+                count={worksOrders.filter((w) => w.status === col.status).length}
+                active={woStatus === col.status}
+                onClick={() => setWoStatus(woStatus === col.status ? "all" : col.status)}
+              />
+            ))}
           </div>
           {woFiltered.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -627,16 +667,22 @@ export default function LiveViewPage() {
           icon={<ShoppingCart className="h-4 w-4" />}
           action={<div className="flex items-center gap-1.5"><SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." /><ExportMenu rows={recentPOs} columns={COLS.pos} title="Purchase Orders" /></div>}
         >
-          <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-border border-b border-border">
-            {PIPELINE.map((col) => {
-              const count = purchaseOrders.filter((po) => po.status === col.status).length;
-              return (
-                <div key={col.status} className="p-4 text-center">
-                  <p className="text-2xl font-heading font-bold text-card-foreground">{count}</p>
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-1">{col.label}</p>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-4 md:grid-cols-7 divide-x divide-border border-b border-border">
+            <PipelineCell
+              label="All"
+              count={purchaseOrders.length}
+              active={poStatus === "all"}
+              onClick={() => setPoStatus("all")}
+            />
+            {PIPELINE.map((col) => (
+              <PipelineCell
+                key={col.status}
+                label={col.label}
+                count={purchaseOrders.filter((po) => po.status === col.status).length}
+                active={poStatus === col.status}
+                onClick={() => setPoStatus(poStatus === col.status ? "all" : col.status)}
+              />
+            ))}
           </div>
           <div className="divide-y divide-border">
             {recentPOs.map((po) => (
