@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, FileSpreadsheet } from "lucide-react";
 import { printWO, exportWOToExcel } from "@/lib/woDocument";
+import ActivityLog from "@/components/ActivityLog";
 import { useAppData } from "@/data/AppDataContext";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import CreateWODialog from "@/components/CreateWODialog";
@@ -237,6 +238,10 @@ export default function WorksOrdersPage() {
                           ))}
                         </select>
                       </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <ActivityLog recordId={wo.id} />
                     </div>
                   </div>
                 )}

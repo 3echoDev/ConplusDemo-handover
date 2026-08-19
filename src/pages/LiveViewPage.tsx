@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import ExportMenu from "@/components/ExportMenu";
+import ActivityLog from "@/components/ActivityLog";
 import type { ExportColumn } from "@/lib/exportData";
 import { useAppData } from "@/data/AppDataContext";
 import {
@@ -216,6 +217,8 @@ function ProjectDetailBody({ project }: { project: Project }) {
           ))}
         </div>
       </div>
+
+      <ActivityLog recordId={project.id} />
     </div>
   );
 }
@@ -342,6 +345,8 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
               <Field label="PO Reference" value={detail.item.poMatch ?? "—"} />
             </div>
           )}
+
+          {detail.type !== "claim" && <ActivityLog recordId={detail.item.id} />}
         </div>
       </div>
     </div>
@@ -569,6 +574,7 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
         >
           Edit
         </button>
+        <ActivityLog recordId={claim.id} />
       </div>
     );
   }

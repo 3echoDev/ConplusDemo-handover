@@ -1117,3 +1117,27 @@ export async function nextWONumber(): Promise<string> {
   const n = last ? parseInt(last.replace(/\D/g, ""), 10) : 25000;
   return String((Number.isFinite(n) ? n : 25000) + 1);
 }
+
+/* ─────────────── Activity log ─────────────── */
+
+export interface HistoryRow {
+  id: string;
+  table_name: string;
+  record_id: string;
+  action: "insert" | "update" | "delete";
+  performed_at: string;
+  performed_by_name: string;
+  changed_fields: Record<string, { from: unknown; to: unknown }> | null;
+}
+
+/** Change history for one record, newest first. */
+export async function fetchRecordHistory(recordId: string): Promise<HistoryRow[]> {
+  const { data, error } = await supabase
+    .from("v_record_history")
+    .select("id,table_name,record_id,action,performed_at,performed_by_name,changed_fields")
+    .eq("record_id", recordId)
+    .order("performed_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(`history: ${error.message}`);
+  return (data ?? []) as HistoryRow[];
+}
