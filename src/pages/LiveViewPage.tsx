@@ -42,17 +42,62 @@ function Field({ label, value }: { label: string; value: string | number }) {
 // Project popup: contract value expands into main + VO breakdown; cum progress
 // claims expand into the claim-by-claim list (client amendment items 7–9).
 function ProjectDetailBody({ project }: { project: Project }) {
-  const { projects, projectVOs, claims } = useAppData();
+  const { projects, projectVOs, claims, purchaseOrders, worksOrders, invoices } = useAppData();
   const [showVOs, setShowVOs] = useState(false);
   const [showClaims, setShowClaims] = useState(false);
+  const [docType, setDocType] = useState<DocKind | "all">("all");
 
   const tableVOs = projectVOs.filter((v) => v.projectId === project.id || v.projectCode === project.code);
   const familyKey = (code: string) => code.split(" (")[0].trim().replace(/^[A-Z]+/i, "");
   const legacyVOs = projects.filter((p) => p.id !== project.id && familyKey(p.code) === familyKey(project.code));
   const mainContract = Math.max(0, project.budget - tableVOs.reduce((s, v) => s + v.amount, 0));
 
+  const projPOs = purchaseOrders.filter((p) => p.projectId === project.id || p.projectCode === project.code);
+  const projWOs = worksOrders.filter((w) => w.projectId === project.id || w.projectCode === project.code);
+  const projInvoices = invoices.filter((i) => projPOs.some((p) => p.poNumber === i.poMatch));
+
+  const documents: ProjectDoc[] = [
+    ...(project.quotationRef
+      ? [{ kind: "Quotation" as DocKind, ref: project.quotationRef, date: project.startDate, amount: project.budget, status: "" }]
+      : []),
+    ...projWOs.map((w) => ({
+      kind: "WO" as DocKind,
+      ref: `WO ${w.woNumber}`,
+      date: w.startDate ?? "",
+      amount: null,
+      status: w.status.replace(/_/g, " "),
+    })),
+    ...projPOs.map((p) => ({
+      kind: "PO" as DocKind,
+      ref: p.poNumber,
+      date: p.createdDate,
+      amount: p.amount,
+      status: p.status,
+    })),
+    ...projInvoices.map((i) => ({
+      kind: "Invoice" as DocKind,
+      ref: i.invoiceNumber,
+      date: i.date,
+      amount: i.amount,
+      status: i.status,
+    })),
+  ];
+
   const projClaims = claims.filter((c) => c.projectId === project.id || c.projectName === project.name);
   const cumClaims = projClaims.reduce((s, c) => s + c.amount, 0);
+
+  const allDocs: ProjectDoc[] = [
+    ...documents,
+    ...projClaims.map((c) => ({
+      kind: "Claim" as DocKind,
+      ref: c.claimNumber,
+      date: c.submittedDate,
+      amount: c.amount,
+      status: c.status,
+    })),
+  ].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+  const shownDocs = docType === "all" ? allDocs : allDocs.filter((d) => d.kind === docType);
 
   return (
     <div className="space-y-3">
@@ -127,6 +172,50 @@ function ProjectDetailBody({ project }: { project: Project }) {
           </div>
         </div>
       )}
+
+      {/* All documents for this project, in one place */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-secondary/50 px-3 py-2">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            Documents ({allDocs.length})
+          </span>
+          <div className="flex items-center gap-1.5">
+            <select
+              value={docType}
+              onChange={(e) => setDocType(e.target.value as DocKind | "all")}
+              className="rounded-lg border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="all">All types</option>
+              {DOC_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+            <ExportMenu rows={shownDocs} columns={COLS.docs} title={`${project.code} Documents`} />
+          </div>
+        </div>
+        <div className="divide-y divide-border text-sm">
+          {shownDocs.length === 0 && (
+            <p className="px-3 py-3 text-xs text-muted-foreground">No documents of this type for this project.</p>
+          )}
+          {shownDocs.map((d, i) => (
+            <div key={`${d.kind}-${d.ref}-${i}`} className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {d.kind}
+                </span>
+                <span className="truncate text-card-foreground">{d.ref}</span>
+                {d.date && <span className="shrink-0 text-xs text-muted-foreground">{d.date}</span>}
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                {d.amount != null && <span className="font-medium text-card-foreground">{formatCurrency(d.amount)}</span>}
+                {d.status && <StatusBadge status={d.status} />}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -243,16 +332,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
             </>
           )}
 
-          {detail.type === "claim" && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Project" value={detail.item.projectName} />
-              <Field label="Amount" value={formatCurrency(detail.item.amount)} />
-              <Field label="Submitted" value={detail.item.submittedDate} />
-              <Field label="Certified" value={detail.item.certifiedDate ?? "—"} />
-              <Field label="Paid" value={detail.item.paidDate ?? "—"} />
-              <div className="col-span-2"><Field label="Description" value={detail.item.description || "—"} /></div>
-            </div>
-          )}
+          {detail.type === "claim" && <ClaimDetailBody claim={detail.item} />}
 
           {detail.type === "invoice" && (
             <div className="grid grid-cols-2 gap-3">
@@ -341,6 +421,13 @@ const COLS = {
     { header: "Date", value: (i: Invoice) => i.date },
     { header: "Status", value: (i: Invoice) => i.status },
   ] as ExportColumn<Invoice>[],
+  docs: [
+    { header: "Type", value: (d: ProjectDoc) => d.kind },
+    { header: "Reference", value: (d: ProjectDoc) => d.ref },
+    { header: "Date", value: (d: ProjectDoc) => d.date },
+    { header: "Amount", value: (d: ProjectDoc) => d.amount ?? "" },
+    { header: "Status", value: (d: ProjectDoc) => d.status },
+  ] as ExportColumn<ProjectDoc>[],
 };
 
 /**
@@ -362,11 +449,148 @@ const inRange = (d: string | null | undefined, from: string, to: string) => {
   return true;
 };
 
+type DocKind = "Quotation" | "WO" | "PO" | "Invoice" | "Claim";
+const DOC_KINDS: DocKind[] = ["Quotation", "WO", "PO", "Invoice", "Claim"];
+
+interface ProjectDoc {
+  kind: DocKind;
+  ref: string;
+  date: string;
+  amount: number | null;
+  status: string;
+}
+
 const woTotalOf = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
 
 const woTotal = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+
+function ClaimDetailBody({ claim }: { claim: Claim }) {
+  const { updateClaimFields } = useAppData();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const initial = () => ({
+    claimNo: claim.claimNo != null ? String(claim.claimNo) : "",
+    claimDate: claim.submittedDate && claim.submittedDate !== "—" ? claim.submittedDate : "",
+    totalClaim: claim.totalClaim != null ? String(claim.totalClaim) : "",
+    certifiedAmount: claim.certifiedAmount != null ? String(claim.certifiedAmount) : "",
+    certifiedDate: claim.certifiedDate ?? "",
+    paidDate: claim.paidDate ?? "",
+    remarks: claim.remarks ?? "",
+  });
+  const [draft, setDraft] = useState(initial);
+
+  const cancel = () => {
+    setDraft(initial());
+    setEditing(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateClaimFields(claim.id, draft);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inp = "w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+  const lbl = "text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 block";
+
+  const certified = claim.certifiedAmount;
+  const shortfall = certified != null ? claim.amount - certified : null;
+
+  if (!editing) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Project" value={claim.projectName} />
+          <Field label="Claim No" value={claim.claimNo != null ? String(claim.claimNo) : "—"} />
+          <Field label="Total Claim" value={claim.totalClaim != null ? formatCurrency(claim.totalClaim) : "—"} />
+          <Field label="Claim Amount" value={formatCurrency(claim.amount)} />
+          <Field label="Certified Amount" value={certified != null ? formatCurrency(certified) : "—"} />
+          <Field label="Submitted" value={claim.submittedDate} />
+          <Field label="Certified" value={claim.certifiedDate ?? "—"} />
+          <Field label="Paid" value={claim.paidDate ?? "—"} />
+          <div className="col-span-2">
+            <Field label="Description" value={claim.description || "—"} />
+          </div>
+          {claim.remarks && (
+            <div className="col-span-2">
+              <Field label="Remarks" value={claim.remarks} />
+            </div>
+          )}
+        </div>
+        {shortfall != null && shortfall > 0 && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-card-foreground">
+            Certified {formatCurrency(certified!)} against {formatCurrency(claim.amount)} claimed —
+            <b> {formatCurrency(shortfall)} short.</b>
+          </div>
+        )}
+        <button
+          onClick={() => setEditing(true)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+        >
+          Edit
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Project" value={claim.projectName} />
+        <div>
+          <label className={lbl}>Claim No</label>
+          <input className={inp} inputMode="numeric" value={draft.claimNo} onChange={(e) => setDraft({ ...draft, claimNo: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Claim Date</label>
+          <input type="date" className={inp} value={draft.claimDate} onChange={(e) => setDraft({ ...draft, claimDate: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Total Claim (before retention)</label>
+          <input className={inp} inputMode="decimal" value={draft.totalClaim} onChange={(e) => setDraft({ ...draft, totalClaim: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Certified Amount</label>
+          <input className={inp} inputMode="decimal" placeholder="Can be less than claimed" value={draft.certifiedAmount} onChange={(e) => setDraft({ ...draft, certifiedAmount: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Certified Date</label>
+          <input type="date" className={inp} value={draft.certifiedDate} onChange={(e) => setDraft({ ...draft, certifiedDate: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Paid Date</label>
+          <input type="date" className={inp} value={draft.paidDate} onChange={(e) => setDraft({ ...draft, paidDate: e.target.value })} />
+        </div>
+        <div className="col-span-2">
+          <label className={lbl}>Remarks</label>
+          <input className={inp} value={draft.remarks} onChange={(e) => setDraft({ ...draft, remarks: e.target.value })} />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+        <button
+          onClick={cancel}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ClaimRows({
   rows,

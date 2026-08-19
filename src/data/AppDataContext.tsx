@@ -52,6 +52,7 @@ import {
   dbAllocateMaterial,
   dbCreateClaim,
   dbUpdateClaimStatus,
+  dbUpdateClaimFields,
   dbRegisterInvoiceUpload,
   dbCreateProject,
   dbResolveAlert,
@@ -63,6 +64,7 @@ import {
   type POFieldUpdates,
   type POLineRow,
   type CreateWOInput,
+  type ClaimFieldUpdates,
 } from "./db";
 
 // Poll so that changes made outside the app (e.g. by Claude via MCP) show up live.
@@ -102,6 +104,7 @@ interface AppData {
   createPO: (data: NewPOData) => Promise<void>;
   updatePOStatus: (poId: string, status: POStatus) => Promise<void>;
   updatePOFields: (poId: string, fields: POFieldUpdates) => Promise<void>;
+  updateClaimFields: (claimId: string, fields: ClaimFieldUpdates) => Promise<void>;
   updateInvoiceStatus: (invoiceId: string, status: InvoiceStatus) => Promise<void>;
   updateStock: (itemId: string, newQty: number) => Promise<void>;
   addMaterial: (input: AddMaterialInput) => Promise<void>;
@@ -418,6 +421,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const getNextWONumber = useCallback(() => nextWONumber(), []);
 
+  const updateClaimFields = useCallback(
+    (claimId: string, fields: ClaimFieldUpdates) =>
+      run(() => dbUpdateClaimFields(claimId, fields), "Claim updated", ["claims"]),
+    [run]
+  );
+
   const lastSyncedAt = Math.max(
     projectsQ.dataUpdatedAt,
     materialsQ.dataUpdatedAt,
@@ -450,6 +459,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         createPO,
         updatePOStatus,
         updatePOFields,
+        updateClaimFields,
         updateInvoiceStatus,
         updateStock,
         addMaterial,

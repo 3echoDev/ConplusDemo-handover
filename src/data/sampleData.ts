@@ -178,6 +178,10 @@ export interface Claim {
   projectCode: string;
   projectName: string;
   amount: number;
+  claimNo: number | null;
+  totalClaim: number | null;
+  certifiedAmount: number | null;
+  remarks: string;
   submittedDate: string;
   certifiedDate?: string;
   paidDate?: string;

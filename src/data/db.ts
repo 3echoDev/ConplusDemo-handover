@@ -148,6 +148,11 @@ export interface InvoiceRow {
 export interface ClaimRow {
   id: string;
   claim_number: string | null;
+  claim_no: number | null;
+  claim_date: string | null;
+  total_claim: number | null;
+  certified_amount: number | null;
+  remarks: string | null;
   project_id: string;
   project_code: string | null;
   project_name: string | null;
@@ -411,6 +416,10 @@ export function mapClaim(row: ClaimRow): Claim {
     projectId: row.project_id,
     projectCode: row.project_code ?? "",
     projectName: row.project_name ?? row.project_code ?? "—",
+    claimNo: row.claim_no ?? null,
+    totalClaim: row.total_claim ?? null,
+    certifiedAmount: row.certified_amount ?? null,
+    remarks: row.remarks ?? "",
     amount: row.amount,
     submittedDate: row.submitted_date ?? "—",
     certifiedDate: row.certified_date ?? undefined,
@@ -893,6 +902,35 @@ export async function dbCreateProject(input: CreateProjectInput): Promise<void> 
     );
     if (voErr) throw new Error(voErr.message);
   }
+}
+
+export interface ClaimFieldUpdates {
+  claimNo: string;
+  claimDate: string;
+  totalClaim: string;
+  certifiedAmount: string;
+  certifiedDate: string;
+  paidDate: string;
+  remarks: string;
+}
+
+const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
+
+export async function dbUpdateClaimFields(claimId: string, f: ClaimFieldUpdates): Promise<void> {
+  const { error } = await supabase
+    .from("claims")
+    .update({
+      claim_no: f.claimNo.trim() === "" ? null : parseInt(f.claimNo, 10),
+      claim_date: f.claimDate || null,
+      total_claim: numOrNull(f.totalClaim),
+      certified_amount: numOrNull(f.certifiedAmount),
+      certified_date: f.certifiedDate || null,
+      paid_date: f.paidDate || null,
+      remarks: f.remarks || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", claimId);
+  if (error) throw new Error(error.message);
 }
 
 export interface POFieldUpdates {
