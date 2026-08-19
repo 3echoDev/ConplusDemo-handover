@@ -343,11 +343,74 @@ const COLS = {
   ] as ExportColumn<Invoice>[],
 };
 
+/** Dates are ISO (YYYY-MM-DD), so a string compare is a date compare. */
+const inRange = (d: string | null | undefined, from: string, to: string) => {
+  if (!d) return !from && !to;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+};
+
 const woTotalOf = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
 
 const woTotal = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+
+function DateRange({
+  from,
+  to,
+  onFrom,
+  onTo,
+  label,
+}: {
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="date"
+        value={from}
+        onChange={(e) => onFrom(e.target.value)}
+        title={`${label} from`}
+        className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <span className="text-[10px] text-muted-foreground">to</span>
+      <input
+        type="date"
+        value={to}
+        onChange={(e) => onTo(e.target.value)}
+        title={`${label} to`}
+        className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      {(from || to) && (
+        <button
+          onClick={() => { onFrom(""); onTo(""); }}
+          title="Clear dates"
+          className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ClearChip({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Clear filter"
+      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/20 transition-colors"
+    >
+      Filtered <X className="h-3 w-3" />
+    </button>
+  );
+}
 
 function PipelineCell({
   label,
@@ -402,13 +465,22 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Kpi({ label, value, sub, onClick, active }: {
+  label: string; value: string | number; sub?: string; onClick?: () => void; active?: boolean;
+}) {
+  const Tag = (onClick ? "button" : "div") as "button";
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <Tag
+      onClick={onClick}
+      title={onClick ? `View ${label.toLowerCase()}` : undefined}
+      className={`rounded-xl border bg-card p-4 shadow-sm w-full text-left transition-colors ${
+        active ? "border-primary/50 bg-primary/5" : "border-border"
+      } ${onClick ? "hover:border-primary/40 hover:bg-secondary/40 cursor-pointer" : ""}`}
+    >
       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
       <p className="text-2xl font-heading font-bold text-card-foreground mt-1">{value}</p>
       {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
+    </Tag>
   );
 }
 
@@ -419,6 +491,13 @@ export default function LiveViewPage() {
   const [woSearch, setWoSearch] = useState("");
   const [poStatus, setPoStatus] = useState<POStatus | "all">("all");
   const [woStatus, setWoStatus] = useState<WOStatus | "all">("all");
+  const [claimFilter, setClaimFilter] = useState<"all" | "outstanding">("all");
+  const [invFilter, setInvFilter] = useState<"all" | "open">("all");
+  const [stockOnly, setStockOnly] = useState(false);
+  const [poFrom, setPoFrom] = useState("");
+  const [poTo, setPoTo] = useState("");
+  const [claimFrom, setClaimFrom] = useState("");
+  const [claimTo, setClaimTo] = useState("");
   const [openWO, setOpenWO] = useState<string | null>(null);
   const [projSearch, setProjSearch] = useState("");
   const [stockSearch, setStockSearch] = useState("");
@@ -445,9 +524,12 @@ export default function LiveViewPage() {
   const lowStock = useMemo(() => {
     const base = stockSearch
       ? inventory.filter((i) => has(i.name, stockSearch) || has(i.supplier, stockSearch) || has(i.code, stockSearch))
-      : inventory.filter((i) => (i.status === "low" || i.status === "critical") && i.totalQty > 0);
-    return [...base].sort((a, b) => a.totalQty - b.totalQty).slice(0, stockSearch ? 15 : 8);
-  }, [inventory, stockSearch]);
+      : inventory.filter((i) =>
+          stockOnly ? i.status === "critical" || i.status === "out" : (i.status === "low" || i.status === "critical") && i.totalQty > 0,
+        );
+    const filtering = stockSearch !== "" || stockOnly;
+    return [...base].sort((a, b) => a.totalQty - b.totalQty).slice(0, filtering ? 40 : 8);
+  }, [inventory, stockSearch, stockOnly]);
 
   const woFiltered = useMemo(() => {
     const base = woSearch
@@ -471,23 +553,29 @@ export default function LiveViewPage() {
       base = base.filter(
         (po) => has(po.poNumber, poSearch) || has(po.supplier, poSearch) || has(po.project, poSearch) || has(po.projectCode, poSearch),
       );
-    const filtering = poSearch !== "" || poStatus !== "all";
+    if (poFrom || poTo) base = base.filter((po) => inRange(po.createdDate, poFrom, poTo));
+    const filtering = poSearch !== "" || poStatus !== "all" || poFrom !== "" || poTo !== "";
     return base.slice(0, filtering ? 40 : 6);
-  }, [purchaseOrders, poSearch, poStatus]);
+  }, [purchaseOrders, poSearch, poStatus, poFrom, poTo]);
 
   const recentClaims = useMemo(() => {
     const base = claimSearch
       ? claims.filter((c) => has(c.claimNumber, claimSearch) || has(c.projectName, claimSearch) || has(c.description, claimSearch))
       : claims;
-    return base.slice(0, claimSearch ? 15 : 5);
-  }, [claims, claimSearch]);
+    let scoped = claimFilter === "outstanding" ? base.filter((c) => c.status !== "paid") : base;
+    if (claimFrom || claimTo) scoped = scoped.filter((c) => inRange(c.submittedDate, claimFrom, claimTo));
+    const filtering = claimSearch !== "" || claimFilter !== "all" || claimFrom !== "" || claimTo !== "";
+    return scoped.slice(0, filtering ? 40 : 5);
+  }, [claims, claimSearch, claimFilter, claimFrom, claimTo]);
 
   const shownInvoices = useMemo(() => {
     const base = invSearch
       ? invoices.filter((i) => has(i.invoiceNumber, invSearch) || has(i.vendor, invSearch) || has(i.poMatch, invSearch))
       : invoices;
-    return base.slice(0, invSearch ? 15 : 8);
-  }, [invoices, invSearch]);
+    const scoped = invFilter === "open" ? base.filter((i) => i.status !== "paid" && i.status !== "rejected") : base;
+    const filtering = invSearch !== "" || invFilter !== "all";
+    return scoped.slice(0, filtering ? 40 : 8);
+  }, [invoices, invSearch, invFilter]);
 
   // Projects: search + From/To (year awarded) filter show ALL matches;
   // otherwise the default view is the top active projects by contract value.
@@ -547,10 +635,10 @@ export default function LiveViewPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <Kpi label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
           <Kpi label="Contract Value" value={formatCurrency(contractValue)} />
-          <Kpi label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} />
-          <Kpi label="Stock Issues" value={stockIssues} sub="critical / out" />
-          <Kpi label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} />
-          <Kpi label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} />
+          <Kpi label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
+          <Kpi label="Stock Issues" value={stockIssues} sub="critical / out" active={stockOnly} onClick={() => { setStockOnly(!stockOnly); }} />
+          <Kpi label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
+          <Kpi label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
         </div>
 
         {/* Works Orders — what each job needs, before anything is ordered */}
@@ -665,7 +753,7 @@ export default function LiveViewPage() {
         <Section
           title="Purchase Order Pipeline"
           icon={<ShoppingCart className="h-4 w-4" />}
-          action={<div className="flex items-center gap-1.5"><SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." /><ExportMenu rows={recentPOs} columns={COLS.pos} title="Purchase Orders" /></div>}
+          action={<div className="flex flex-wrap items-center gap-1.5"><DateRange from={poFrom} to={poTo} onFrom={setPoFrom} onTo={setPoTo} label="PO date" /><SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO, supplier..." /><ExportMenu rows={recentPOs} columns={COLS.pos} title="Purchase Orders" /></div>}
         >
           <div className="grid grid-cols-4 md:grid-cols-7 divide-x divide-border border-b border-border">
             <PipelineCell
@@ -744,7 +832,7 @@ export default function LiveViewPage() {
           <Section
             title={stockSearch ? "Stock Search" : "Stock Watchlist"}
             icon={<Package className="h-4 w-4" />}
-            action={<SearchBox value={stockSearch} onChange={setStockSearch} placeholder="Search all stock..." />}
+            action={<div className="flex items-center gap-1.5">{stockOnly && <ClearChip onClick={() => setStockOnly(false)} />}<SearchBox value={stockSearch} onChange={setStockSearch} placeholder="Search all stock..." /></div>}
           >
             <div className="divide-y divide-border">
               {lowStock.length === 0 && (
@@ -769,7 +857,7 @@ export default function LiveViewPage() {
           <Section
             title="Claims"
             icon={<DollarSign className="h-4 w-4" />}
-            action={<div className="flex items-center gap-1.5"><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={recentClaims} columns={COLS.claims} title="Claims" /></div>}
+            action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={recentClaims} columns={COLS.claims} title="Claims" /></div>}
           >
             <div className="divide-y divide-border">
               {recentClaims.length === 0 && (
@@ -813,7 +901,7 @@ export default function LiveViewPage() {
         <Section
           title="Supplier Invoices"
           icon={<FileText className="h-4 w-4" />}
-          action={<div className="flex items-center gap-1.5"><SearchBox value={invSearch} onChange={setInvSearch} placeholder="Search invoices..." /><ExportMenu rows={shownInvoices} columns={COLS.invoices} title="Supplier Invoices" /></div>}
+          action={<div className="flex items-center gap-1.5">{invFilter === "open" && <ClearChip onClick={() => setInvFilter("all")} />}<SearchBox value={invSearch} onChange={setInvSearch} placeholder="Search invoices..." /><ExportMenu rows={shownInvoices} columns={COLS.invoices} title="Supplier Invoices" /></div>}
         >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
