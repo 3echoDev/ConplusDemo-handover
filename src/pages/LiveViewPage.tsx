@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers,
+  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import ExportMenu from "@/components/ExportMenu";
@@ -18,7 +18,8 @@ import {
   type Claim,
   type Invoice,
 } from "@/data/sampleData";
-import { printPO } from "@/lib/poDocument";
+import { printPO, exportPOToExcel } from "@/lib/poDocument";
+import { printWO, exportWOToExcel } from "@/lib/woDocument";
 import { cn } from "@/lib/utils";
 
 type Detail =
@@ -203,6 +204,9 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
                 <span className="text-lg font-heading font-bold text-card-foreground">{formatCurrency(detail.item.amount + detail.item.gst)}</span>
               </div>
               <div className="flex justify-end">
+                <button onClick={() => exportPOToExcel(detail.item)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+                  <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
+                </button>
                 <button onClick={() => printPO(detail.item)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
                   <Printer className="h-4 w-4" /> Print / PDF
                 </button>
@@ -560,6 +564,20 @@ export default function LiveViewPage() {
 
                     {isOpen && (
                       <div className="bg-secondary/20 px-4 py-3 space-y-3">
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); exportWOToExcel(wo); }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+                          >
+                            <FileSpreadsheet className="h-3.5 w-3.5 text-success" /> Excel
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); printWO(wo); }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+                          >
+                            <Printer className="h-3.5 w-3.5" /> Print works order
+                          </button>
+                        </div>
                         {wo.areas.map((area) => (
                           <div key={area.id} className="rounded-lg border border-border bg-card overflow-hidden">
                             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border">

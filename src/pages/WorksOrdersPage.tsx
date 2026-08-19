@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator } from "lucide-react";
+import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, FileSpreadsheet } from "lucide-react";
+import { printWO, exportWOToExcel } from "@/lib/woDocument";
 import { useAppData } from "@/data/AppDataContext";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import CreateWODialog from "@/components/CreateWODialog";
@@ -211,6 +212,18 @@ export default function WorksOrdersPage() {
                         <span className="font-semibold">{total} sets</span>
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => exportWOToExcel(wo)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                        >
+                          <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                        </button>
+                        <button
+                          onClick={() => printWO(wo)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> Print
+                        </button>
                         <span className="text-xs text-muted-foreground">Status</span>
                         <select
                           className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm capitalize"

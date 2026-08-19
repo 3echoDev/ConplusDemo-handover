@@ -96,3 +96,41 @@ export function exportToPdf<T>(rows: T[], cols: ExportColumn<T>[], title: string
   w.focus();
   setTimeout(() => w.print(), 250);
 }
+
+/* ─────────────── Single-record export ─────────────── */
+
+/** A section of a single-record export: a heading plus label/value pairs or a table. */
+export interface RecordSection {
+  heading: string;
+  fields?: { label: string; value: string | number | null | undefined }[];
+  table?: { headers: string[]; rows: (string | number | null | undefined)[][] };
+}
+
+/**
+ * One record to CSV — header fields stacked, then any tables underneath.
+ * Opens in Excel keeping the document's shape rather than flattening to one row.
+ */
+export function exportRecordToExcel(sections: RecordSection[], name: string): void {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines: string[] = [];
+  for (const sec of sections) {
+    lines.push(esc(sec.heading.toUpperCase()));
+    for (const f of sec.fields ?? []) lines.push(`${esc(f.label)},${esc(f.value)}`);
+    if (sec.table) {
+      lines.push(sec.table.headers.map(esc).join(","));
+      for (const r of sec.table.rows) lines.push(r.map(esc).join(","));
+    }
+    lines.push("");
+  }
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}_${stamp()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}

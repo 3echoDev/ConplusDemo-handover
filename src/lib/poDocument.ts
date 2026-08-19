@@ -1,6 +1,7 @@
 // Printable PO form, modelled on the client's "Purchase Order - MISC template"
 // layout (header fields + item table + totals). Print-to-PDF via the browser.
 import type { PurchaseOrder } from "@/data/sampleData";
+import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 
 const money = (n: number) =>
   n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
@@ -34,6 +35,10 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
   .meta div { display: flex; justify-content: space-between; border-bottom: 1px dotted #bbb; padding: 3px 0; }
   .meta span:first-child { color: #555; font-weight: 600; text-transform: uppercase; font-size: 10px; }
   .vendor-addr { font-size: 10px; color: #444; border-bottom: 1px dotted #bbb; padding: 4px 0; margin-bottom: 6px; }
+  .vendor-block { border: 1px solid #ccc; padding: 8px 10px; margin-bottom: 10px; }
+  .vendor-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #666; margin-bottom: 4px; }
+  .vline { display: flex; gap: 10px; font-size: 10px; padding: 2px 0; }
+  .vline span { color: #666; font-weight: 600; text-transform: uppercase; min-width: 92px; }
   .vendor-addr span { font-weight: 700; color: #555; margin-right: 8px; }
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   th { background: #f0f0f0; border: 1px solid #999; padding: 6px; font-size: 10px; text-transform: uppercase; }
@@ -67,7 +72,17 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
     <div><span>Requested By</span><b>${escapeHtml(po.requestedBy || "—")}</b></div>
     <div><span>Status</span><b style="text-transform:capitalize">${escapeHtml(po.status)}</b></div>
   </div>
-  ${po.supplierAddress ? `<div class="vendor-addr"><span>VENDOR ADDRESS</span> ${escapeHtml(po.supplierAddress)}</div>` : ""}
+  ${
+    po.supplierAddress || po.supplierContact || po.supplierPhone || po.supplierEmail
+      ? `<div class="vendor-block">
+           <div class="vendor-title">Vendor Details</div>
+           ${po.supplierAddress ? `<div class="vline"><span>Address</span><b>${escapeHtml(po.supplierAddress)}</b></div>` : ""}
+           ${po.supplierContact ? `<div class="vline"><span>Contact Person</span><b>${escapeHtml(po.supplierContact)}</b></div>` : ""}
+           ${po.supplierPhone ? `<div class="vline"><span>Phone</span><b>${escapeHtml(po.supplierPhone)}</b></div>` : ""}
+           ${po.supplierEmail ? `<div class="vline"><span>Email</span><b>${escapeHtml(po.supplierEmail)}</b></div>` : ""}
+         </div>`
+      : ""
+  }
   ${po.remarks ? `<div class="vendor-addr"><span>REMARKS</span> ${escapeHtml(po.remarks)}</div>` : ""}
   <table>
     <thead>
@@ -103,4 +118,51 @@ export function printPO(po: PurchaseOrder) {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** The same purchase order as a spreadsheet, keeping the template's shape. */
+export function exportPOToExcel(po: PurchaseOrder): void {
+  const sections: RecordSection[] = [
+    {
+      heading: `Purchase Order ${po.poNumber}`,
+      fields: [
+        { label: "PO Date", value: po.createdDate },
+        { label: "Vendor", value: po.supplier },
+        { label: "Required Date", value: po.deliveryDate },
+        { label: "Project Site", value: po.project },
+        { label: "Project Code", value: po.projectCode },
+        { label: "Works Order", value: po.worksOrder },
+        { label: "Ship To", value: po.shipTo || po.project },
+        { label: "Payment Terms", value: po.paymentTerms },
+        { label: "Requested By", value: po.requestedBy },
+        { label: "Status", value: po.status },
+        { label: "Remarks", value: po.remarks },
+      ],
+    },
+    {
+      heading: "Vendor Details",
+      fields: [
+        { label: "Address", value: po.supplierAddress },
+        { label: "Contact Person", value: po.supplierContact },
+        { label: "Phone", value: po.supplierPhone },
+        { label: "Email", value: po.supplierEmail },
+      ],
+    },
+    {
+      heading: "Items",
+      table: {
+        headers: ["S/No", "Item Description", "Qty", "Unit Price", "Amount"],
+        rows: po.items.map((i, n) => [n + 1, i.material, i.qty, i.unitPrice, i.qty * i.unitPrice]),
+      },
+    },
+    {
+      heading: "Totals",
+      fields: [
+        { label: "Subtotal", value: po.amount },
+        { label: "GST (9%)", value: po.gst },
+        { label: "Total", value: po.amount + po.gst },
+      ],
+    },
+  ];
+  exportRecordToExcel(sections, `purchase_order_${po.poNumber}`);
 }
