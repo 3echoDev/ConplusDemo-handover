@@ -182,6 +182,16 @@ export interface Claim {
   totalClaim: number | null;
   certifiedAmount: number | null;
   remarks: string;
+  gst: number | null;
+  totalAmount: number | null;
+  poRef: string;
+  woRef: string;
+  doRef: string;
+  paymentTerms: string;
+  clientName: string;
+  clientAddress: string;
+  contactPerson: string;
+  contactNumber: string;
   submittedDate: string;
   certifiedDate?: string;
   paidDate?: string;

@@ -153,6 +153,16 @@ export interface ClaimRow {
   total_claim: number | null;
   certified_amount: number | null;
   remarks: string | null;
+  gst: number | null;
+  total_amount: number | null;
+  po_ref: string | null;
+  wo_ref: string | null;
+  do_ref: string | null;
+  payment_terms: string | null;
+  client_name: string | null;
+  client_address: string | null;
+  contact_person: string | null;
+  contact_number: string | null;
   project_id: string;
   project_code: string | null;
   project_name: string | null;
@@ -420,6 +430,16 @@ export function mapClaim(row: ClaimRow): Claim {
     totalClaim: row.total_claim ?? null,
     certifiedAmount: row.certified_amount ?? null,
     remarks: row.remarks ?? "",
+    gst: row.gst ?? null,
+    totalAmount: row.total_amount ?? null,
+    poRef: row.po_ref ?? "",
+    woRef: row.wo_ref ?? "",
+    doRef: row.do_ref ?? "",
+    paymentTerms: row.payment_terms ?? "",
+    clientName: row.client_name ?? "",
+    clientAddress: row.client_address ?? "",
+    contactPerson: row.contact_person ?? "",
+    contactNumber: row.contact_number ?? "",
     amount: row.amount,
     submittedDate: row.submitted_date ?? "—",
     certifiedDate: row.certified_date ?? undefined,
@@ -912,6 +932,15 @@ export interface ClaimFieldUpdates {
   certifiedDate: string;
   paidDate: string;
   remarks: string;
+  gst: string;
+  totalAmount: string;
+  poRef: string;
+  woRef: string;
+  doRef: string;
+  paymentTerms: string;
+  clientAddress: string;
+  contactPerson: string;
+  contactNumber: string;
 }
 
 const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
@@ -927,6 +956,15 @@ export async function dbUpdateClaimFields(claimId: string, f: ClaimFieldUpdates)
       certified_date: f.certifiedDate || null,
       paid_date: f.paidDate || null,
       remarks: f.remarks || null,
+      gst: numOrNull(f.gst),
+      total_amount: numOrNull(f.totalAmount),
+      po_ref: f.poRef || null,
+      wo_ref: f.woRef || null,
+      do_ref: f.doRef || null,
+      payment_terms: f.paymentTerms || null,
+      client_address: f.clientAddress || null,
+      contact_person: f.contactPerson || null,
+      contact_number: f.contactNumber || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", claimId);

@@ -435,7 +435,7 @@ const COLS = {
  * Their own data already distinguishes them: progress claims on contract work
  * carry retention and a CLM- number; small maintenance jobs (M-prefix projects,
  * 310xxx/YYYY/MM numbering) are billed once with no retention.
- * This is a DISPLAY rule — if the client confirms internal invoices are really a
+ * This is a DISPLAY rule — if the client confirms Conplus invoices are really a
  * works-order state rather than a document, only this function changes.
  */
 const isInternalInvoice = (c: Claim) =>
@@ -471,6 +471,13 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const { projects } = useAppData();
+  const project = projects.find((p) => p.id === claim.projectId || p.code === claim.projectCode);
+  const clientName = claim.clientName || project?.client || "—";
+  const clientAddress = claim.clientAddress || project?.companyAddress || "—";
+  const contact = claim.contactPerson || project?.contactPerson || "—";
+  const isInvoice = isInternalInvoice(claim);
+
   const initial = () => ({
     claimNo: claim.claimNo != null ? String(claim.claimNo) : "",
     claimDate: claim.submittedDate && claim.submittedDate !== "—" ? claim.submittedDate : "",
@@ -479,6 +486,15 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
     certifiedDate: claim.certifiedDate ?? "",
     paidDate: claim.paidDate ?? "",
     remarks: claim.remarks ?? "",
+    gst: claim.gst != null ? String(claim.gst) : "",
+    totalAmount: claim.totalAmount != null ? String(claim.totalAmount) : "",
+    poRef: claim.poRef ?? "",
+    woRef: claim.woRef ?? "",
+    doRef: claim.doRef ?? "",
+    paymentTerms: claim.paymentTerms ?? "",
+    clientAddress: claim.clientAddress ?? "",
+    contactPerson: claim.contactPerson ?? "",
+    contactNumber: claim.contactNumber ?? "",
   });
   const [draft, setDraft] = useState(initial);
 
@@ -507,6 +523,16 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {isInvoice ? "Conplus Invoice" : "Progress Claim"}
+            </span>
+          </div>
+          <Field label="Client Name" value={clientName} />
+          <Field label="Project Code" value={claim.projectCode || "—"} />
+          <div className="col-span-2"><Field label="Client Address" value={clientAddress} /></div>
+          <Field label="Contact" value={contact} />
+          <Field label="Contact No" value={claim.contactNumber || project?.contactPerson ? claim.contactNumber || "—" : "—"} />
           <Field label="Project" value={claim.projectName} />
           <Field label="Claim No" value={claim.claimNo != null ? String(claim.claimNo) : "—"} />
           <Field label="Total Claim" value={claim.totalClaim != null ? formatCurrency(claim.totalClaim) : "—"} />
@@ -515,6 +541,13 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
           <Field label="Submitted" value={claim.submittedDate} />
           <Field label="Certified" value={claim.certifiedDate ?? "—"} />
           <Field label="Paid" value={claim.paidDate ?? "—"} />
+          <Field label="Amount before GST" value={formatCurrency(claim.amount)} />
+          <Field label="GST (9%)" value={claim.gst != null ? formatCurrency(claim.gst) : "—"} />
+          <Field label="Total Amount" value={claim.totalAmount != null ? formatCurrency(claim.totalAmount) : formatCurrency(claim.amount + (claim.gst ?? 0))} />
+          <Field label="Payment Terms" value={claim.paymentTerms || "—"} />
+          <Field label="PO No" value={claim.poRef || "—"} />
+          <Field label="WO No" value={claim.woRef || "—"} />
+          <Field label="DO No" value={claim.doRef || "—"} />
           <div className="col-span-2">
             <Field label="Description" value={claim.description || "—"} />
           </div>
@@ -568,6 +601,42 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
           <label className={lbl}>Paid Date</label>
           <input type="date" className={inp} value={draft.paidDate} onChange={(e) => setDraft({ ...draft, paidDate: e.target.value })} />
         </div>
+        <div>
+          <label className={lbl}>GST (9%)</label>
+          <input className={inp} inputMode="decimal" value={draft.gst} onChange={(e) => setDraft({ ...draft, gst: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Total Amount</label>
+          <input className={inp} inputMode="decimal" value={draft.totalAmount} onChange={(e) => setDraft({ ...draft, totalAmount: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>PO No</label>
+          <input className={inp} value={draft.poRef} onChange={(e) => setDraft({ ...draft, poRef: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>WO No</label>
+          <input className={inp} value={draft.woRef} onChange={(e) => setDraft({ ...draft, woRef: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>DO No</label>
+          <input className={inp} value={draft.doRef} onChange={(e) => setDraft({ ...draft, doRef: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Payment Terms</label>
+          <input className={inp} value={draft.paymentTerms} onChange={(e) => setDraft({ ...draft, paymentTerms: e.target.value })} />
+        </div>
+        <div className="col-span-2">
+          <label className={lbl}>Client Address</label>
+          <input className={inp} value={draft.clientAddress} onChange={(e) => setDraft({ ...draft, clientAddress: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Contact Person</label>
+          <input className={inp} value={draft.contactPerson} onChange={(e) => setDraft({ ...draft, contactPerson: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Contact No</label>
+          <input className={inp} value={draft.contactNumber} onChange={(e) => setDraft({ ...draft, contactNumber: e.target.value })} />
+        </div>
         <div className="col-span-2">
           <label className={lbl}>Remarks</label>
           <input className={inp} value={draft.remarks} onChange={(e) => setDraft({ ...draft, remarks: e.target.value })} />
@@ -611,7 +680,12 @@ function ClaimRows({
           className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors"
         >
           <div className="min-w-0">
-            <p className="font-medium text-primary">{c.claimNumber}</p>
+            <p className="flex items-center gap-2 font-medium text-primary">
+              {c.claimNumber}
+              <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {isInternalInvoice(c) ? "Conplus Invoice" : "Progress Claim"}
+              </span>
+            </p>
             <p className="text-xs text-muted-foreground truncate">{c.projectName}</p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -836,7 +910,7 @@ export default function LiveViewPage() {
   }, [claims, claimSearch, claimFilter, claimFrom, claimTo]);
 
   const progressClaims = useMemo(() => recentClaims.filter((c) => !isInternalInvoice(c)), [recentClaims]);
-  const internalInvoices = useMemo(() => recentClaims.filter(isInternalInvoice), [recentClaims]);
+  const conplusInvoices = useMemo(() => recentClaims.filter(isInternalInvoice), [recentClaims]);
 
   const shownInvoices = useMemo(() => {
     const base = invSearch
@@ -1132,13 +1206,13 @@ export default function LiveViewPage() {
             <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No progress claims on record yet." />
           </Section>
 
-          {/* Internal Invoices — small jobs billed once, no retention */}
+          {/* Conplus Invoices — small jobs billed once, no retention */}
           <Section
-            title="Internal Invoices"
+            title="Conplus Invoices"
             icon={<FileText className="h-4 w-4" />}
-            action={<ExportMenu rows={internalInvoices} columns={COLS.claims} title="Internal Invoices" />}
+            action={<ExportMenu rows={conplusInvoices} columns={COLS.claims} title="Conplus Invoices" />}
           >
-            <ClaimRows rows={internalInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No internal invoices on record yet." />
+            <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No Conplus invoices on record yet." />
           </Section>
 
           {/* Alerts */}
