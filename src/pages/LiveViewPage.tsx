@@ -343,6 +343,17 @@ const COLS = {
   ] as ExportColumn<Invoice>[],
 };
 
+/**
+ * Progress claim or internal invoice?
+ * Their own data already distinguishes them: progress claims on contract work
+ * carry retention and a CLM- number; small maintenance jobs (M-prefix projects,
+ * 310xxx/YYYY/MM numbering) are billed once with no retention.
+ * This is a DISPLAY rule — if the client confirms internal invoices are really a
+ * works-order state rather than a document, only this function changes.
+ */
+const isInternalInvoice = (c: Claim) =>
+  /^M/i.test(c.projectCode ?? "") || /^\d{6}\//.test(c.claimNumber ?? "");
+
 /** Dates are ISO (YYYY-MM-DD), so a string compare is a date compare. */
 const inRange = (d: string | null | undefined, from: string, to: string) => {
   if (!d) return !from && !to;
@@ -356,6 +367,38 @@ const woTotalOf = (wo: WorksOrder) =>
 
 const woTotal = (wo: WorksOrder) =>
   wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+
+function ClaimRows({
+  rows,
+  onOpen,
+  empty,
+}: {
+  rows: Claim[];
+  onOpen: (c: Claim) => void;
+  empty: string;
+}) {
+  return (
+    <div className="divide-y divide-border">
+      {rows.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">{empty}</p>}
+      {rows.map((c) => (
+        <div
+          key={c.id}
+          onClick={() => onOpen(c)}
+          className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="font-medium text-primary">{c.claimNumber}</p>
+            <p className="text-xs text-muted-foreground truncate">{c.projectName}</p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="font-semibold text-card-foreground">{formatCurrency(c.amount)}</span>
+            <StatusBadge status={c.status} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function DateRange({
   from,
@@ -567,6 +610,9 @@ export default function LiveViewPage() {
     const filtering = claimSearch !== "" || claimFilter !== "all" || claimFrom !== "" || claimTo !== "";
     return scoped.slice(0, filtering ? 40 : 5);
   }, [claims, claimSearch, claimFilter, claimFrom, claimTo]);
+
+  const progressClaims = useMemo(() => recentClaims.filter((c) => !isInternalInvoice(c)), [recentClaims]);
+  const internalInvoices = useMemo(() => recentClaims.filter(isInternalInvoice), [recentClaims]);
 
   const shownInvoices = useMemo(() => {
     const base = invSearch
@@ -853,29 +899,22 @@ export default function LiveViewPage() {
             </div>
           </Section>
 
-          {/* Claims */}
+          {/* Progress Claims — contract work, claimed monthly, retention held */}
           <Section
-            title="Claims"
+            title="Progress Claims"
             icon={<DollarSign className="h-4 w-4" />}
-            action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={recentClaims} columns={COLS.claims} title="Claims" /></div>}
+            action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={progressClaims} columns={COLS.claims} title="Progress Claims" /></div>}
           >
-            <div className="divide-y divide-border">
-              {recentClaims.length === 0 && (
-                <p className="p-6 text-center text-sm text-muted-foreground">No claims on record yet — ask Claude to submit one.</p>
-              )}
-              {recentClaims.map((c) => (
-                <div key={c.id} onClick={() => setDetail({ type: "claim", item: c })} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors">
-                  <div className="min-w-0">
-                    <p className="font-medium text-primary">{c.claimNumber}</p>
-                    <p className="text-xs text-muted-foreground truncate">{c.projectName}</p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-semibold text-card-foreground">{formatCurrency(c.amount)}</span>
-                    <StatusBadge status={c.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No progress claims on record yet." />
+          </Section>
+
+          {/* Internal Invoices — small jobs billed once, no retention */}
+          <Section
+            title="Internal Invoices"
+            icon={<FileText className="h-4 w-4" />}
+            action={<ExportMenu rows={internalInvoices} columns={COLS.claims} title="Internal Invoices" />}
+          >
+            <ClaimRows rows={internalInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No internal invoices on record yet." />
           </Section>
 
           {/* Alerts */}

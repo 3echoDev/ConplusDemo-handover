@@ -121,6 +121,9 @@ export interface PurchaseOrder {
   poNumber: string;
   supplier: string;
   supplierAddress: string;
+  supplierContact: string;
+  supplierPhone: string;
+  supplierEmail: string;
   project: string;
   projectId: string;
   projectCode: string;
@@ -172,6 +175,7 @@ export interface Claim {
   id: string;
   claimNumber: string;
   projectId: string;
+  projectCode: string;
   projectName: string;
   amount: number;
   submittedDate: string;

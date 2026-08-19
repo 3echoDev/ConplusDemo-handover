@@ -115,6 +115,9 @@ export interface SupplierRow {
   name: string;
   payment_terms: string | null;
   address: string | null;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
   is_active: boolean;
 }
 
@@ -275,7 +278,7 @@ export async function fetchAlerts(): Promise<AlertRow[]> {
 export async function fetchSuppliers(): Promise<SupplierRow[]> {
   const { data, error } = await supabase
     .from("suppliers")
-    .select("name,payment_terms,address,is_active")
+    .select("name,payment_terms,address,contact_person,phone,email,is_active")
     .eq("is_active", true)
     .order("name");
   if (error) throw new Error(`suppliers: ${error.message}`);
@@ -361,6 +364,9 @@ export function mapPO(row: PORow, lines: POLineRow[], supplier?: SupplierRow): P
     poNumber: row.po_number,
     supplier: row.supplier_name ?? "—",
     supplierAddress: supplier?.address ?? "",
+    supplierContact: supplier?.contact_person ?? "",
+    supplierPhone: supplier?.phone ?? "",
+    supplierEmail: supplier?.email ?? "",
     project: row.project_site || row.project_code || "—",
     projectId: row.project_id ?? "",
     projectCode: row.project_code ?? "",
@@ -403,6 +409,7 @@ export function mapClaim(row: ClaimRow): Claim {
     id: row.id,
     claimNumber: row.claim_number ?? "—",
     projectId: row.project_id,
+    projectCode: row.project_code ?? "",
     projectName: row.project_name ?? row.project_code ?? "—",
     amount: row.amount,
     submittedDate: row.submitted_date ?? "—",
@@ -651,6 +658,9 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
     poNumber,
     supplier: input.supplierName,
     supplierAddress: "",
+    supplierContact: "",
+    supplierPhone: "",
+    supplierEmail: "",
     project: input.projectName,
     projectId: input.projectId,
     projectCode: input.projectCode,
