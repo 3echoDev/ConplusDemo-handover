@@ -18,6 +18,8 @@ export interface Project {
   companyAddress: string;
   clientPo: string;
   quotationRef: string;
+  retentionPct?: number;
+  retentionCapPct?: number;
   yearAwarded: string;
   startDate: string;
   endDate: string;
@@ -193,6 +195,10 @@ export interface Claim {
   woRef: string;
   doRef: string;
   paymentTerms: string;
+  firstReleasePct: number | null;
+  secondReleasePct: number | null;
+  advancePayment: number | null;
+  advanceRecovery: number | null;
   clientName: string;
   clientAddress: string;
   contactPerson: string;
@@ -202,6 +208,30 @@ export interface Claim {
   paidDate?: string;
   status: "submitted" | "certified" | "paid" | "pending" | "rejected";
   description: string;
+  lines?: ClaimLine[];
+}
+
+export interface ClaimLine {
+  id: string;
+  claimId: string;
+  section: "A" | "B";
+  quotationRef: string;
+  seq: number;
+  pgRef: string;
+  description: string;
+  unit: string;
+  qty: number | null;
+  rate: number | null;
+  contractAmount: number | null;
+  prevQty: number | null;
+  prevAmount: number | null;
+  currQty: number | null;
+  currAmount: number | null;
+  cumQty: number | null;
+  cumAmount: number | null;
+  verifiedQty: number | null;
+  verifiedAmount: number | null;
+  remarks: string;
 }
 
 export interface ProjectTask {

@@ -10,6 +10,7 @@ import type {
   InvoiceStatus,
   Alert,
   Claim,
+  ClaimLine,
   ProjectTask,
   DocumentRecord,
   ProjectVO,
@@ -34,6 +35,8 @@ export interface ProjectRow {
   sales_manager: string | null;
   contact_person: string | null;
   quotation_ref: string | null;
+  retention_pct: number | null;
+  retention_cap_pct: number | null;
   contract_value: number | null;
   vo_value: number | null;
   total_contract_value: number | null;
@@ -159,6 +162,10 @@ export interface ClaimRow {
   wo_ref: string | null;
   do_ref: string | null;
   payment_terms: string | null;
+  first_release_pct: number | null;
+  second_release_pct: number | null;
+  advance_payment: number | null;
+  advance_recovery: number | null;
   client_name: string | null;
   client_address: string | null;
   contact_person: string | null;
@@ -173,6 +180,29 @@ export interface ClaimRow {
   status: string;
   description: string | null;
   updated_at: string;
+}
+
+export interface ClaimLineRow {
+  id: string;
+  claim_id: string;
+  section: string;
+  quotation_ref: string | null;
+  seq: number;
+  pg_ref: string | null;
+  description: string;
+  unit: string | null;
+  qty: number | null;
+  rate: number | null;
+  contract_amount: number | null;
+  prev_qty: number | null;
+  prev_amount: number | null;
+  curr_qty: number | null;
+  curr_amount: number | null;
+  cum_qty: number | null;
+  cum_amount: number | null;
+  verified_qty: number | null;
+  verified_amount: number | null;
+  remarks: string | null;
 }
 
 export interface AlertRow {
@@ -340,6 +370,8 @@ export function mapProject(row: ProjectRow, allocCount: number, alertCount: numb
     companyAddress: row.company_address ?? "",
     clientPo: row.client_po ?? "",
     quotationRef: row.quotation_ref ?? "",
+    retentionPct: row.retention_pct ?? undefined,
+    retentionCapPct: row.retention_cap_pct ?? undefined,
     yearAwarded: row.year_awarded ?? "",
     startDate: row.start_date ?? row.year_awarded ?? "—",
     endDate: row.end_date ?? "—",
@@ -441,6 +473,10 @@ export function mapClaim(row: ClaimRow): Claim {
     woRef: row.wo_ref ?? "",
     doRef: row.do_ref ?? "",
     paymentTerms: row.payment_terms ?? "",
+    firstReleasePct: row.first_release_pct ?? null,
+    secondReleasePct: row.second_release_pct ?? null,
+    advancePayment: row.advance_payment ?? null,
+    advanceRecovery: row.advance_recovery ?? null,
     clientName: row.client_name ?? "",
     clientAddress: row.client_address ?? "",
     contactPerson: row.contact_person ?? "",
@@ -452,6 +488,42 @@ export function mapClaim(row: ClaimRow): Claim {
     status: row.status as Claim["status"],
     description: row.description ?? "",
   };
+}
+
+export function mapClaimLine(row: ClaimLineRow): ClaimLine {
+  return {
+    id: row.id,
+    claimId: row.claim_id,
+    section: (row.section === "B" ? "B" : "A"),
+    quotationRef: row.quotation_ref ?? "",
+    seq: row.seq,
+    pgRef: row.pg_ref ?? "",
+    description: row.description,
+    unit: row.unit ?? "",
+    qty: row.qty ?? null,
+    rate: row.rate ?? null,
+    contractAmount: row.contract_amount ?? null,
+    prevQty: row.prev_qty ?? null,
+    prevAmount: row.prev_amount ?? null,
+    currQty: row.curr_qty ?? null,
+    currAmount: row.curr_amount ?? null,
+    cumQty: row.cum_qty ?? null,
+    cumAmount: row.cum_amount ?? null,
+    verifiedQty: row.verified_qty ?? null,
+    verifiedAmount: row.verified_amount ?? null,
+    remarks: row.remarks ?? "",
+  };
+}
+
+export async function fetchClaimLines(claimId: string): Promise<ClaimLine[]> {
+  const { data, error } = await supabase
+    .from("claim_lines")
+    .select("*")
+    .eq("claim_id", claimId)
+    .order("section", { ascending: true })
+    .order("seq", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as ClaimLineRow[]).map(mapClaimLine);
 }
 
 export function mapAlert(row: AlertRow): Alert {
