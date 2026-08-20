@@ -57,6 +57,8 @@ export interface WorksOrderLine {
   packingSize: number | null;
   packingUnit: string;
   requiredQty: number | null;
+  orderQty: number | null;
+  parentLineId: string | null;
   qtyUnit: string;
   isMixComponent: boolean;
   remarks: string;
@@ -84,6 +86,9 @@ export interface WorksOrder {
   siteAddress: string;
   quotationRef: string;
   startDate?: string;
+  issueDate?: string;
+  siteContact: string;
+  siteContactNumber: string;
   status: WOStatus;
   remarks: string;
   areas: WorksOrderArea[];

@@ -12,7 +12,6 @@ import {
   timeAgo,
   type POStatus,
   type PurchaseOrder,
-  type POStatus,
   type WorksOrder,
   type WOStatus,
   type Project,
@@ -21,7 +20,7 @@ import {
   type Invoice,
 } from "@/data/sampleData";
 import { printPO, exportPOToExcel } from "@/lib/poDocument";
-import { printWO, exportWOToExcel } from "@/lib/woDocument";
+import { printWO, exportWOToExcel, woOrderTotal } from "@/lib/woDocument";
 import { cn } from "@/lib/utils";
 
 type Detail =
@@ -465,11 +464,9 @@ interface ProjectDoc {
   status: string;
 }
 
-const woTotalOf = (wo: WorksOrder) =>
-  wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+const woTotalOf = (wo: WorksOrder) => woOrderTotal(wo);
 
-const woTotal = (wo: WorksOrder) =>
-  wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0);
+const woTotal = (wo: WorksOrder) => woOrderTotal(wo);
 
 function ClaimDetailBody({ claim }: { claim: Claim }) {
   const { updateClaimFields } = useAppData();
@@ -1042,6 +1039,16 @@ export default function LiveViewPage() {
 
                     {isOpen && (
                       <div className="bg-secondary/20 px-4 py-3 space-y-3">
+                        {(wo.siteContact || wo.issueDate) && (
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                            {wo.siteContact && (
+                              <span>Site contact: <span className="text-card-foreground">{wo.siteContact}{wo.siteContactNumber ? ` (${wo.siteContactNumber})` : ""}</span></span>
+                            )}
+                            {wo.issueDate && (
+                              <span>Issued: <span className="text-card-foreground">{wo.issueDate}</span></span>
+                            )}
+                          </div>
+                        )}
                         <div className="flex justify-end gap-1.5">
                           <button
                             onClick={(e) => { e.stopPropagation(); exportWOToExcel(wo); }}
@@ -1072,9 +1079,16 @@ export default function LiveViewPage() {
                             </div>
                             <table className="w-full text-sm">
                               <tbody className="divide-y divide-border">
-                                {area.lines.map((l) => (
-                                  <tr key={l.id}>
-                                    <td className="px-3 py-1.5 text-card-foreground">{l.description}</td>
+                                {area.lines.map((l) => {
+                                  const child = !!l.parentLineId;
+                                  const qty = l.isMixComponent
+                                    ? null
+                                    : l.orderQty != null && l.orderQty !== l.requiredQty
+                                      ? `${l.orderQty} ${l.qtyUnit} (req ${l.requiredQty ?? "—"})`
+                                      : `${l.requiredQty ?? "—"} ${l.qtyUnit}`;
+                                  return (
+                                  <tr key={l.id} className={child ? "bg-secondary/20" : undefined}>
+                                    <td className={`py-1.5 text-card-foreground ${child ? "pl-6 pr-3 text-xs text-muted-foreground" : "px-3"}`}>{child ? "↳ " : ""}{l.description}</td>
                                     <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
                                       {l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : ""}
                                     </td>
@@ -1082,10 +1096,11 @@ export default function LiveViewPage() {
                                       {l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : ""}
                                     </td>
                                     <td className="px-3 py-1.5 text-right font-semibold text-card-foreground whitespace-nowrap">
-                                      {l.isMixComponent ? <span className="text-xs font-normal text-muted-foreground">mix</span> : `${l.requiredQty ?? "—"} ${l.qtyUnit}`}
+                                      {l.isMixComponent ? <span className="text-xs font-normal text-muted-foreground">mix</span> : qty}
                                     </td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>

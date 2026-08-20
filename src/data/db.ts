@@ -222,6 +222,9 @@ export interface WORow {
   site_address: string | null;
   quotation_ref: string | null;
   start_date: string | null;
+  issue_date: string | null;
+  site_contact: string | null;
+  site_contact_number: string | null;
   status: WOStatus;
   remarks: string | null;
   updated_at: string;
@@ -249,6 +252,8 @@ export interface WOLineRow {
   packing_size: number | null;
   packing_unit: string | null;
   required_qty: number | null;
+  order_qty: number | null;
+  parent_line_id: string | null;
   qty_unit: string | null;
   is_mix_component: boolean;
   remarks: string | null;
@@ -510,6 +515,8 @@ export function mapWorksOrder(row: WORow, areas: WOAreaRow[], lines: WOLineRow[]
             packingSize: l.packing_size,
             packingUnit: l.packing_unit ?? "kg/set",
             requiredQty: l.required_qty,
+            orderQty: l.order_qty,
+            parentLineId: l.parent_line_id,
             qtyUnit: l.qty_unit ?? "sets",
             isMixComponent: l.is_mix_component,
             remarks: l.remarks ?? "",
@@ -529,6 +536,9 @@ export function mapWorksOrder(row: WORow, areas: WOAreaRow[], lines: WOLineRow[]
     siteAddress: row.site_address ?? "",
     quotationRef: row.quotation_ref ?? "",
     startDate: row.start_date ?? undefined,
+    issueDate: row.issue_date ?? undefined,
+    siteContact: row.site_contact ?? "",
+    siteContactNumber: row.site_contact_number ?? "",
     status: row.status,
     remarks: row.remarks ?? "",
     areas: woAreas,
@@ -1017,6 +1027,10 @@ export interface CreateWOAreaInput {
     dosage: number | null;
     packingSize: number | null;
     requiredQty: number | null;
+    orderQty: number | null;
+    // Index of this line's parent within the same area's lines array, or null
+    // for a top-level order line. Resolved to a real parent_line_id after insert.
+    parentIndex: number | null;
     isMixComponent: boolean;
     remarks: string;
   }[];
@@ -1033,6 +1047,9 @@ export interface CreateWOInput {
   siteAddress: string;
   quotationRef: string;
   startDate: string;
+  issueDate: string;
+  siteContact: string;
+  siteContactNumber: string;
   remarks: string;
   areas: CreateWOAreaInput[];
 }
@@ -1051,6 +1068,9 @@ export async function dbCreateWorksOrder(input: CreateWOInput): Promise<string> 
       site_address: input.siteAddress || null,
       quotation_ref: input.quotationRef || null,
       start_date: input.startDate || null,
+      issue_date: input.issueDate || null,
+      site_contact: input.siteContact || null,
+      site_contact_number: input.siteContactNumber || null,
       status: "created",
       remarks: input.remarks || null,
     })
@@ -1076,22 +1096,40 @@ export async function dbCreateWorksOrder(input: CreateWOInput): Promise<string> 
     const areaId = (area as { id: string }).id;
 
     if (a.lines.length) {
-      const { error: lErr } = await supabase.from("works_order_lines").insert(
-        a.lines.map((l, j) => ({
-          area_id: areaId,
-          wo_id: woId,
-          seq: j + 1,
-          description: l.description,
-          colour: l.colour || null,
-          dosage: l.dosage,
-          packing_size: l.packingSize,
-          // left null so the DB trigger computes it; set to override
-          required_qty: l.requiredQty,
-          is_mix_component: l.isMixComponent,
-          remarks: l.remarks || null,
-        })),
-      );
+      // Insert lines first (parent_line_id null), returning ids in seq order,
+      // then set each child's parent_line_id from its parentIndex.
+      const { data: inserted, error: lErr } = await supabase
+        .from("works_order_lines")
+        .insert(
+          a.lines.map((l, j) => ({
+            area_id: areaId,
+            wo_id: woId,
+            seq: j + 1,
+            description: l.description,
+            colour: l.colour || null,
+            dosage: l.dosage,
+            packing_size: l.packingSize,
+            // left null so the DB trigger computes it; set to override
+            required_qty: l.requiredQty,
+            order_qty: l.orderQty,
+            is_mix_component: l.isMixComponent,
+            remarks: l.remarks || null,
+          })),
+        )
+        .select("id,seq");
       if (lErr) throw new Error(lErr.message);
+
+      const bySeq = (inserted ?? []).slice().sort((x, y) => x.seq - y.seq);
+      const childUpdates = a.lines
+        .map((l, j) => ({ l, j }))
+        .filter(({ l }) => l.parentIndex != null && bySeq[l.parentIndex!]);
+      for (const { l, j } of childUpdates) {
+        const { error: pErr } = await supabase
+          .from("works_order_lines")
+          .update({ parent_line_id: bySeq[l.parentIndex!].id })
+          .eq("id", bySeq[j].id);
+        if (pErr) throw new Error(pErr.message);
+      }
     }
   }
   return woId;

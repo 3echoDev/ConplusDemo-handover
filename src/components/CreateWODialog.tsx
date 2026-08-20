@@ -15,6 +15,9 @@ interface LineDraft {
   dosage: string;
   packingSize: string;
   overrideQty: string;
+  orderQty: string;
+  // true = this line nests under the line above it (a mix component / variant)
+  childOfPrev: boolean;
   isMixComponent: boolean;
   remarks: string;
 }
@@ -33,6 +36,8 @@ const emptyLine = (): LineDraft => ({
   dosage: "",
   packingSize: "",
   overrideQty: "",
+  orderQty: "",
+  childOfPrev: false,
   isMixComponent: false,
   remarks: "",
 });
@@ -62,6 +67,9 @@ export default function CreateWODialog({ open, onClose }: Props) {
   const [siteAddress, setSiteAddress] = useState("");
   const [quotationRef, setQuotationRef] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [issueDate, setIssueDate] = useState("");
+  const [siteContact, setSiteContact] = useState("");
+  const [siteContactNumber, setSiteContactNumber] = useState("");
   const [remarks, setRemarks] = useState("");
   const [areas, setAreas] = useState<AreaDraft[]>([emptyArea()]);
   const [saving, setSaving] = useState(false);
@@ -137,32 +145,50 @@ export default function CreateWODialog({ open, onClose }: Props) {
         siteAddress,
         quotationRef,
         startDate,
+        issueDate,
+        siteContact,
+        siteContactNumber,
         remarks,
         areas: areas
           .filter((a) => a.areaName.trim() !== "")
-          .map((a) => ({
-            areaName: a.areaName.trim(),
-            areaSqm: num(a.areaSqm),
-            ralColour: a.ralColour,
-            prepNote: a.prepNote,
-            lines: a.lines
-              .filter((l) => l.description.trim() !== "")
-              .map((l) => ({
+          .map((a) => {
+            const kept = a.lines.filter((l) => l.description.trim() !== "");
+            // Resolve each child line to the index of its parent: the nearest
+            // preceding non-child line in the kept list.
+            const parentIndexOf = (idx: number): number | null => {
+              if (!kept[idx].childOfPrev) return null;
+              for (let k = idx - 1; k >= 0; k--) {
+                if (!kept[k].childOfPrev) return k;
+              }
+              return null;
+            };
+            return {
+              areaName: a.areaName.trim(),
+              areaSqm: num(a.areaSqm),
+              ralColour: a.ralColour,
+              prepNote: a.prepNote,
+              lines: kept.map((l, idx) => ({
                 description: l.description.trim(),
                 colour: l.colour,
                 dosage: num(l.dosage),
                 packingSize: num(l.packingSize),
                 // null lets the database trigger compute it
                 requiredQty: l.overrideQty.trim() === "" ? null : num(l.overrideQty),
+                orderQty: num(l.orderQty),
+                parentIndex: parentIndexOf(idx),
                 isMixComponent: l.isMixComponent,
                 remarks: l.remarks,
               })),
-          })),
+            };
+          }),
       });
       onClose();
       setAreas([emptyArea()]);
       setWoNumber("");
       setProjectId("");
+      setIssueDate("");
+      setSiteContact("");
+      setSiteContactNumber("");
     } finally {
       setSaving(false);
     }
@@ -237,6 +263,18 @@ export default function CreateWODialog({ open, onClose }: Props) {
             <div>
               <label className={label}>Start date</label>
               <input type="date" className={field} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div>
+              <label className={label}>Issue date</label>
+              <input type="date" className={field} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+            </div>
+            <div>
+              <label className={label}>Site contact</label>
+              <input className={field} value={siteContact} onChange={(e) => setSiteContact(e.target.value)} />
+            </div>
+            <div>
+              <label className={label}>Site contact no.</label>
+              <input className={field} value={siteContactNumber} onChange={(e) => setSiteContactNumber(e.target.value)} />
             </div>
             <div>
               <label className={label}>Quotation ref</label>
@@ -366,14 +404,38 @@ export default function CreateWODialog({ open, onClose }: Props) {
                           </button>
                         )}
                       </div>
-                      <label className="col-span-full flex items-center gap-1.5 pb-1 text-[11px] text-muted-foreground sm:col-span-7">
-                        <input
-                          type="checkbox"
-                          checked={line.isMixComponent}
-                          onChange={(e) => patchLine(ai, li, { isMixComponent: e.target.checked })}
-                        />
-                        Mix component — part of the mix, not ordered separately
-                      </label>
+                      <div className="col-span-full flex flex-wrap items-center gap-x-4 gap-y-1 pb-1 text-[11px] text-muted-foreground sm:col-span-7">
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={line.isMixComponent}
+                            onChange={(e) => patchLine(ai, li, { isMixComponent: e.target.checked })}
+                          />
+                          Mix component — part of the mix, not ordered separately
+                        </label>
+                        {li > 0 && (
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={line.childOfPrev}
+                              onChange={(e) => patchLine(ai, li, { childOfPrev: e.target.checked })}
+                            />
+                            Nests under the line above
+                          </label>
+                        )}
+                        <label className="flex items-center gap-1.5">
+                          Order qty
+                          <input
+                            className="w-20 rounded-md border border-border bg-background px-2 py-1 text-right"
+                            inputMode="decimal"
+                            placeholder="if ≠ required"
+                            value={line.orderQty}
+                            disabled={line.isMixComponent}
+                            onChange={(e) => patchLine(ai, li, { orderQty: e.target.value })}
+                            title="Set only when the amount to order differs from the required qty (e.g. balance after ex-stock)"
+                          />
+                        </label>
+                      </div>
                     </div>
                   );
                 })}

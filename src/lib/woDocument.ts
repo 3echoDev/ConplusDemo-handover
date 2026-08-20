@@ -6,30 +6,72 @@ import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
-/** Their acknowledge list, per the WO template. */
-const ACKNOWLEDGE = ["Jensen", "Halal", "Seng Tat", "Wendy", "Hnin", "Vincent", "Meredith"];
+/**
+ * Base acknowledge names per the WO template. The WO's own Sales and Project I/C
+ * are appended if not already present, so the signatory list reflects the people
+ * on that order (e.g. Derrick on WO 25068) rather than a fixed roster.
+ * NOTE: confirm the canonical base list with Conplus.
+ */
+const BASE_ACKNOWLEDGE = ["Jensen", "Halal", "Seng Tat", "Wendy", "Hnin", "Vincent"];
 
-export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
-  const totalSets = wo.areas.reduce(
-    (s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0),
+function acknowledgeList(wo: WorksOrder): string[] {
+  const names = [...BASE_ACKNOWLEDGE];
+  for (const n of [wo.sales, wo.projectIc]) {
+    if (n && !names.includes(n)) names.push(n);
+  }
+  return names;
+}
+
+/**
+ * Total sets/units to actually order: skip mix components and nested child lines
+ * (they roll up under a parent), and use order_qty when it differs from required.
+ */
+export function woOrderTotal(wo: WorksOrder): number {
+  return wo.areas.reduce(
+    (s, a) =>
+      s +
+      a.lines.reduce((t, l) => {
+        if (l.isMixComponent || l.parentLineId) return t;
+        const q = l.orderQty != null ? l.orderQty : l.requiredQty ?? 0;
+        return t + q;
+      }, 0),
     0,
   );
+}
+
+export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
+  const totalSets = woOrderTotal(wo);
 
   const areas = wo.areas
     .map((area) => {
-      const rows = area.lines
-        .map(
-          (l, n) => `
-        <tr>
-          <td class="c">${n + 1}</td>
-          <td>${escapeHtml(l.description)}</td>
+      // Order qty cell: if order_qty is set and differs from required, show both,
+      // e.g. the KU 601 "order 15, use rest ex-stock" case on WO 25068.
+      const qtyCell = (l: (typeof area.lines)[number]) => {
+        if (l.isMixComponent) return "—";
+        if (l.orderQty != null && l.orderQty !== l.requiredQty) {
+          return `${l.orderQty} ${escapeHtml(l.qtyUnit)} <small class="req">(req ${l.requiredQty ?? "—"})</small>`;
+        }
+        return `${l.requiredQty ?? "—"} ${escapeHtml(l.qtyUnit)}`;
+      };
+
+      // Top-level order lines carry an S/No; mix components / variants nest
+      // beneath their parent as indented sub-rows without a number.
+      const parents = area.lines.filter((l) => !l.parentLineId);
+      const childrenOf = (id: string) => area.lines.filter((l) => l.parentLineId === id);
+
+      const renderLine = (l: (typeof area.lines)[number], sn: number | null, child: boolean) => `
+        <tr${child ? ' class="sub"' : ""}>
+          <td class="c">${sn ?? ""}</td>
+          <td>${child ? "↳ " : ""}${escapeHtml(l.description)}</td>
           <td class="c">${escapeHtml(l.colour || "—")}</td>
           <td class="r">${l.dosage != null ? `${l.dosage} ${escapeHtml(l.dosageUnit)}` : "—"}</td>
           <td class="r">${l.packingSize != null ? `${l.packingSize} ${escapeHtml(l.packingUnit)}` : "—"}</td>
-          <td class="r"><b>${l.isMixComponent ? "—" : `${l.requiredQty ?? "—"} ${escapeHtml(l.qtyUnit)}`}</b></td>
+          <td class="r"><b>${qtyCell(l)}</b></td>
           <td>${escapeHtml(l.remarks || "")}</td>
-        </tr>`,
-        )
+        </tr>`;
+
+      const rows = parents
+        .map((p, n) => [renderLine(p, n + 1, false), ...childrenOf(p.id).map((c) => renderLine(c, null, true))].join(""))
         .join("");
 
       return `
@@ -60,7 +102,7 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
     })
     .join("");
 
-  const signatures = ACKNOWLEDGE.map((n) => `<div class="sig">${escapeHtml(n)}</div>`).join("");
+  const signatures = acknowledgeList(wo).map((n) => `<div class="sig">${escapeHtml(n)}</div>`).join("");
 
   const html = `<!doctype html>
 <html><head><meta charset="utf-8" /><title>WO ${escapeHtml(wo.woNumber)} — Works Order</title>
@@ -87,6 +129,8 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
   th { background: #fafafa; border: 1px solid #999; padding: 5px; font-size: 9px; text-transform: uppercase; }
   td { border: 1px solid #999; padding: 5px; }
   .c { text-align: center; } .r { text-align: right; }
+  tr.sub td { background: #fbfbfb; color: #555; font-size: 10px; }
+  small.req { color: #888; font-weight: 400; }
   .total { margin-top: 12px; margin-left: auto; width: 240px; display: flex;
            justify-content: space-between; border-top: 2px solid #111; padding-top: 6px;
            font-weight: 800; font-size: 13px; }
@@ -111,6 +155,8 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
     <div><span>Sales</span><b>${escapeHtml(wo.sales || "—")}</b></div>
     <div><span>Project I/C</span><b>${escapeHtml(wo.projectIc || "—")}</b></div>
     <div><span>Start Date</span><b>${escapeHtml(wo.startDate || "—")}</b></div>
+    <div><span>Issue Date</span><b>${escapeHtml(wo.issueDate || "—")}</b></div>
+    <div><span>Site Contact</span><b>${escapeHtml(wo.siteContact || "—")}${wo.siteContactNumber ? ` (${escapeHtml(wo.siteContactNumber)})` : ""}</b></div>
     <div><span>Status</span><b style="text-transform:capitalize">${escapeHtml(wo.status.replace(/_/g, " "))}</b></div>
   </div>
   ${wo.remarks ? `<div class="prep" style="border:1px solid #999;margin-top:8px">${escapeHtml(wo.remarks)}</div>` : ""}
@@ -167,7 +213,11 @@ export function exportWOToExcel(wo: WorksOrder): void {
           l.colour,
           l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : "",
           l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : "",
-          l.isMixComponent ? "mix component" : l.requiredQty ?? "",
+          l.isMixComponent
+            ? "mix component"
+            : l.orderQty != null && l.orderQty !== l.requiredQty
+              ? `${l.orderQty} (req ${l.requiredQty ?? "—"})`
+              : l.requiredQty ?? "",
           l.remarks,
         ]),
       },
@@ -177,7 +227,7 @@ export function exportWOToExcel(wo: WorksOrder): void {
       fields: [
         {
           label: "Total to order (sets)",
-          value: wo.areas.reduce((s, a) => s + a.lines.reduce((t, l) => t + (l.requiredQty ?? 0), 0), 0),
+          value: woOrderTotal(wo),
         },
       ],
     },
