@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet,
 } from "lucide-react";
@@ -17,10 +17,13 @@ import {
   type Project,
   type InventoryItem,
   type Claim,
+  type ClaimLine,
   type Invoice,
 } from "@/data/sampleData";
 import { printPO, exportPOToExcel } from "@/lib/poDocument";
 import { printWO, exportWOToExcel, woOrderTotal } from "@/lib/woDocument";
+import { printClaim, exportClaimToExcel, type ClaimDocContext } from "@/lib/claimDocument";
+import { fetchClaimLines } from "@/data/db";
 import { cn } from "@/lib/utils";
 
 type Detail =
@@ -476,6 +479,25 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
   const { projects } = useAppData();
   const project = projects.find((p) => p.id === claim.projectId || p.code === claim.projectCode);
   const clientName = claim.clientName || project?.client || "—";
+
+  // Load this claim's lines on open (lazy — not part of the list fetch)
+  const [lines, setLines] = useState<ClaimLine[]>(claim.lines ?? []);
+  useEffect(() => {
+    let alive = true;
+    fetchClaimLines(claim.id)
+      .then((ls) => { if (alive) setLines(ls); })
+      .catch(() => { /* no lines yet — leave empty */ });
+    return () => { alive = false; };
+  }, [claim.id]);
+
+  // Retention terms live on the project; build the generator context from it.
+  const docCtx: ClaimDocContext = {
+    subContractSum: project?.budget ?? null,
+    retentionPct: project?.retentionPct ?? null,
+    retentionCapPct: project?.retentionCapPct ?? null,
+    gstPct: 9,
+  };
+  const claimWithLines: Claim = { ...claim, lines };
   const clientAddress = claim.clientAddress || project?.companyAddress || "—";
   const contact = claim.contactPerson || project?.contactPerson || "—";
   const isInvoice = isInternalInvoice(claim);
@@ -565,6 +587,59 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
             <b> {formatCurrency(shortfall)} short.</b>
           </div>
         )}
+        {lines.length > 0 && (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-secondary/40 text-muted-foreground">
+                  <th className="px-2 py-1.5 text-left font-medium">Description</th>
+                  <th className="px-2 py-1.5 text-right font-medium">Prev</th>
+                  <th className="px-2 py-1.5 text-right font-medium">Curr</th>
+                  <th className="px-2 py-1.5 text-right font-medium">Claimed</th>
+                  <th className="px-2 py-1.5 text-right font-medium">Verified</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(["A", "B"] as const).map((sec) => {
+                  const secLines = lines.filter((l) => l.section === sec).sort((a, b) => a.seq - b.seq);
+                  if (secLines.length === 0) return null;
+                  return (
+                    <Fragment key={`sec-${sec}`}>
+                      <tr>
+                        <td colSpan={5} className="bg-secondary/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {sec === "A" ? "A · Sub-Contract Works" : "B · Variation Works"}
+                        </td>
+                      </tr>
+                      {secLines.map((l) => (
+                        <tr key={l.id} className="border-t border-border/60">
+                          <td className="px-2 py-1.5 text-card-foreground">{l.description}</td>
+                          <td className="px-2 py-1.5 text-right text-muted-foreground">{l.prevAmount != null ? formatCurrency(l.prevAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-muted-foreground">{l.currAmount != null ? formatCurrency(l.currAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right font-medium text-card-foreground">{l.cumAmount != null ? formatCurrency(l.cumAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-card-foreground">{l.verifiedAmount != null ? formatCurrency(l.verifiedAmount) : "—"}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => exportClaimToExcel(claimWithLines, docCtx)}
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            Excel
+          </button>
+          <button
+            onClick={() => printClaim(claimWithLines, docCtx)}
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            Print claim
+          </button>
+        </div>
         <button
           onClick={() => setEditing(true)}
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
