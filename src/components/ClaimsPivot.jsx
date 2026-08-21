@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 
 /*
-  ConPlus — Claims Pivot & Payment Chase (v2 — refined skin)
-  -----------------------------------------------------------
-  Reads `claims` joined to `projects` from Supabase. Two views:
-  1. Pivot grid — projects × months, click-to-expand claim history
-  2. Chase table — T+30 ageing list for payment/certification follow-up
+  ConPlus — Claims Pivot & Payment Chase (v3 — To Claim + portfolio strip)
+  -------------------------------------------------------------------------
+  Reads `claims` joined to `projects` for the pivot grid + chase table.
+  Reads `project_claim_summary` (Supabase view) for billable_contract and
+  to_claim — these are live-computed, never stored.
 
   Uses the app's shared Supabase client. Do NOT add createClient here.
 */
@@ -64,6 +64,7 @@ function cellTitle(c) {
 // ============================================================================
 export default function ClaimsPivot() {
   const [rows, setRows] = useState([]);
+  const [summaryMap, setSummaryMap] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [view, setView] = useState("pivot");
@@ -75,15 +76,22 @@ export default function ClaimsPivot() {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase
-          .from("claims")
-          .select(
-            "claim_no, claim_date, amount, certified_amount, status, contact_person, contact_number, " +
-              "projects!inner(project_code, name, client_name, contract_value, total_contract_value, sales_manager, status, work_type_code)"
-          )
-          .order("claim_date", { ascending: true });
-        if (error) throw error;
-        const flat = (data || []).map((c) => ({
+        const [claimsRes, summaryRes] = await Promise.all([
+          supabase
+            .from("claims")
+            .select(
+              "claim_no, claim_date, amount, certified_amount, status, contact_person, contact_number, " +
+                "projects!inner(project_code, name, client_name, contract_value, total_contract_value, sales_manager, status, work_type_code)"
+            )
+            .order("claim_date", { ascending: true }),
+          supabase
+            .from("project_claim_summary")
+            .select("project_code, billable_contract, total_claimed, total_certified, to_claim"),
+        ]);
+        if (claimsRes.error) throw claimsRes.error;
+        if (summaryRes.error) throw summaryRes.error;
+
+        const flat = (claimsRes.data || []).map((c) => ({
           claim_no: c.claim_no,
           claim_date: c.claim_date,
           amount: c.amount == null ? null : Number(c.amount),
@@ -98,6 +106,17 @@ export default function ClaimsPivot() {
           manager: c.projects?.sales_manager,
         }));
         setRows(flat);
+
+        const sMap = new Map();
+        for (const s of summaryRes.data || []) {
+          sMap.set(s.project_code, {
+            billable: s.billable_contract == null ? null : Number(s.billable_contract),
+            totalClaimed: s.total_claimed == null ? null : Number(s.total_claimed),
+            totalCertified: s.total_certified == null ? null : Number(s.total_certified),
+            toClaim: s.to_claim == null ? null : Number(s.to_claim),
+          });
+        }
+        setSummaryMap(sMap);
       } catch (e) {
         setErr(e.message || String(e));
       } finally {
@@ -134,6 +153,17 @@ export default function ClaimsPivot() {
       p.totalCertified += r.certified || 0;
     }
     let arr = [...map.values()];
+    // Enrich with summary view data
+    for (const p of arr) {
+      const s = summaryMap.get(p.code);
+      if (s) {
+        p.billable = s.billable;
+        p.toClaim = s.toClaim;
+      } else {
+        p.billable = null;
+        p.toClaim = null;
+      }
+    }
     if (managerFilter !== "all") arr = arr.filter((p) => p.manager === managerFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -153,7 +183,7 @@ export default function ClaimsPivot() {
       return lb.localeCompare(la);
     });
     return arr;
-  }, [rows, managerFilter, statusFilter, search]);
+  }, [rows, summaryMap, managerFilter, statusFilter, search]);
 
   const chase = useMemo(() => {
     const items = [];
@@ -168,6 +198,24 @@ export default function ClaimsPivot() {
     items.sort((a, b) => b.age - a.age);
     return items;
   }, [rows]);
+
+  // Portfolio totals (filtered)
+  const portfolio = useMemo(() => {
+    let billable = 0, claimed = 0, certified = 0, toClaim = 0;
+    let hasBillable = false, hasToClaim = false;
+    for (const p of projects) {
+      if (p.billable != null) { billable += p.billable; hasBillable = true; }
+      claimed += p.totalClaimed;
+      certified += p.totalCertified;
+      if (p.toClaim != null) { toClaim += p.toClaim; hasToClaim = true; }
+    }
+    return {
+      billable: hasBillable ? billable : null,
+      claimed,
+      certified,
+      toClaim: hasToClaim ? toClaim : null,
+    };
+  }, [projects]);
 
   if (loading) return <Shell><div className="cp-loading">Loading claims&#8230;</div></Shell>;
   if (err)
@@ -241,11 +289,43 @@ export default function ClaimsPivot() {
 
       {/* ── Views ── */}
       {view === "pivot" ? (
-        <PivotGrid projects={projects} months={months} expanded={expanded} setExpanded={setExpanded} />
+        <>
+          <PortfolioStrip portfolio={portfolio} />
+          <PivotGrid projects={projects} months={months} expanded={expanded} setExpanded={setExpanded} />
+        </>
       ) : (
         <ChaseTable items={chase} />
       )}
     </Shell>
+  );
+}
+
+// ============================================================================
+// PORTFOLIO STRIP (filtered summary above grid)
+// ============================================================================
+function PortfolioStrip({ portfolio }) {
+  return (
+    <div className="cp-portfolio">
+      <div className="cp-pf-item">
+        <span className="cp-pf-label">Contract</span>
+        <span className="cp-pf-val">{fmt(portfolio.billable)}</span>
+      </div>
+      <span className="cp-pf-sep">&middot;</span>
+      <div className="cp-pf-item">
+        <span className="cp-pf-label">Claimed</span>
+        <span className="cp-pf-val">{fmt(portfolio.claimed)}</span>
+      </div>
+      <span className="cp-pf-sep">&middot;</span>
+      <div className="cp-pf-item">
+        <span className="cp-pf-label">Certified</span>
+        <span className="cp-pf-val">{fmt(portfolio.certified)}</span>
+      </div>
+      <span className="cp-pf-sep">&middot;</span>
+      <div className="cp-pf-item cp-pf-highlight">
+        <span className="cp-pf-label">To claim</span>
+        <span className="cp-pf-val">{fmt(portfolio.toClaim)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -266,6 +346,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
             {months.map((m) => <th key={m} className="cp-th-month">{monthLabel(m)}</th>)}
             <th className="cp-th-total">Claimed</th>
             <th className="cp-th-total">Certified</th>
+            <th className="cp-th-total">To Claim</th>
           </tr>
         </thead>
         <tbody>
@@ -296,11 +377,14 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
                     {fmt(p.totalCertified)}
                     {Math.abs(outstanding) > 1 && <span className="cp-outstanding">{compact(outstanding)}</span>}
                   </td>
+                  <td className={`cp-col-total cp-col-toclaim${p.toClaim != null && Math.abs(p.toClaim) < 1 ? " cp-muted" : ""}`}>
+                    {p.toClaim == null ? <span className="cp-muted">&mdash;</span> : fmt(p.toClaim)}
+                  </td>
                 </tr>
                 {isOpen && (
                   <tr className="cp-detail-row">
                     <td className="cp-col-proj" />
-                    <td colSpan={months.length + 3}>
+                    <td colSpan={months.length + 4}>
                       <ClaimDetail project={p} />
                     </td>
                   </tr>
@@ -356,12 +440,20 @@ function ClaimDetail({ project }) {
           })}
         </tbody>
       </table>
+      {/* Reconciliation footer */}
+      <div className="cp-recon">
+        <span className="cp-recon-item">Contract {fmtFull(project.billable)}</span>
+        <span className="cp-recon-sep">&middot;</span>
+        <span className="cp-recon-item">Claimed {fmtFull(project.totalClaimed)}</span>
+        <span className="cp-recon-sep">&middot;</span>
+        <span className="cp-recon-item">To claim {project.toClaim == null ? "—" : fmtFull(project.toClaim)}</span>
+      </div>
     </div>
   );
 }
 
 // ============================================================================
-// CHASE TABLE (was cards — now a scannable table)
+// CHASE TABLE
 // ============================================================================
 function ChaseTable({ items }) {
   if (items.length === 0)
@@ -536,6 +628,25 @@ const CSS = `
 .cp-stat-val { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .cp-stat-lbl { display: block; font-size: 11px; color: var(--fg3); margin-top: 1px; }
 
+/* ── Portfolio strip ── */
+.cp-portfolio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.cp-pf-item { display: flex; align-items: baseline; gap: 5px; }
+.cp-pf-label { color: var(--fg3); font-weight: 500; }
+.cp-pf-val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--fg); }
+.cp-pf-sep { color: var(--fg4); }
+.cp-pf-highlight .cp-pf-val { color: var(--orange-ink); }
+
 /* ── Controls ── */
 .cp-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .cp-search {
@@ -616,6 +727,7 @@ const CSS = `
 .cp-col-contract { color: var(--fg2); min-width: 80px; }
 .cp-col-total { font-weight: 700; min-width: 80px; }
 .cp-col-cert { color: var(--navy); }
+.cp-col-toclaim { color: var(--fg2); }
 
 /* Month cells */
 .cp-cell-empty { }
@@ -631,6 +743,7 @@ const CSS = `
   color: var(--orange-ink);
   margin-left: 4px;
 }
+.cp-muted { color: var(--fg4); }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* DETAIL (expanded row)                                                      */
@@ -685,6 +798,22 @@ const CSS = `
 .cp-pill-certified { background: var(--green-50); color: var(--green-ink); }
 .cp-pill-submitted { background: var(--orange-50); color: var(--orange-ink); }
 
+/* Reconciliation footer */
+.cp-recon {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg3);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.cp-recon-item { font-variant-numeric: tabular-nums; }
+.cp-recon-sep { color: var(--fg4); }
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* CHASE TABLE                                                                */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -729,13 +858,14 @@ const CSS = `
 .cp-chase-proj { font-weight: 600; color: var(--navy); font-size: 12px; }
 .cp-chase-client { font-size: 11px; color: var(--fg3); }
 .cp-chase-name { font-size: 11px; color: var(--fg2); }
-.cp-muted { color: var(--fg4); }
 
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .cp-root { padding: 12px; }
   .cp-header { flex-direction: column; align-items: flex-start; }
   .cp-summary { flex-direction: column; }
+  .cp-portfolio { flex-direction: column; gap: 4px; }
+  .cp-pf-sep { display: none; }
 }
 
 /* ── Reduced motion ── */
