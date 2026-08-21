@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 /*
   ConPlus — Claims Pivot & Payment Chase
@@ -12,10 +12,10 @@ import { createClient } from "@supabase/supabase-js";
   Palette matches the ConPlus identity (navy #1C2340 / orange #F7901E).
 */
 
-// ---- Supabase (swap to anon key + RLS before public deploy) -----------------
-const SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL || "https://ethxxhlpmfpnuaxeyshy.supabase.co";
-const SUPABASE_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY || "";
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// ---- Supabase --------------------------------------------------------------
+// Uses the app's single shared client (src/lib/supabase.ts). Do NOT create a
+// second createClient here: it previously read VITE_SUPABASE_ANON_KEY (unset in
+// prod) and threw at module load, white-screening the whole app.
 
 // ---- helpers ---------------------------------------------------------------
 const fmt = (n) =>
@@ -23,7 +23,7 @@ const fmt = (n) =>
 const fmtFull = (n) =>
   n == null ? "—" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
 
-const monthKey = (d) => d.slice(0, 7); // "2025-03-01" -> "2025-03"
+const monthKey = (d) => (d ? d.slice(0, 7) : null); // "2025-03-01" -> "2025-03"; null-safe
 const monthLabel = (key) => {
   const [y, m] = key.split("-");
   const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m - 1];
@@ -32,7 +32,9 @@ const monthLabel = (key) => {
 
 // days since a claim was submitted (for T+30). Certified-but-unpaid is the chase target.
 const daysSince = (dateStr) => {
+  if (!dateStr) return null;
   const then = new Date(dateStr);
+  if (isNaN(then)) return null;
   const now = new Date();
   return Math.floor((now - then) / (1000 * 60 * 60 * 24));
 };
@@ -83,7 +85,7 @@ export default function ClaimsPivot() {
 
   // distinct months across the data, in order
   const months = useMemo(() => {
-    const set = new Set(rows.map((r) => monthKey(r.claim_date)));
+    const set = new Set(rows.map((r) => monthKey(r.claim_date)).filter(Boolean));
     return [...set].sort();
   }, [rows]);
 
@@ -111,7 +113,7 @@ export default function ClaimsPivot() {
       }
       const p = map.get(r.code);
       const mk = monthKey(r.claim_date);
-      p.cells[mk] = r; // last claim of the month wins the cell
+      if (mk) p.cells[mk] = r; // last claim of the month wins the cell; undated claims have no cell
       p.claims.push(r);
       p.totalClaimed += r.amount || 0;
       p.totalCertified += r.certified || 0;
