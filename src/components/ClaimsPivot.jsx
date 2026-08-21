@@ -176,6 +176,7 @@ export default function ClaimsPivot() {
     <Shell>
       <header className="cp-head">
         <div>
+          <a href="/" className="cp-back">← Live Operations</a>
           <p className="cp-eyebrow">Progress claims</p>
           <h1 className="cp-title">Claims &amp; payment chase</h1>
           <p className="cp-sub">
@@ -443,6 +444,8 @@ const CSS = `
 .cp-error-hint{margin-top:8px;font-size:13px;color:var(--sub)}
 
 .cp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:20px;flex-wrap:wrap}
+.cp-back{display:inline-block;font-size:12px;font-weight:600;color:var(--navy);text-decoration:none;opacity:.7;margin:0 0 10px}
+.cp-back:hover{opacity:1;text-decoration:underline}
 .cp-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--orange-ink);margin:0 0 4px}
 .cp-title{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em}
 .cp-sub{margin:6px 0 0;color:var(--sub);font-size:14px}

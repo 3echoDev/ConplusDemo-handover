@@ -32,6 +32,7 @@ const App = () => (
         <BrowserRouter>
           {LIVE_VIEW_ONLY ? (
             <Routes>
+              <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
               <Route path="*" element={<LiveViewPage />} />
             </Routes>
           ) : (
