@@ -377,7 +377,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
                     {fmt(p.totalCertified)}
                     {Math.abs(outstanding) > 1 && <span className="cp-outstanding">{compact(outstanding)}</span>}
                   </td>
-                  <td className={`cp-col-total cp-col-toclaim${p.toClaim != null && Math.abs(p.toClaim) < 1 ? " cp-muted" : ""}`}>
+                  <td className={`cp-col-total cp-col-toclaim${p.toClaim == null ? "" : p.toClaim > 10000 ? " cp-toclaim-high" : Math.abs(p.toClaim) < 1 ? " cp-toclaim-zero" : ""}`}>
                     {p.toClaim == null ? <span className="cp-muted">&mdash;</span> : fmt(p.toClaim)}
                   </td>
                 </tr>
@@ -442,11 +442,18 @@ function ClaimDetail({ project }) {
       </table>
       {/* Reconciliation footer */}
       <div className="cp-recon">
-        <span className="cp-recon-item">Contract {fmtFull(project.billable)}</span>
-        <span className="cp-recon-sep">&middot;</span>
-        <span className="cp-recon-item">Claimed {fmtFull(project.totalClaimed)}</span>
-        <span className="cp-recon-sep">&middot;</span>
-        <span className="cp-recon-item">To claim {project.toClaim == null ? "—" : fmtFull(project.toClaim)}</span>
+        <div className="cp-recon-item">
+          <span className="cp-recon-label">Contract</span>
+          <span className="cp-recon-val">{fmtFull(project.billable)}</span>
+        </div>
+        <div className="cp-recon-item">
+          <span className="cp-recon-label">Claimed</span>
+          <span className="cp-recon-val">{fmtFull(project.totalClaimed)}</span>
+        </div>
+        <div className={`cp-recon-item cp-recon-toclaim${project.toClaim != null && project.toClaim > 10000 ? " cp-recon-high" : ""}${project.toClaim != null && Math.abs(project.toClaim) < 1 ? " cp-recon-zero" : ""}`}>
+          <span className="cp-recon-label">To claim</span>
+          <span className="cp-recon-val">{project.toClaim == null ? "—" : fmtFull(project.toClaim)}</span>
+        </div>
       </div>
     </div>
   );
@@ -728,6 +735,8 @@ const CSS = `
 .cp-col-total { font-weight: 700; min-width: 80px; }
 .cp-col-cert { color: var(--navy); }
 .cp-col-toclaim { color: var(--fg2); }
+.cp-toclaim-high { color: var(--orange-ink) !important; font-weight: 800 !important; }
+.cp-toclaim-zero { color: var(--fg4) !important; font-weight: 500 !important; }
 
 /* Month cells */
 .cp-cell-empty { }
@@ -801,18 +810,38 @@ const CSS = `
 /* Reconciliation footer */
 .cp-recon {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: stretch;
+  gap: 1px;
   margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--fg3);
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--border);
 }
-.cp-recon-item { font-variant-numeric: tabular-nums; }
-.cp-recon-sep { color: var(--fg4); }
+.cp-recon-item {
+  flex: 1;
+  background: var(--surface);
+  padding: 10px 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cp-recon-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg4);
+  margin-bottom: 2px;
+}
+.cp-recon-val {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg);
+}
+.cp-recon-toclaim .cp-recon-val { color: var(--fg3); }
+.cp-recon-high { background: var(--orange-50); }
+.cp-recon-high .cp-recon-val { color: var(--orange-ink); font-weight: 800; }
+.cp-recon-zero .cp-recon-val { color: var(--fg4); font-weight: 500; }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* CHASE TABLE                                                                */
