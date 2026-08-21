@@ -2,20 +2,19 @@ import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 
 /*
-  ConPlus — Claims Pivot & Payment Chase
-  ---------------------------------------
-  Reimagines the "Prog Claims" spreadsheet: projects down the side, months across,
-  claim / certified / outstanding in the cells. Plus the thing accounts actually
-  needs — a T+30 chase view that surfaces which projects have payment due.
+  ConPlus — Claims Pivot & Payment Chase (v2 — refined skin)
+  -----------------------------------------------------------
+  Reads `claims` joined to `projects` from Supabase. Two views:
+  1. Pivot grid — projects × months, click-to-expand claim history
+  2. Chase table — T+30 ageing list for payment/certification follow-up
 
-  Drop-in: expects a configured Supabase client. Reads `claims` joined to `projects`.
-  Palette matches the ConPlus identity (navy #1C2340 / orange #F7901E).
+  Uses the app's shared Supabase client. Do NOT add createClient here.
 */
 
-// ---- Supabase --------------------------------------------------------------
-// Uses the app's single shared client (src/lib/supabase.ts). Do NOT create a
-// second createClient here: it previously read VITE_SUPABASE_ANON_KEY (unset in
-// prod) and threw at module load, white-screening the whole app.
+// ---- Chase anchor -----------------------------------------------------------
+// The T+30 age is computed from this field. When certified_date or paid_date
+// become populated in the data, change this to the correct anchor field.
+const CHASE_ANCHOR = "claim_date";
 
 // ---- helpers ---------------------------------------------------------------
 const fmt = (n) =>
@@ -23,27 +22,51 @@ const fmt = (n) =>
 const fmtFull = (n) =>
   n == null ? "—" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
 
-const monthKey = (d) => (d ? d.slice(0, 7) : null); // "2025-03-01" -> "2025-03"; null-safe
+const monthKey = (d) => (d ? d.slice(0, 7) : null);
 const monthLabel = (key) => {
+  if (!key) return "—";
   const [y, m] = key.split("-");
   const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m - 1];
   return `${mon}'${y.slice(2)}`;
 };
 
-// days since a claim was submitted (for T+30). Certified-but-unpaid is the chase target.
 const daysSince = (dateStr) => {
   if (!dateStr) return null;
   const then = new Date(dateStr);
   if (isNaN(then)) return null;
-  const now = new Date();
-  return Math.floor((now - then) / (1000 * 60 * 60 * 24));
+  return Math.floor((new Date() - then) / (1000 * 60 * 60 * 24));
 };
 
+// ---- messy-data cleaners (keep — real data has \n and *notes*) -------------
+function cleanName(n) {
+  if (!n) return "";
+  return n.split("\n")[0].replace(/\*.*?\*/g, "").trim();
+}
+function cleanClient(c) {
+  if (!c) return "";
+  return c.split("\n")[0].replace(/\*.*?\*/g, "").trim();
+}
+function compact(n) {
+  if (n == null) return "—";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1000) return sign + (abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1) + "k";
+  return sign + Math.round(abs).toString();
+}
+function cellTitle(c) {
+  return `Claim #${c.claim_no ?? "—"} · ${c.status}\nClaimed ${fmtFull(c.amount)}\nCertified ${
+    c.certified == null ? "pending" : fmtFull(c.certified)
+  }`;
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 export default function ClaimsPivot() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [view, setView] = useState("pivot"); // "pivot" | "chase"
+  const [view, setView] = useState("pivot");
   const [managerFilter, setManagerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -83,7 +106,6 @@ export default function ClaimsPivot() {
     })();
   }, []);
 
-  // distinct months across the data, in order
   const months = useMemo(() => {
     const set = new Set(rows.map((r) => monthKey(r.claim_date)).filter(Boolean));
     return [...set].sort();
@@ -94,32 +116,24 @@ export default function ClaimsPivot() {
     return [...set].sort();
   }, [rows]);
 
-  // group into per-project rows with a month->claim map
   const projects = useMemo(() => {
     const map = new Map();
     for (const r of rows) {
       if (!map.has(r.code)) {
         map.set(r.code, {
-          code: r.code,
-          name: r.name,
-          client: r.client,
-          contract: r.contract,
-          manager: r.manager,
-          cells: {},
-          claims: [],
-          totalClaimed: 0,
-          totalCertified: 0,
+          code: r.code, name: r.name, client: r.client,
+          contract: r.contract, manager: r.manager,
+          cells: {}, claims: [], totalClaimed: 0, totalCertified: 0,
         });
       }
       const p = map.get(r.code);
       const mk = monthKey(r.claim_date);
-      if (mk) p.cells[mk] = r; // last claim of the month wins the cell; undated claims have no cell
+      if (mk) p.cells[mk] = r;
       p.claims.push(r);
       p.totalClaimed += r.amount || 0;
       p.totalCertified += r.certified || 0;
     }
     let arr = [...map.values()];
-    // filters
     if (managerFilter !== "all") arr = arr.filter((p) => p.manager === managerFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -133,7 +147,6 @@ export default function ClaimsPivot() {
     if (statusFilter === "outstanding") {
       arr = arr.filter((p) => p.totalCertified - 0 > 0 && p.claims.some((c) => c.status === "submitted"));
     }
-    // sort by most recent claim desc
     arr.sort((a, b) => {
       const la = a.claims[a.claims.length - 1]?.claim_date || "";
       const lb = b.claims[b.claims.length - 1]?.claim_date || "";
@@ -142,12 +155,10 @@ export default function ClaimsPivot() {
     return arr;
   }, [rows, managerFilter, statusFilter, search]);
 
-  // T+30 chase list: certified claims (accounts is owed) whose age >= 30 days,
-  // plus submitted claims still awaiting certification. What Chloe hunts for today.
   const chase = useMemo(() => {
     const items = [];
     for (const r of rows) {
-      const age = daysSince(r.claim_date);
+      const age = daysSince(r[CHASE_ANCHOR]);
       if (r.status === "certified" && r.certified > 0 && age >= 30) {
         items.push({ ...r, kind: "payment_due", age });
       } else if (r.status === "submitted" && age >= 30) {
@@ -158,7 +169,7 @@ export default function ClaimsPivot() {
     return items;
   }, [rows]);
 
-  if (loading) return <Shell><div className="cp-loading">Loading claims…</div></Shell>;
+  if (loading) return <Shell><div className="cp-loading">Loading claims&#8230;</div></Shell>;
   if (err)
     return (
       <Shell>
@@ -174,77 +185,73 @@ export default function ClaimsPivot() {
 
   return (
     <Shell>
-      <header className="cp-head">
-        <div>
-          <a href="/" className="cp-back">← Live Operations</a>
-          <p className="cp-eyebrow">Progress claims</p>
-          <h1 className="cp-title">Claims &amp; payment chase</h1>
-          <p className="cp-sub">
-            {projects.length} projects · {rows.length} claims · {months.length} months
-          </p>
+      {/* ── Header ── */}
+      <header className="cp-header">
+        <div className="cp-header-left">
+          <a href="/" className="cp-back" title="Back to Live Operations">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </a>
+          <span className="cp-title">Progress Claims</span>
+          <span className="cp-stats">{projects.length} projects &middot; {rows.length} claims</span>
         </div>
         <div className="cp-tabs">
-          <button className={view === "pivot" ? "on" : ""} onClick={() => setView("pivot")}>
+          <button className={`cp-tab${view === "pivot" ? " on" : ""}`} onClick={() => setView("pivot")}>
             Claims grid
           </button>
-          <button className={view === "chase" ? "on" : ""} onClick={() => setView("chase")}>
+          <button className={`cp-tab${view === "chase" ? " on" : ""}`} onClick={() => setView("chase")}>
             Payment chase
             {chase.length > 0 && <span className="cp-badge">{chase.length}</span>}
           </button>
         </div>
       </header>
 
+      {/* ── Summary cards (chase only) ── */}
       {view === "chase" && (
-        <div className="cp-chase-summary">
-          <div className="cp-stat">
-            <span className="cp-stat-num">{fmt(totalOutstanding)}</span>
-            <span className="cp-stat-lbl">certified &amp; ageing (30+ days)</span>
+        <div className="cp-summary">
+          <div className="cp-stat cp-stat-warn">
+            <span className="cp-stat-val">{fmt(totalOutstanding)}</span>
+            <span className="cp-stat-lbl">Certified &amp; ageing (30+ days)</span>
           </div>
-          <div className="cp-stat">
-            <span className="cp-stat-num">{awaitingCount}</span>
-            <span className="cp-stat-lbl">submitted, awaiting certification</span>
+          <div className="cp-stat cp-stat-info">
+            <span className="cp-stat-val">{awaitingCount}</span>
+            <span className="cp-stat-lbl">Submitted, awaiting certification</span>
           </div>
         </div>
       )}
 
+      {/* ── Controls ── */}
       <div className="cp-controls">
         <input
           className="cp-search"
-          placeholder="Search project, code, or client…"
+          placeholder="Search project, code, or client..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)}>
+        <select className="cp-select" value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)}>
           <option value="all">All managers</option>
-          {managers.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
+          {managers.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         {view === "pivot" && (
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <select className="cp-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All projects</option>
             <option value="outstanding">Has outstanding</option>
           </select>
         )}
       </div>
 
+      {/* ── Views ── */}
       {view === "pivot" ? (
-        <PivotGrid
-          projects={projects}
-          months={months}
-          expanded={expanded}
-          setExpanded={setExpanded}
-        />
+        <PivotGrid projects={projects} months={months} expanded={expanded} setExpanded={setExpanded} />
       ) : (
-        <ChaseList items={chase} />
+        <ChaseTable items={chase} />
       )}
     </Shell>
   );
 }
 
-// ---- the pivot grid --------------------------------------------------------
+// ============================================================================
+// PIVOT GRID
+// ============================================================================
 function PivotGrid({ projects, months, expanded, setExpanded }) {
   if (projects.length === 0)
     return <div className="cp-empty">No projects match. Clear the filters to see everything.</div>;
@@ -254,15 +261,11 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
       <table className="cp-grid">
         <thead>
           <tr>
-            <th className="cp-sticky cp-col-proj">Project</th>
-            <th className="cp-col-contract">Contract</th>
-            {months.map((m) => (
-              <th key={m} className="cp-col-month">
-                {monthLabel(m)}
-              </th>
-            ))}
-            <th className="cp-col-total">Claimed</th>
-            <th className="cp-col-total">Certified</th>
+            <th className="cp-th-proj">Project</th>
+            <th>Contract</th>
+            {months.map((m) => <th key={m} className="cp-th-month">{monthLabel(m)}</th>)}
+            <th className="cp-th-total">Claimed</th>
+            <th className="cp-th-total">Certified</th>
           </tr>
         </thead>
         <tbody>
@@ -272,7 +275,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
             return (
               <React.Fragment key={p.code}>
                 <tr className={isOpen ? "cp-row-open" : ""} onClick={() => setExpanded(isOpen ? null : p.code)}>
-                  <td className="cp-sticky cp-col-proj">
+                  <td className="cp-col-proj">
                     <span className="cp-code">{p.code}</span>
                     <span className="cp-pname">{cleanName(p.name)}</span>
                     <span className="cp-client">{cleanClient(p.client)}</span>
@@ -289,14 +292,14 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
                     );
                   })}
                   <td className="cp-col-total">{fmt(p.totalClaimed)}</td>
-                  <td className="cp-col-total cp-cert">
+                  <td className="cp-col-total cp-col-cert">
                     {fmt(p.totalCertified)}
-                    {outstanding > 1 && <span className="cp-out">▲ {compact(outstanding)}</span>}
+                    {Math.abs(outstanding) > 1 && <span className="cp-outstanding">{compact(outstanding)}</span>}
                   </td>
                 </tr>
                 {isOpen && (
                   <tr className="cp-detail-row">
-                    <td className="cp-sticky" colSpan={1}></td>
+                    <td className="cp-col-proj" />
                     <td colSpan={months.length + 3}>
                       <ClaimDetail project={p} />
                     </td>
@@ -311,20 +314,20 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
   );
 }
 
-// ---- expanded per-project claim history ------------------------------------
+// ============================================================================
+// EXPANDED DETAIL
+// ============================================================================
 function ClaimDetail({ project }) {
   return (
     <div className="cp-detail">
       <div className="cp-detail-head">
-        <div>
-          <strong>{project.code}</strong> — {cleanName(project.name)}
-        </div>
+        <span className="cp-detail-title">{project.code} &mdash; {cleanName(project.name)}</span>
         <div className="cp-detail-contact">
           {project.claims[0]?.contact && <span>{project.claims[0].contact}</span>}
           {project.claims[0]?.phone && <span className="cp-phone">{project.claims[0].phone}</span>}
         </div>
       </div>
-      <table className="cp-detail-table">
+      <table className="cp-dtable">
         <thead>
           <tr>
             <th>Claim</th>
@@ -344,12 +347,10 @@ function ClaimDetail({ project }) {
                 <td>{monthLabel(monthKey(c.claim_date))}</td>
                 <td className="r">{fmtFull(c.amount)}</td>
                 <td className="r">{c.certified == null ? <em className="cp-pending">pending</em> : fmtFull(c.certified)}</td>
-                <td className={`r ${variance < 0 ? "cp-neg" : variance > 0 ? "cp-pos" : ""}`}>
+                <td className={`r ${variance != null && variance < 0 ? "cp-neg" : ""} ${variance != null && variance > 0 ? "cp-pos" : ""}`}>
                   {variance == null ? "—" : (variance >= 0 ? "+" : "") + fmtFull(variance)}
                 </td>
-                <td>
-                  <span className={`cp-pill cp-pill-${c.status}`}>{c.status}</span>
-                </td>
+                <td><span className={`cp-pill cp-pill-${c.status}`}>{c.status}</span></td>
               </tr>
             );
           })}
@@ -359,68 +360,59 @@ function ClaimDetail({ project }) {
   );
 }
 
-// ---- the T+30 chase list ---------------------------------------------------
-function ChaseList({ items }) {
+// ============================================================================
+// CHASE TABLE (was cards — now a scannable table)
+// ============================================================================
+function ChaseTable({ items }) {
   if (items.length === 0)
-    return <div className="cp-empty">Nothing to chase — no claims are 30+ days old and unpaid.</div>;
+    return <div className="cp-empty">Nothing to chase &mdash; no claims are 30+ days old and unpaid.</div>;
 
   return (
-    <div className="cp-chase">
-      {items.map((c, i) => (
-        <div key={i} className={`cp-chase-card cp-chase-${c.kind}`}>
-          <div className="cp-chase-main">
-            <div className="cp-chase-proj">
-              <span className="cp-code">{c.code}</span>
-              <span className="cp-pname">{cleanName(c.name)}</span>
-            </div>
-            <div className="cp-chase-meta">
-              <span className="cp-chase-client">{cleanClient(c.client)}</span>
-              {c.contact && <span className="cp-chase-contact">{c.contact}</span>}
-              {c.phone && <span className="cp-phone">{c.phone}</span>}
-            </div>
-          </div>
-          <div className="cp-chase-fig">
-            <span className="cp-chase-amt">{fmtFull(c.kind === "payment_due" ? c.certified : c.amount)}</span>
-            <span className="cp-chase-tag">
-              {c.kind === "payment_due" ? (
-                <>Claim #{c.claim_no} · certified {c.age}d ago</>
-              ) : (
-                <>Claim #{c.claim_no} · submitted {c.age}d ago, not yet certified</>
-              )}
-            </span>
-          </div>
-          <div className="cp-chase-action">
-            <span className={`cp-chase-flag cp-flag-${c.kind}`}>
-              {c.kind === "payment_due" ? "Chase payment" : "Chase certification"}
-            </span>
-          </div>
-        </div>
-      ))}
+    <div className="cp-chase-wrap">
+      <table className="cp-chase">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Project</th>
+            <th>Claim</th>
+            <th>Age</th>
+            <th className="r">Amount</th>
+            <th>Contact</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((c, i) => (
+            <tr key={i}>
+              <td>
+                <span className={`cp-chase-type ${c.kind === "payment_due" ? "cp-chase-pay" : "cp-chase-cert"}`}>
+                  {c.kind === "payment_due" ? "Chase payment" : "Chase certification"}
+                </span>
+              </td>
+              <td>
+                <div className="cp-chase-proj">{c.code}</div>
+                <div className="cp-chase-client">{cleanClient(c.client)} &middot; {cleanName(c.name)}</div>
+              </td>
+              <td>#{c.claim_no ?? "—"}</td>
+              <td><span className="cp-chase-age"><strong>{c.age}</strong> days</span></td>
+              <td className="r">
+                <span className="cp-chase-amt">{fmtFull(c.kind === "payment_due" ? c.certified : c.amount)}</span>
+              </td>
+              <td>
+                {c.contact && <div className="cp-chase-name">{c.contact}</div>}
+                {c.phone && <div className="cp-phone">{c.phone}</div>}
+                {!c.contact && !c.phone && <span className="cp-muted">&mdash;</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-// ---- small utilities -------------------------------------------------------
-function cleanName(n) {
-  if (!n) return "";
-  return n.split("\n")[0].replace(/\*.*?\*/g, "").trim();
-}
-function cleanClient(c) {
-  if (!c) return "";
-  return c.split("\n")[0].replace(/\*.*?\*/g, "").trim();
-}
-function compact(n) {
-  if (n == null) return "—";
-  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
-  return Math.round(n).toString();
-}
-function cellTitle(c) {
-  return `Claim #${c.claim_no ?? "—"} · ${c.status}\nClaimed ${fmtFull(c.amount)}\nCertified ${
-    c.certified == null ? "pending" : fmtFull(c.certified)
-  }`;
-}
-
-// ---- shell + styles --------------------------------------------------------
+// ============================================================================
+// SHELL + STYLES
+// ============================================================================
 function Shell({ children }) {
   return (
     <div className="cp-root">
@@ -431,113 +423,324 @@ function Shell({ children }) {
 }
 
 const CSS = `
-.cp-root{
-  --navy:#1C2340; --navy-700:#2A3358; --orange:#F7901E; --orange-ink:#B45E00;
-  --orange-50:#FFF6EA; --border:#E3E6F0; --bg:#F7F8FC; --fg:#141A31; --sub:#6B7391;
-  --good:#1FA855; --warn:#B45E00; --bad:#C0342B;
-  font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;
-  color:var(--fg); background:var(--bg); padding:24px; min-height:100vh;
+/* ── Tokens ── */
+.cp-root {
+  --navy: #1C2340;
+  --navy-50: #F0F1F5;
+  --navy-100: #E1E3EB;
+  --orange: #F7901E;
+  --orange-ink: #B45E00;
+  --orange-50: #FFF7ED;
+  --green: #16A34A;
+  --green-50: #F0FDF4;
+  --green-ink: #15803D;
+  --red: #DC2626;
+  --bg: #FAFBFC;
+  --surface: #FFFFFF;
+  --border: #E5E7EB;
+  --border-lt: #F3F4F6;
+  --fg: #111827;
+  --fg2: #374151;
+  --fg3: #6B7280;
+  --fg4: #9CA3AF;
+  --radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  padding: 20px 24px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
-.cp-root *{box-sizing:border-box}
-.cp-loading,.cp-empty{padding:60px;text-align:center;color:var(--sub);font-size:15px}
-.cp-error{padding:24px;background:#FDF3F2;border:1px solid #F3D5D2;border-radius:12px;color:#8E2A22}
-.cp-error-hint{margin-top:8px;font-size:13px;color:var(--sub)}
+.cp-root *, .cp-root *::before, .cp-root *::after { box-sizing: border-box; }
 
-.cp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:20px;flex-wrap:wrap}
-.cp-back{display:inline-block;font-size:12px;font-weight:600;color:var(--navy);text-decoration:none;opacity:.7;margin:0 0 10px}
-.cp-back:hover{opacity:1;text-decoration:underline}
-.cp-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--orange-ink);margin:0 0 4px}
-.cp-title{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em}
-.cp-sub{margin:6px 0 0;color:var(--sub);font-size:14px}
+/* ── States ── */
+.cp-loading, .cp-empty { padding: 48px; text-align: center; color: var(--fg3); font-size: 14px; }
+.cp-error { padding: 20px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius); color: #991B1B; font-size: 13px; }
+.cp-error-hint { margin-top: 6px; font-size: 12px; color: var(--fg3); }
 
-.cp-tabs{display:flex;gap:6px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:4px}
-.cp-tabs button{position:relative;border:none;background:none;font-family:inherit;font-size:14px;font-weight:600;color:var(--sub);padding:8px 16px;border-radius:9px;cursor:pointer;transition:all .15s}
-.cp-tabs button:hover{color:var(--fg)}
-.cp-tabs button.on{background:var(--navy);color:#fff}
-.cp-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:7px;font-size:11px;font-weight:700;background:var(--orange);color:#fff;border-radius:999px}
-.cp-tabs button.on .cp-badge{background:#fff;color:var(--navy)}
+/* ── Header ── */
+.cp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.cp-header-left { display: flex; align-items: center; gap: 10px; }
+.cp-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  color: var(--fg3);
+  text-decoration: none;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.cp-back:hover { background: var(--navy-50); color: var(--fg); }
+.cp-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--navy); }
+.cp-stats { font-size: 12px; color: var(--fg4); }
 
-.cp-chase-summary{display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap}
-.cp-stat{background:#fff;border:1px solid var(--border);border-left:3px solid var(--orange);border-radius:12px;padding:16px 20px;min-width:200px}
-.cp-stat-num{display:block;font-size:24px;font-weight:800;letter-spacing:-.02em}
-.cp-stat-lbl{display:block;font-size:12px;color:var(--sub);margin-top:2px}
+/* ── Tabs ── */
+.cp-tabs {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+.cp-tab {
+  position: relative;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg3);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.cp-tab:hover { color: var(--fg); }
+.cp-tab:active { transform: scale(0.97); }
+.cp-tab.on { background: var(--navy); color: #fff; }
+.cp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px; height: 16px;
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--orange);
+  color: #fff;
+  border-radius: 99px;
+}
+.cp-tab.on .cp-badge { background: rgba(255,255,255,0.25); }
 
-.cp-controls{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-.cp-search{flex:1;min-width:220px;font-family:inherit;font-size:14px;padding:9px 13px;border:1px solid var(--border);border-radius:9px;background:#fff}
-.cp-search:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(247,144,30,.15)}
-.cp-controls select{font-family:inherit;font-size:14px;padding:9px 13px;border:1px solid var(--border);border-radius:9px;background:#fff;cursor:pointer}
+/* ── Summary ── */
+.cp-summary { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.cp-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 180px;
+}
+.cp-stat-warn { border-left: 3px solid var(--orange); }
+.cp-stat-info { border-left: 3px solid var(--navy); }
+.cp-stat-val { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cp-stat-lbl { display: block; font-size: 11px; color: var(--fg3); margin-top: 1px; }
 
-/* pivot grid */
-.cp-grid-wrap{overflow-x:auto;background:#fff;border:1px solid var(--border);border-radius:12px}
-.cp-grid{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
-.cp-grid th{position:sticky;top:0;background:var(--navy);color:#fff;font-weight:600;font-size:11px;letter-spacing:.02em;padding:10px 8px;text-align:right;white-space:nowrap;z-index:2}
-.cp-grid th.cp-col-proj{text-align:left}
-.cp-col-month{min-width:64px}
-.cp-col-contract,.cp-col-total{min-width:82px}
-.cp-sticky{position:sticky;left:0;z-index:1}
-.cp-col-proj{min-width:230px;max-width:230px}
-th.cp-col-proj{z-index:3}
-.cp-grid td{padding:8px;border-bottom:1px solid var(--border);text-align:right;vertical-align:top}
-.cp-grid tbody tr{cursor:pointer;transition:background .12s}
-.cp-grid tbody tr:hover{background:var(--orange-50)}
-.cp-row-open{background:var(--orange-50)}
-td.cp-col-proj{background:#fff;text-align:left;border-right:1px solid var(--border)}
-.cp-grid tbody tr:hover td.cp-col-proj{background:var(--orange-50)}
-.cp-row-open td.cp-col-proj{background:var(--orange-50)}
-.cp-code{display:block;font-weight:700;font-size:13px;color:var(--navy)}
-.cp-pname{display:block;font-size:12px;color:var(--fg);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:210px}
-.cp-client{display:block;font-size:11px;color:var(--sub);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:210px}
+/* ── Controls ── */
+.cp-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.cp-search {
+  flex: 1; min-width: 200px;
+  font-family: inherit; font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.cp-search:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(28,35,64,0.08); }
+.cp-select {
+  font-family: inherit; font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
 
-.cp-cell{position:relative}
-.cp-cell-empty{background:repeating-linear-gradient(45deg,transparent,transparent 6px,#fafbfd 6px,#fafbfd 7px)}
-.cp-cell-amt{display:block;font-weight:600;font-variant-numeric:tabular-nums}
-.cp-cell-no{display:block;font-size:10px;color:var(--sub);margin-top:1px}
-.cp-cell-certified .cp-cell-amt{color:var(--good)}
-.cp-cell-submitted{background:var(--orange-50)}
-.cp-cell-submitted .cp-cell-amt{color:var(--orange-ink)}
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* PIVOT GRID                                                                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+.cp-grid-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.cp-grid { border-collapse: collapse; width: 100%; font-size: 12px; }
+.cp-grid th {
+  position: sticky; top: 0;
+  background: var(--bg);
+  font-weight: 600; font-size: 10px;
+  color: var(--fg3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  z-index: 2;
+}
+.cp-th-proj { text-align: left !important; position: sticky; left: 0; z-index: 3 !important; background: var(--bg) !important; }
+.cp-th-month { min-width: 60px; }
+.cp-th-total { min-width: 80px; }
 
-.cp-col-total{font-weight:700;font-variant-numeric:tabular-nums;background:#FCFDFE}
-.cp-cert{color:var(--navy)}
-.cp-out{display:block;font-size:10px;color:var(--orange-ink);font-weight:600;margin-top:1px}
+/* Rows */
+.cp-grid tbody tr { cursor: pointer; transition: background 120ms ease-out; }
+.cp-grid tbody tr:hover { background: var(--navy-50); }
+.cp-grid tbody tr:active { background: var(--navy-100); }
+.cp-row-open { background: var(--navy-50) !important; }
 
-/* detail */
-.cp-detail-row td{background:#FCFDFE;padding:0}
-.cp-detail{padding:16px 20px}
-.cp-detail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px}
-.cp-detail-head strong{color:var(--navy)}
-.cp-detail-contact{font-size:12px;color:var(--sub);display:flex;gap:12px}
-.cp-phone{color:var(--orange-ink);font-weight:600}
-.cp-detail-table{width:100%;border-collapse:collapse;font-size:12px}
-.cp-detail-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--sub);padding:4px 8px;border-bottom:1px solid var(--border)}
-.cp-detail-table th.r,.cp-detail-table td.r{text-align:right;font-variant-numeric:tabular-nums}
-.cp-detail-table td{padding:5px 8px;border-bottom:1px solid #EEF0F7}
-.cp-pending{color:var(--orange-ink);font-style:italic}
-.cp-neg{color:var(--bad)}
-.cp-pos{color:var(--good)}
-.cp-pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:999px}
-.cp-pill-certified{background:#E7F6EE;color:#137a44}
-.cp-pill-submitted{background:var(--orange-50);color:var(--orange-ink)}
+.cp-grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-lt);
+  text-align: right;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
 
-/* chase */
-.cp-chase{display:flex;flex-direction:column;gap:8px}
-.cp-chase-card{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 18px}
-.cp-chase-payment_due{border-left:3px solid var(--orange)}
-.cp-chase-awaiting_cert{border-left:3px solid var(--navy)}
-.cp-chase-main{flex:1;min-width:0}
-.cp-chase-proj{display:flex;align-items:baseline;gap:10px}
-.cp-chase-proj .cp-code{display:inline}
-.cp-chase-proj .cp-pname{display:inline;max-width:none}
-.cp-chase-meta{display:flex;gap:12px;margin-top:3px;font-size:12px;color:var(--sub);flex-wrap:wrap}
-.cp-chase-fig{text-align:right;white-space:nowrap}
-.cp-chase-amt{display:block;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
-.cp-chase-tag{display:block;font-size:11px;color:var(--sub);margin-top:1px}
-.cp-chase-flag{font-size:11px;font-weight:700;padding:6px 12px;border-radius:999px;white-space:nowrap}
-.cp-flag-payment_due{background:var(--orange-50);color:var(--orange-ink)}
-.cp-flag-awaiting_cert{background:var(--navy);color:#fff}
+/* Sticky project col */
+.cp-col-proj {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface);
+  text-align: left !important;
+  min-width: 200px; max-width: 220px;
+  border-right: 1px solid var(--border-lt);
+}
+.cp-grid tbody tr:hover .cp-col-proj,
+.cp-row-open .cp-col-proj { background: var(--navy-50); }
 
-@media (max-width:640px){
-  .cp-root{padding:14px}
-  .cp-chase-card{flex-direction:column;align-items:flex-start;gap:8px}
-  .cp-chase-fig{text-align:left}
+.cp-code { display: block; font-weight: 700; font-size: 12px; color: var(--navy); line-height: 1.3; }
+.cp-pname { display: block; font-size: 11px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.cp-client { display: block; font-size: 10px; color: var(--fg4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+
+.cp-col-contract { color: var(--fg2); min-width: 80px; }
+.cp-col-total { font-weight: 700; min-width: 80px; }
+.cp-col-cert { color: var(--navy); }
+
+/* Month cells */
+.cp-cell-empty { }
+.cp-cell-certified .cp-cell-amt { color: var(--green-ink); }
+.cp-cell-submitted { background: var(--orange-50); }
+.cp-cell-submitted .cp-cell-amt { color: var(--orange-ink); font-weight: 600; }
+.cp-cell-amt { display: block; font-weight: 500; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cp-cell-no { display: block; font-size: 9px; color: var(--fg4); margin-top: 1px; }
+
+.cp-outstanding {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  color: var(--orange-ink);
+  margin-left: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* DETAIL (expanded row)                                                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+.cp-detail-row td {
+  background: var(--bg) !important;
+  padding: 0 !important;
+  cursor: default !important;
+}
+.cp-detail-row .cp-col-proj { background: var(--bg) !important; }
+.cp-detail {
+  padding: 12px 16px 14px;
+  animation: cpDetailIn 200ms cubic-bezier(0.23,1,0.32,1);
+}
+@keyframes cpDetailIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cp-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cp-detail-title { font-size: 13px; font-weight: 700; color: var(--navy); }
+.cp-detail-contact { font-size: 11px; color: var(--fg3); display: flex; gap: 10px; }
+.cp-phone { color: var(--orange-ink); font-weight: 600; }
+
+.cp-dtable { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cp-dtable th {
+  position: static; background: none;
+  text-align: left; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--fg4); padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.cp-dtable th.r { text-align: right; }
+.cp-dtable td { padding: 5px 8px; border-bottom: 1px solid var(--border-lt); font-variant-numeric: tabular-nums; }
+.cp-dtable td.r { text-align: right; }
+
+.cp-pending { color: var(--orange-ink); font-style: italic; font-size: 10px; }
+.cp-neg { color: var(--red); }
+.cp-pos { color: var(--green-ink); }
+.cp-pill {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.02em;
+  padding: 2px 7px; border-radius: 99px;
+}
+.cp-pill-certified { background: var(--green-50); color: var(--green-ink); }
+.cp-pill-submitted { background: var(--orange-50); color: var(--orange-ink); }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* CHASE TABLE                                                                */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+.cp-chase-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.cp-chase { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cp-chase th {
+  position: sticky; top: 0;
+  background: var(--bg);
+  font-weight: 600; font-size: 10px;
+  color: var(--fg3);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.cp-chase th.r { text-align: right; }
+.cp-chase td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-lt);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.cp-chase td.r { text-align: right; }
+.cp-chase tbody tr { transition: background 120ms ease-out; }
+.cp-chase tbody tr:hover { background: var(--navy-50); }
+
+.cp-chase-type {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 99px; white-space: nowrap;
+}
+.cp-chase-pay { background: var(--orange-50); color: var(--orange-ink); }
+.cp-chase-cert { background: var(--navy-50); color: var(--navy); }
+
+.cp-chase-age { font-size: 11px; color: var(--fg3); }
+.cp-chase-age strong { font-weight: 700; color: var(--fg); }
+.cp-chase-amt { font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cp-chase-proj { font-weight: 600; color: var(--navy); font-size: 12px; }
+.cp-chase-client { font-size: 11px; color: var(--fg3); }
+.cp-chase-name { font-size: 11px; color: var(--fg2); }
+.cp-muted { color: var(--fg4); }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .cp-root { padding: 12px; }
+  .cp-header { flex-direction: column; align-items: flex-start; }
+  .cp-summary { flex-direction: column; }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .cp-detail { animation: none; }
+  .cp-tab, .cp-grid tbody tr, .cp-back, .cp-chase tbody tr, .cp-search { transition: none; }
 }
 `;
