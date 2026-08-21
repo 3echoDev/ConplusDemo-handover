@@ -13,6 +13,7 @@ import PurchaseOrdersPage from "@/pages/PurchaseOrdersPage";
 import WorksOrdersPage from "@/pages/WorksOrdersPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import LiveViewPage from "@/pages/LiveViewPage";
+import ClaimsPivot from "@/components/ClaimsPivot";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
                       <Route path="/works-orders" element={<WorksOrdersPage />} />
                       <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
+                      <Route path="/claims" element={<ClaimsPivot />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>
