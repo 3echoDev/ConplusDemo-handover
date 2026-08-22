@@ -81,7 +81,7 @@ export default function ClaimsPivot() {
             .from("claims")
             .select(
               "claim_no, claim_date, amount, certified_amount, status, contact_person, contact_number, " +
-                "projects!inner(project_code, name, client_name, contract_value, total_contract_value, sales_manager, status, work_type_code)"
+                "projects!inner(id, project_code, name, client_name, contract_value, total_contract_value, vo_value, sales_manager, status, work_type_code)"
             )
             .order("claim_date", { ascending: true }),
           supabase
@@ -100,9 +100,12 @@ export default function ClaimsPivot() {
           contact: c.projects?.contact_person || c.contact_person,
           phone: c.projects?.contact_number || c.contact_number,
           code: c.projects?.project_code,
+          projectId: c.projects?.id,
           name: c.projects?.name,
           client: c.projects?.client_name,
           contract: c.projects?.total_contract_value || c.projects?.contract_value,
+          voValue: c.projects?.vo_value == null ? null : Number(c.projects.vo_value),
+          contractBase: c.projects?.contract_value == null ? null : Number(c.projects.contract_value),
           manager: c.projects?.sales_manager,
         }));
         setRows(flat);
@@ -140,8 +143,9 @@ export default function ClaimsPivot() {
     for (const r of rows) {
       if (!map.has(r.code)) {
         map.set(r.code, {
-          code: r.code, name: r.name, client: r.client,
-          contract: r.contract, manager: r.manager,
+          code: r.code, projectId: r.projectId, name: r.name, client: r.client,
+          contract: r.contract, voValue: r.voValue, contractBase: r.contractBase,
+          manager: r.manager,
           cells: {}, claims: [], totalClaimed: 0, totalCertified: 0,
         });
       }
@@ -454,6 +458,99 @@ function ClaimDetail({ project }) {
           <span className="cp-recon-label">To claim</span>
           <span className="cp-recon-val">{project.toClaim == null ? "—" : fmtFull(project.toClaim)}</span>
         </div>
+      </div>
+      <VOSection
+        projectId={project.projectId}
+        voValue={project.voValue}
+        contractBase={project.contractBase}
+        totalContract={Number(project.contract)}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// VO SECTION (lazy-loaded inside detail panel)
+// ============================================================================
+const LUMP_LABEL = "VO-LEGACY (unallocated)";
+
+function VOSection({ projectId, voValue, contractBase, totalContract }) {
+  const [vos, setVos] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from("project_vos")
+        .select("vo_number, quotation_ref, amount, description, legacy_code")
+        .eq("project_id", projectId)
+        .order("amount", { ascending: false });
+      if (!error && data && data.length > 0) setVos(data);
+      setLoading(false);
+    })();
+  }, [projectId]);
+
+  if (loading) return <div className="cp-vo-loading">Loading VOs&#8230;</div>;
+  if (!vos) return null; // no VOs — render nothing
+
+  const lumpRow = vos.find((v) => v.vo_number === LUMP_LABEL);
+  const voRows = vos.filter((v) => v.vo_number !== LUMP_LABEL);
+  const realCount = voRows.length;
+
+  return (
+    <div className="cp-vo">
+      <div className="cp-vo-header">
+        <span className="cp-vo-title">Variation Orders ({realCount})</span>
+        {contractBase != null && voValue != null && totalContract != null && (
+          <span className="cp-vo-summary">
+            Contract {fmt(contractBase)} + VOs {fmt(voValue)} = {fmt(totalContract)} total
+          </span>
+        )}
+      </div>
+
+      {lumpRow && (
+        <div className="cp-vo-lump" title={lumpRow.description || ""}>
+          <span className="cp-vo-lump-label">Unallocated VO value:</span>{" "}
+          <span className="cp-vo-lump-amt">{fmt(Number(lumpRow.amount))}</span>
+          <span className="cp-vo-lump-note"> — recorded on the contract, not yet split to individual VOs.</span>
+        </div>
+      )}
+
+      {realCount > 0 && (
+        <table className="cp-vo-table">
+          <thead>
+            <tr>
+              <th>VO</th>
+              <th>Quotation Ref</th>
+              <th className="r">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {voRows.map((v, i) => {
+              const amt = v.amount != null ? Number(v.amount) : null;
+              const isRefOnly = amt === 0 || amt == null;
+              return (
+                <tr key={i}>
+                  <td className="cp-vo-name">{v.vo_number}</td>
+                  <td className="cp-vo-ref">{v.quotation_ref || <span className="cp-muted">&mdash;</span>}</td>
+                  <td className="r">
+                    {isRefOnly ? (
+                      <span className="cp-vo-dash" title={lumpRow ? "Value in unallocated" : ""}>&mdash;</span>
+                    ) : (
+                      fmtFull(amt)
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      <div className="cp-vo-footer">
+        <span className="cp-vo-footer-label">VO total (authoritative)</span>
+        <span className="cp-vo-footer-val">{fmtFull(voValue)}</span>
       </div>
     </div>
   );
@@ -842,6 +939,69 @@ const CSS = `
 .cp-recon-high { background: var(--orange-50); }
 .cp-recon-high .cp-recon-val { color: var(--orange-ink); font-weight: 800; }
 .cp-recon-zero .cp-recon-val { color: var(--fg4); font-weight: 500; }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* VO SECTION                                                                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+.cp-vo { margin-top: 12px; }
+.cp-vo-loading { font-size: 11px; color: var(--fg4); padding: 8px 0; }
+.cp-vo-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.cp-vo-title { font-size: 12px; font-weight: 700; color: var(--navy); }
+.cp-vo-summary { font-size: 11px; color: var(--fg3); font-variant-numeric: tabular-nums; }
+
+.cp-vo-lump {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--navy-50);
+  border-radius: 6px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--fg3);
+  line-height: 1.5;
+  cursor: help;
+}
+.cp-vo-lump-label { font-weight: 600; color: var(--fg2); }
+.cp-vo-lump-amt { font-weight: 700; color: var(--fg); font-style: normal; font-variant-numeric: tabular-nums; }
+.cp-vo-lump-note { color: var(--fg4); }
+
+.cp-vo-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cp-vo-table th {
+  position: static; background: none;
+  text-align: left; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--fg4); padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.cp-vo-table th.r { text-align: right; }
+.cp-vo-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-lt);
+  font-variant-numeric: tabular-nums;
+}
+.cp-vo-table td.r { text-align: right; }
+.cp-vo-name { font-weight: 600; color: var(--fg2); white-space: nowrap; }
+.cp-vo-ref { font-size: 10px; color: var(--fg3); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.cp-vo-dash { color: var(--fg4); cursor: help; }
+
+.cp-vo-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.cp-vo-footer-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; color: var(--fg4); }
+.cp-vo-footer-val { font-weight: 700; font-size: 13px; color: var(--navy); font-variant-numeric: tabular-nums; }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* CHASE TABLE                                                                */
