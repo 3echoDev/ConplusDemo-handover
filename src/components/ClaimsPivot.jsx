@@ -484,8 +484,7 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
       const { data, error } = await supabase
         .from("project_vos")
         .select("vo_number, quotation_ref, amount, description, legacy_code")
-        .eq("project_id", projectId)
-        .order("amount", { ascending: false });
+        .eq("project_id", projectId);
       if (!error && data && data.length > 0) setVos(data);
       setLoading(false);
     })();
@@ -495,7 +494,17 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
   if (!vos) return null; // no VOs — render nothing
 
   const lumpRow = vos.find((v) => v.vo_number === LUMP_LABEL);
-  const voRows = vos.filter((v) => v.vo_number !== LUMP_LABEL);
+  const voNum = (s) => {
+    const m = (s || "").match(/VO\s*(\d+)/i);
+    return m ? parseInt(m[1], 10) : Infinity;
+  };
+  const voRows = vos
+    .filter((v) => v.vo_number !== LUMP_LABEL)
+    .sort((a, b) => {
+      const na = voNum(a.vo_number), nb = voNum(b.vo_number);
+      if (na !== nb) return na - nb;
+      return (a.vo_number || "").localeCompare(b.vo_number || "");
+    });
   const realCount = voRows.length;
 
   return (
@@ -519,6 +528,11 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
 
       {realCount > 0 && (
         <table className="cp-vo-table">
+          <colgroup>
+            <col className="cp-col-vo" />
+            <col className="cp-col-ref" />
+            <col className="cp-col-amt" />
+          </colgroup>
           <thead>
             <tr>
               <th>VO</th>
@@ -943,22 +957,24 @@ const CSS = `
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* VO SECTION                                                                  */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-.cp-vo { margin-top: 12px; }
+.cp-vo {
+  margin-top: 14px;
+  max-width: 640px;
+}
 .cp-vo-loading { font-size: 11px; color: var(--fg4); padding: 8px 0; }
 .cp-vo-header {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 .cp-vo-title { font-size: 12px; font-weight: 700; color: var(--navy); }
 .cp-vo-summary { font-size: 11px; color: var(--fg3); font-variant-numeric: tabular-nums; }
 
 .cp-vo-lump {
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
   background: var(--navy-50);
   border-radius: 6px;
   font-size: 11px;
@@ -971,12 +987,15 @@ const CSS = `
 .cp-vo-lump-amt { font-weight: 700; color: var(--fg); font-style: normal; font-variant-numeric: tabular-nums; }
 .cp-vo-lump-note { color: var(--fg4); }
 
-.cp-vo-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cp-vo-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.cp-vo-table col.cp-col-vo { width: 100px; }
+.cp-vo-table col.cp-col-ref { }
+.cp-vo-table col.cp-col-amt { width: 110px; }
 .cp-vo-table th {
   position: static; background: none;
   text-align: left; font-size: 10px;
   text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--fg4); padding: 4px 8px;
+  color: var(--fg4); padding: 5px 8px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
@@ -985,18 +1004,19 @@ const CSS = `
   padding: 4px 8px;
   border-bottom: 1px solid var(--border-lt);
   font-variant-numeric: tabular-nums;
+  text-align: left;
 }
 .cp-vo-table td.r { text-align: right; }
 .cp-vo-name { font-weight: 600; color: var(--fg2); white-space: nowrap; }
-.cp-vo-ref { font-size: 10px; color: var(--fg3); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.cp-vo-ref { font-size: 11px; color: var(--fg3); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-vo-dash { color: var(--fg4); cursor: help; }
 
 .cp-vo-footer {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-top: 6px;
-  padding: 6px 8px;
+  margin-top: 8px;
+  padding: 7px 8px;
   border-top: 1px solid var(--border);
   font-size: 11px;
 }
