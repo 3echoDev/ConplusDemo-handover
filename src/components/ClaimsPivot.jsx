@@ -960,7 +960,7 @@ const CSS = `
 /* ═══════════════════════════════════════════════════════════════════════════ */
 .cp-vo {
   margin-top: 14px;
-  max-width: 640px;
+  max-width: 720px;
 }
 .cp-vo-loading { font-size: 13px; color: var(--fg3); padding: 8px 0; }
 .cp-vo-header {
@@ -991,7 +991,7 @@ const CSS = `
 .cp-vo-lump-note { color: var(--fg3); }
 
 .cp-vo-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-.cp-vo-table col.cp-col-vo { width: 110px; }
+.cp-vo-table col.cp-col-vo { width: 180px; }
 .cp-vo-table col.cp-col-ref { }
 .cp-vo-table col.cp-col-amt { width: 120px; }
 .cp-vo-table th {
@@ -1010,7 +1010,7 @@ const CSS = `
   text-align: left;
 }
 .cp-vo-table td.r { text-align: right; font-weight: 700; }
-.cp-vo-name { font-weight: 700; color: var(--fg); white-space: nowrap; }
+.cp-vo-name { font-weight: 700; color: var(--fg); }
 .cp-vo-ref { font-size: 13px; color: var(--fg2); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-vo-dash { color: var(--fg4); cursor: help; }
 
