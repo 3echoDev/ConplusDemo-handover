@@ -15,6 +15,7 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import LiveViewPage from "@/pages/LiveViewPage";
 import { lazy, Suspense } from "react";
 const ClaimsPivot = lazy(() => import("@/components/ClaimsPivot"));
+const PortfolioPivot = lazy(() => import("@/components/PortfolioPivot"));
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
           {LIVE_VIEW_ONLY ? (
             <Routes>
               <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
+              <Route path="/portfolio" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
               <Route path="*" element={<LiveViewPage />} />
             </Routes>
           ) : (
@@ -54,6 +56,7 @@ const App = () => (
                       <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
                       <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
+                      <Route path="/portfolio" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>
