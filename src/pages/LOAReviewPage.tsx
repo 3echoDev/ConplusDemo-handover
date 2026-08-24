@@ -8,6 +8,13 @@ import {
   ChevronUp,
   ExternalLink,
   Info,
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Clock,
+  Building2,
+  DollarSign,
+  FileWarning,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -16,7 +23,7 @@ import { cn } from "@/lib/utils";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface ParsedLineItem {
+interface LineItem {
   sn: number | string;
   description: string;
   unit: string;
@@ -25,17 +32,22 @@ interface ParsedLineItem {
   amount: number | string;
 }
 
-interface ParsedLOA {
-  projectCode?: string;
-  name?: string;
-  clientName?: string;
-  siteAddress?: string;
-  scope?: string;
-  coatingSystem?: string;
-  contractValue?: number | string;
-  quotationRef?: string;
-  salesManager?: string;
-  lineItems?: ParsedLineItem[];
+interface LOADraft {
+  id: string;
+  status: string;
+  name: string | null;
+  client_name: string | null;
+  site_address: string | null;
+  scope: string | null;
+  coating_system: string | null;
+  contract_value: number | null;
+  quotation_ref: string | null;
+  sales_manager: string | null;
+  line_items: LineItem[] | null;
+  suggested_code: string | null;
+  source: string | null;
+  raw_notes: string | null;
+  created_at: string;
 }
 
 interface CommitResult {
@@ -69,8 +81,8 @@ function toNumber(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function formatSGD(v: string): string {
-  const n = toNumber(v);
+function formatSGD(v: number | string | null): string {
+  const n = typeof v === "number" ? v : toNumber(String(v ?? ""));
   if (n === null) return "";
   return n.toLocaleString("en-SG", {
     minimumFractionDigits: 2,
@@ -78,24 +90,345 @@ function formatSGD(v: string): string {
   });
 }
 
+function timeAgo(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 /* ------------------------------------------------------------------ */
-/*  Component                                                          */
+/*  Shared input class                                                 */
 /* ------------------------------------------------------------------ */
+
+const INPUT_CLS =
+  "w-full rounded-lg border border-border bg-background py-2.5 px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors";
+
+/* ================================================================== */
+/*  Main component                                                     */
+/* ================================================================== */
 
 export default function LOAReviewPage() {
-  // Form state
-  const [projectCode, setProjectCode] = useState("");
-  const [name, setName] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [siteAddress, setSiteAddress] = useState("");
-  const [scope, setScope] = useState("");
-  const [coatingSystem, setCoatingSystem] = useState("");
-  const [contractValue, setContractValue] = useState("");
-  const [quotationRef, setQuotationRef] = useState("");
-  const [salesManager, setSalesManager] = useState("");
+  const [view, setView] = useState<"queue" | "review" | "success">("queue");
+  const [drafts, setDrafts] = useState<LOADraft[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDraft, setActiveDraft] = useState<LOADraft | null>(null);
 
-  // Line items (read-only reference)
-  const [lineItems, setLineItems] = useState<ParsedLineItem[]>([]);
+  // Success result (after commit)
+  const [result, setResult] = useState<CommitResult | null>(null);
+
+  // ── Load pending drafts ──
+  const loadDrafts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from("loa_drafts")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      setDrafts(data ?? []);
+    } catch {
+      setDrafts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDrafts();
+  }, [loadDrafts]);
+
+  // ── Open a draft for review ──
+  const openDraft = (draft: LOADraft) => {
+    setActiveDraft(draft);
+    setResult(null);
+    setView("review");
+  };
+
+  // ── Start blank manual entry ──
+  const openBlank = () => {
+    setActiveDraft(null);
+    setResult(null);
+    setView("review");
+  };
+
+  // ── Return to queue ──
+  const backToQueue = () => {
+    setView("queue");
+    setActiveDraft(null);
+    setResult(null);
+    loadDrafts();
+  };
+
+  // ── On successful commit ──
+  const onCommitted = (res: CommitResult) => {
+    setResult(res);
+    setView("success");
+  };
+
+  // ── Discard a draft ──
+  const discardDraft = async (draftId: string) => {
+    await supabase
+      .from("loa_drafts")
+      .update({ status: "discarded" })
+      .eq("id", draftId);
+    loadDrafts();
+    if (activeDraft?.id === draftId) {
+      backToQueue();
+    }
+  };
+
+  /* ────────────────────────────────────────────────────────────────── */
+  /*  Success view                                                      */
+  /* ────────────────────────────────────────────────────────────────── */
+  if (view === "success" && result?.ok) {
+    const isNew = result.action === "created_new";
+    return (
+      <PageShell>
+        <div className="mx-auto max-w-[680px]">
+          <div className="rounded-xl border border-border bg-card p-10 text-center shadow-sm">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
+              <CheckCircle2 className="h-7 w-7 text-success" />
+            </div>
+            <h2 className="font-heading text-xl font-semibold text-foreground">
+              {isNew
+                ? `Created project ${result.project_code}`
+                : `Updated project ${result.project_code}`}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
+              {isNew
+                ? "All fields saved. The project now appears in Claims and Portfolio."
+                : "Missing fields filled in on the existing record. No data was overwritten."}
+            </p>
+
+            <div className="mt-8 flex items-center justify-center gap-3">
+              <a
+                href={`/projects/${result.project_id}`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                View project <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <button
+                onClick={backToQueue}
+                className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary transition-colors cursor-pointer"
+              >
+                Back to queue
+              </button>
+            </div>
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
+
+  /* ────────────────────────────────────────────────────────────────── */
+  /*  Review (form) view                                                */
+  /* ────────────────────────────────────────────────────────────────── */
+  if (view === "review") {
+    return (
+      <PageShell>
+        <div className="mx-auto max-w-[680px]">
+          {/* Back link */}
+          <button
+            onClick={backToQueue}
+            className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to queue
+          </button>
+
+          <ReviewForm
+            draft={activeDraft}
+            onCommitted={onCommitted}
+            onDiscard={activeDraft ? () => discardDraft(activeDraft.id) : undefined}
+          />
+        </div>
+      </PageShell>
+    );
+  }
+
+  /* ────────────────────────────────────────────────────────────────── */
+  /*  Queue (list) view — default                                       */
+  /* ────────────────────────────────────────────────────────────────── */
+  return (
+    <PageShell>
+      <div className="mx-auto max-w-2xl">
+        {/* Action bar */}
+        <div className="mb-5 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {loading
+              ? "Loading..."
+              : drafts.length === 0
+                ? "No LOAs waiting"
+                : `${drafts.length} pending`}
+          </p>
+          <button
+            onClick={openBlank}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" /> Manual entry
+          </button>
+        </div>
+
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="space-y-3">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="rounded-xl border border-border bg-card p-5 shadow-sm animate-pulse"
+              >
+                <div className="h-4 w-48 rounded bg-muted mb-3" />
+                <div className="h-3 w-32 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && drafts.length === 0 && (
+          <div className="rounded-xl border border-border bg-card px-8 py-16 text-center shadow-sm">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <FileCheck2 className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="font-heading text-base font-semibold text-foreground">
+              No LOAs waiting for review
+            </h3>
+            <p className="mt-1.5 text-sm text-muted-foreground max-w-xs mx-auto">
+              Parsed LOAs will appear here automatically. You can also create a
+              project manually.
+            </p>
+            <button
+              onClick={openBlank}
+              className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors cursor-pointer"
+            >
+              <Plus className="h-4 w-4" /> New manual entry
+            </button>
+          </div>
+        )}
+
+        {/* Draft cards */}
+        {!loading && drafts.length > 0 && (
+          <div className="space-y-3">
+            {drafts.map((d) => (
+              <div
+                key={d.id}
+                className="group rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
+                onClick={() => openDraft(d)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === "Enter" && openDraft(d)}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    {/* Project name */}
+                    <h3 className="font-heading text-sm font-semibold text-foreground truncate">
+                      {d.name || "Unnamed project"}
+                    </h3>
+
+                    {/* Client + value row */}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {d.client_name ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {d.client_name}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-warning font-medium">
+                          <AlertTriangle className="h-3 w-3" />
+                          Client needs confirming
+                        </span>
+                      )}
+
+                      {d.contract_value != null && (
+                        <span className="inline-flex items-center gap-1">
+                          <DollarSign className="h-3 w-3" />
+                          ${formatSGD(d.contract_value)}
+                        </span>
+                      )}
+
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo(d.created_at)}
+                      </span>
+                    </div>
+
+                    {/* Raw notes flag */}
+                    {d.raw_notes && (
+                      <div className="mt-2 flex items-start gap-1.5 rounded-md bg-warning/10 px-2.5 py-1.5">
+                        <FileWarning className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                        <p className="text-xs text-foreground leading-snug">
+                          {d.raw_notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Review button */}
+                  <span className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-colors">
+                    Review
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </PageShell>
+  );
+}
+
+/* ================================================================== */
+/*  Page shell — header + off-white bg                                 */
+/* ================================================================== */
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="space-y-6">
+      {/* Page header */}
+      <div>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
+          LOA Review
+        </h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Review parsed Letters of Award and commit to projects
+        </p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Review form (centered card)                                        */
+/* ================================================================== */
+
+function ReviewForm({
+  draft,
+  onCommitted,
+  onDiscard,
+}: {
+  draft: LOADraft | null;
+  onCommitted: (r: CommitResult) => void;
+  onDiscard?: () => void;
+}) {
+  // Form state — pre-fill from draft
+  const [projectCode, setProjectCode] = useState(draft?.suggested_code ?? "");
+  const [name, setName] = useState(draft?.name ?? "");
+  const [clientName, setClientName] = useState(draft?.client_name ?? "");
+  const [siteAddress, setSiteAddress] = useState(draft?.site_address ?? "");
+  const [scope, setScope] = useState(draft?.scope ?? "");
+  const [coatingSystem, setCoatingSystem] = useState(draft?.coating_system ?? "");
+  const [contractValue, setContractValue] = useState(
+    draft?.contract_value != null ? formatSGD(draft.contract_value) : ""
+  );
+  const [quotationRef, setQuotationRef] = useState(draft?.quotation_ref ?? "");
+  const [salesManager, setSalesManager] = useState(draft?.sales_manager ?? "");
+
+  const lineItems: LineItem[] = draft?.line_items ?? [];
   const [scheduleOpen, setScheduleOpen] = useState(false);
 
   // Duplicate check
@@ -103,35 +436,11 @@ export default function LOAReviewPage() {
   const [checkingDup, setCheckingDup] = useState(false);
   const dupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Submit state
+  // Submit
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<CommitResult | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Pre-fill from parsed JSON (query param or window prop)
-  useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const raw = params.get("parsed");
-      if (!raw) return;
-      const parsed: ParsedLOA = JSON.parse(decodeURIComponent(raw));
-      if (parsed.projectCode) setProjectCode(parsed.projectCode);
-      if (parsed.name) setName(parsed.name);
-      if (parsed.clientName) setClientName(parsed.clientName);
-      if (parsed.siteAddress) setSiteAddress(parsed.siteAddress);
-      if (parsed.scope) setScope(parsed.scope);
-      if (parsed.coatingSystem) setCoatingSystem(parsed.coatingSystem);
-      if (parsed.contractValue != null)
-        setContractValue(String(parsed.contractValue));
-      if (parsed.quotationRef) setQuotationRef(parsed.quotationRef);
-      if (parsed.salesManager) setSalesManager(parsed.salesManager);
-      if (parsed.lineItems?.length) setLineItems(parsed.lineItems);
-    } catch {
-      // ignore parse errors — manual entry fallback
-    }
-  }, []);
-
-  // Debounced duplicate check on project code
+  // Debounced duplicate check
   const checkDuplicate = useCallback(async (code: string) => {
     const trimmed = code.trim();
     if (!trimmed) {
@@ -162,451 +471,412 @@ export default function LOAReviewPage() {
     };
   }, [projectCode, checkDuplicate]);
 
-  // Submit
+  // Commit
   const handleCommit = async () => {
     const code = projectCode.trim();
     if (!code) return;
 
     setSubmitting(true);
     setSubmitError(null);
-    setResult(null);
 
     try {
       const val = toNumber(contractValue);
-      const { data, error } = await supabase.rpc("loa_intake", {
-        p_project_code: code,
-        p_name: name.trim() || null,
-        p_client_name: clientName.trim() || null,
-        p_site_address: siteAddress.trim() || null,
-        p_scope: scope.trim() || null,
-        p_coating_system: coatingSystem.trim() || null,
-        p_contract_value: val,
-        p_quotation_ref: quotationRef.trim() || null,
-        p_sales_manager: salesManager || null,
-      });
 
-      if (error) {
-        setSubmitError(error.message);
+      if (draft) {
+        // Confirm via RPC (marks draft confirmed + creates/updates project)
+        const { data, error } = await supabase.rpc("confirm_loa_draft", {
+          p_draft_id: draft.id,
+          p_project_code: code,
+          p_name: name.trim() || null,
+          p_client_name: clientName.trim() || null,
+          p_site_address: siteAddress.trim() || null,
+          p_scope: scope.trim() || null,
+          p_coating_system: coatingSystem.trim() || null,
+          p_contract_value: val,
+          p_quotation_ref: quotationRef.trim() || null,
+          p_sales_manager: salesManager || null,
+        });
+        if (error) throw new Error(error.message);
+        onCommitted(data as CommitResult);
       } else {
-        setResult(data as CommitResult);
+        // Manual entry — insert a draft then confirm it in one go
+        const { data: newDraft, error: insertErr } = await supabase
+          .from("loa_drafts")
+          .insert({
+            status: "pending",
+            source: "manual",
+            name: name.trim() || null,
+            client_name: clientName.trim() || null,
+            site_address: siteAddress.trim() || null,
+            scope: scope.trim() || null,
+            coating_system: coatingSystem.trim() || null,
+            contract_value: val,
+            quotation_ref: quotationRef.trim() || null,
+            sales_manager: salesManager || null,
+            suggested_code: code,
+          })
+          .select("id")
+          .single();
+        if (insertErr) throw new Error(insertErr.message);
+
+        const { data, error } = await supabase.rpc("confirm_loa_draft", {
+          p_draft_id: newDraft.id,
+          p_project_code: code,
+          p_name: name.trim() || null,
+          p_client_name: clientName.trim() || null,
+          p_site_address: siteAddress.trim() || null,
+          p_scope: scope.trim() || null,
+          p_coating_system: coatingSystem.trim() || null,
+          p_contract_value: val,
+          p_quotation_ref: quotationRef.trim() || null,
+          p_sales_manager: salesManager || null,
+        });
+        if (error) throw new Error(error.message);
+        onCommitted(data as CommitResult);
       }
     } catch (err: unknown) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Unexpected error"
-      );
+      setSubmitError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const resetForm = () => {
-    setProjectCode("");
-    setName("");
-    setClientName("");
-    setSiteAddress("");
-    setScope("");
-    setCoatingSystem("");
-    setContractValue("");
-    setQuotationRef("");
-    setSalesManager("");
-    setLineItems([]);
-    setDuplicate(null);
-    setResult(null);
-    setSubmitError(null);
   };
 
   const isClientSuspicious =
     clientName.trim().toLowerCase() === "conplus" ||
     clientName.trim().toLowerCase().startsWith("conplus ");
 
-  // ── Success state ──
-  if (result?.ok) {
-    const isNew = result.action === "created_new";
-    return (
-      <div className="space-y-5">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            LOA Review
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Letter of Award intake
-          </p>
-        </div>
-
-        <div className="mx-auto max-w-lg rounded-lg border border-success/30 bg-success/5 p-8 text-center">
-          <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-success" />
-          <h2 className="text-lg font-semibold text-foreground">
-            {isNew
-              ? `Created new project ${result.project_code}`
-              : `Matched existing project ${result.project_code}`}
-          </h2>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {isNew
-              ? "All fields saved to the new project record."
-              : "Missing fields have been filled in on the existing record. No data was overwritten."}
-          </p>
-
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <a
-              href={`/projects/${result.project_id}`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
-            >
-              View project <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-            <button
-              onClick={resetForm}
-              className="rounded-md border border-border bg-background px-3.5 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Enter another LOA
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Form state ──
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            LOA Review
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Review extracted fields, assign a project code, and commit
+    <div className="rounded-xl border border-border bg-card shadow-sm">
+      {/* Card header */}
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="font-heading text-lg font-semibold text-foreground">
+          {draft ? "Review LOA" : "New project (manual)"}
+        </h2>
+        {draft?.source && (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Source: {draft.source} · received {timeAgo(draft.created_at)}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <FileCheck2 className="h-5 w-5 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Intake
-          </span>
-        </div>
+        )}
       </div>
 
-      {/* Duplicate warning */}
-      {duplicate && !checkingDup && (
-        <div
-          className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/8 px-4 py-3"
-          role="alert"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <div className="text-sm">
-            <p className="font-medium text-foreground">
-              Project code{" "}
-              <span className="font-semibold">{duplicate.project_code}</span>{" "}
-              already exists
-            </p>
-            <p className="mt-0.5 text-muted-foreground">
-              {duplicate.name || "Unnamed"}{" "}
-              {duplicate.client_name
-                ? `/ ${duplicate.client_name}`
-                : ""}
-              . Committing will fill in any blank fields on that project, not
-              create a new one.
+      <div className="p-6 space-y-7">
+        {/* Draft raw_notes warning */}
+        {draft?.raw_notes && (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3"
+            role="alert"
+          >
+            <FileWarning className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <p className="text-sm text-foreground leading-snug">
+              {draft.raw_notes}
             </p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Form */}
-      <div className="grid gap-5 md:grid-cols-2">
-        {/* Project code — full width */}
-        <div className="md:col-span-2">
-          <label
-            htmlFor="loa-code"
-            className="mb-1.5 block text-sm font-medium text-foreground"
+        {/* Duplicate warning */}
+        {duplicate && !checkingDup && (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3"
+            role="alert"
           >
-            Project code <span className="text-destructive">*</span>
-          </label>
-          <div className="relative">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">
+                Code{" "}
+                <span className="font-semibold">{duplicate.project_code}</span>{" "}
+                already exists
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                {duplicate.name || "Unnamed"}{" "}
+                {duplicate.client_name ? `/ ${duplicate.client_name}` : ""}.
+                Committing will fill blank fields only.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Section: Project ── */}
+        <FormSection title="Project">
+          <div>
+            <label
+              htmlFor="loa-code"
+              className="mb-1.5 block text-xs font-semibold text-foreground uppercase tracking-wide"
+            >
+              Project code <span className="text-destructive">*</span>
+            </label>
+            <div className="relative">
+              <input
+                id="loa-code"
+                type="text"
+                className={cn(
+                  INPUT_CLS,
+                  "font-semibold tracking-wider uppercase",
+                  duplicate && "border-warning"
+                )}
+                placeholder="e.g. E26001"
+                value={projectCode}
+                onChange={(e) => setProjectCode(e.target.value.toUpperCase())}
+              />
+              {checkingDup && (
+                <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              You assign this code. Duplicates are checked automatically.
+            </p>
+          </div>
+
+          <Field label="Project / site name" htmlFor="loa-name">
             <input
-              id="loa-code"
+              id="loa-name"
+              type="text"
+              className={INPUT_CLS}
+              placeholder="Site or project name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+
+          <Field label="Site address" htmlFor="loa-address">
+            <input
+              id="loa-address"
+              type="text"
+              className={INPUT_CLS}
+              placeholder="Full site address"
+              value={siteAddress}
+              onChange={(e) => setSiteAddress(e.target.value)}
+            />
+          </Field>
+        </FormSection>
+
+        {/* ── Section: Commercial ── */}
+        <FormSection title="Commercial">
+          {/* Client with caveat */}
+          <div>
+            <label
+              htmlFor="loa-client"
+              className="mb-1.5 block text-xs font-semibold text-foreground uppercase tracking-wide"
+            >
+              Client (main contractor)
+            </label>
+            <input
+              id="loa-client"
               type="text"
               className={cn(
-                "w-full rounded-md border bg-background py-2 pl-3 pr-10 text-sm font-medium tracking-wide uppercase",
-                "focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary",
-                "transition-colors",
-                duplicate
-                  ? "border-warning/60"
-                  : "border-border"
+                INPUT_CLS,
+                isClientSuspicious && "border-destructive bg-destructive/5"
               )}
-              placeholder="e.g. E26001"
-              value={projectCode}
-              onChange={(e) => setProjectCode(e.target.value.toUpperCase())}
+              placeholder="Main contractor who issued the award"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
             />
-            {checkingDup && (
-              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            <div className="mt-1.5 flex items-start gap-1.5">
+              <Info className="mt-px h-3 w-3 shrink-0 text-primary" />
+              <p className="text-[11px] text-primary font-medium leading-snug">
+                The company on the LOA letterhead — not Conplus
+              </p>
+            </div>
+            {isClientSuspicious && (
+              <p className="mt-1 text-xs font-medium text-destructive">
+                "Conplus" is the sub-contractor. Enter the main contractor.
+              </p>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            You assign this code. It will be checked for duplicates
-            automatically.
-          </p>
-        </div>
 
-        {/* Project / site name */}
-        <FieldGroup label="Project / site name" htmlFor="loa-name">
-          <input
-            id="loa-name"
-            type="text"
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-            placeholder="Site or project name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </FieldGroup>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Contract value (SGD, excl. GST)"
+              htmlFor="loa-value"
+            >
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                  $
+                </span>
+                <input
+                  id="loa-value"
+                  type="text"
+                  inputMode="decimal"
+                  className={cn(INPUT_CLS, "pl-7 tabular-nums")}
+                  placeholder="0.00"
+                  value={contractValue}
+                  onChange={(e) => setContractValue(e.target.value)}
+                  onBlur={() => {
+                    const fmt = formatSGD(contractValue);
+                    if (fmt) setContractValue(fmt);
+                  }}
+                />
+              </div>
+            </Field>
 
-        {/* Client (main contractor) — with caveat */}
-        <div>
-          <label
-            htmlFor="loa-client"
-            className="mb-1.5 block text-sm font-medium text-foreground"
-          >
-            Client (main contractor)
-          </label>
-          <input
-            id="loa-client"
-            type="text"
-            className={cn(
-              "w-full rounded-md border bg-background py-2 px-3 text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors",
-              isClientSuspicious
-                ? "border-destructive/60 bg-destructive/5"
-                : "border-border"
-            )}
-            placeholder="Main contractor who issued the award"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-          />
-          {/* Persistent hint */}
-          <div className="mt-1.5 flex items-start gap-1.5">
-            <Info className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-            <p className="text-xs text-primary font-medium">
-              Main contractor who issued the award (not Conplus)
-            </p>
+            <Field label="Quotation / award ref" htmlFor="loa-qref">
+              <input
+                id="loa-qref"
+                type="text"
+                className={INPUT_CLS}
+                placeholder="Reference number"
+                value={quotationRef}
+                onChange={(e) => setQuotationRef(e.target.value)}
+              />
+            </Field>
           </div>
-          {/* Active warning when "Conplus" is typed */}
-          {isClientSuspicious && (
-            <p className="mt-1 text-xs font-medium text-destructive">
-              This looks like it says "Conplus" — Conplus is the
-              sub-contractor. Enter the main contractor from the LOA
-              letterhead.
-            </p>
-          )}
-        </div>
 
-        {/* Site address */}
-        <FieldGroup label="Site address" htmlFor="loa-address">
-          <input
-            id="loa-address"
-            type="text"
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-            placeholder="Full site address"
-            value={siteAddress}
-            onChange={(e) => setSiteAddress(e.target.value)}
-          />
-        </FieldGroup>
+          <Field label="Sales manager" htmlFor="loa-sales">
+            <select
+              id="loa-sales"
+              className={cn(INPUT_CLS, "cursor-pointer")}
+              value={salesManager}
+              onChange={(e) => setSalesManager(e.target.value)}
+            >
+              <option value="">— Select (optional) —</option>
+              {SALES_MANAGERS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </FormSection>
 
-        {/* Coating system */}
-        <FieldGroup label="Coating system" htmlFor="loa-coating">
-          <input
-            id="loa-coating"
-            type="text"
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-            placeholder='e.g. "StoPox TEP Multi Top"'
-            value={coatingSystem}
-            onChange={(e) => setCoatingSystem(e.target.value)}
-          />
-        </FieldGroup>
+        {/* ── Section: Works ── */}
+        <FormSection title="Works">
+          <Field label="Scope of works" htmlFor="loa-scope">
+            <textarea
+              id="loa-scope"
+              rows={4}
+              className={cn(INPUT_CLS, "leading-relaxed resize-y")}
+              placeholder="Paste or describe the scope from the LOA"
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            />
+          </Field>
 
-        {/* Contract value */}
-        <FieldGroup label="Contract value (SGD, excl. GST)" htmlFor="loa-value">
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-              $
-            </span>
+          <Field label="Coating system" htmlFor="loa-coating">
             <input
-              id="loa-value"
+              id="loa-coating"
               type="text"
-              inputMode="decimal"
-              className="w-full rounded-md border border-border bg-background py-2 pl-7 pr-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-              placeholder="0.00"
-              value={contractValue}
-              onChange={(e) => setContractValue(e.target.value)}
-              onBlur={() => {
-                const fmt = formatSGD(contractValue);
-                if (fmt) setContractValue(fmt);
-              }}
+              className={INPUT_CLS}
+              placeholder='e.g. "StoPox TEP Multi Top"'
+              value={coatingSystem}
+              onChange={(e) => setCoatingSystem(e.target.value)}
             />
+          </Field>
+        </FormSection>
+
+        {/* ── Price schedule (read-only) ── */}
+        {lineItems.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/20">
+            <button
+              type="button"
+              onClick={() => setScheduleOpen(!scheduleOpen)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer rounded-lg"
+            >
+              <span>
+                Price schedule{" "}
+                <span className="font-normal text-muted-foreground">
+                  — reference only, not saved
+                </span>
+              </span>
+              {scheduleOpen ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {scheduleOpen && (
+              <div className="border-t border-border px-4 py-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      {["S/N", "Description", "Unit", "Qty", "Rate", "Amount"].map(
+                        (h, i) => (
+                          <th
+                            key={h}
+                            className={cn(
+                              "pb-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider",
+                              i > 1 && "text-right",
+                              i === 0 && "w-10",
+                              i === 1 && "min-w-[120px]"
+                            )}
+                          >
+                            {h}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((li, i) => (
+                      <tr
+                        key={i}
+                        className="border-b border-border/40 last:border-0"
+                      >
+                        <td className="py-2 pr-3 tabular-nums text-muted-foreground">
+                          {li.sn}
+                        </td>
+                        <td className="py-2 pr-3">{li.description}</td>
+                        <td className="py-2 pr-3 text-right text-muted-foreground">
+                          {li.unit}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {li.qty}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {li.rate}
+                        </td>
+                        <td className="py-2 text-right tabular-nums font-medium">
+                          {li.amount}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </FieldGroup>
+        )}
 
-        {/* Quotation / award ref */}
-        <FieldGroup label="Quotation / award ref" htmlFor="loa-qref">
-          <input
-            id="loa-qref"
-            type="text"
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-            placeholder="Reference number"
-            value={quotationRef}
-            onChange={(e) => setQuotationRef(e.target.value)}
-          />
-        </FieldGroup>
-
-        {/* Sales manager */}
-        <FieldGroup label="Sales manager" htmlFor="loa-sales">
-          <select
-            id="loa-sales"
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors cursor-pointer"
-            value={salesManager}
-            onChange={(e) => setSalesManager(e.target.value)}
+        {/* Submit error */}
+        {submitError && (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3"
+            role="alert"
           >
-            <option value="">— Select (optional) —</option>
-            {SALES_MANAGERS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </FieldGroup>
-
-        {/* Scope — full width, multiline */}
-        <div className="md:col-span-2">
-          <label
-            htmlFor="loa-scope"
-            className="mb-1.5 block text-sm font-medium text-foreground"
-          >
-            Scope of works
-          </label>
-          <textarea
-            id="loa-scope"
-            rows={4}
-            className="w-full rounded-md border border-border bg-background py-2 px-3 text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-            placeholder="Paste or describe the scope of works from the LOA"
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-          />
-        </div>
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">Commit failed</p>
+              <p className="mt-0.5 text-muted-foreground">{submitError}</p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Price schedule (read-only reference) ── */}
-      {lineItems.length > 0 && (
-        <div className="rounded-lg border border-border bg-muted/30">
-          <button
-            type="button"
-            onClick={() => setScheduleOpen(!scheduleOpen)}
-            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer rounded-lg"
-          >
-            <span>
-              Price schedule{" "}
-              <span className="font-normal text-muted-foreground">
-                — for the salesperson's work order, not saved here
-              </span>
-            </span>
-            {scheduleOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-
-          {scheduleOpen && (
-            <div className="border-t border-border px-4 py-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="pb-2 pr-4 font-medium text-muted-foreground text-xs uppercase tracking-wider w-12">
-                      S/N
-                    </th>
-                    <th className="pb-2 pr-4 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="pb-2 pr-4 font-medium text-muted-foreground text-xs uppercase tracking-wider w-16 text-right">
-                      Unit
-                    </th>
-                    <th className="pb-2 pr-4 font-medium text-muted-foreground text-xs uppercase tracking-wider w-16 text-right">
-                      Qty
-                    </th>
-                    <th className="pb-2 pr-4 font-medium text-muted-foreground text-xs uppercase tracking-wider w-24 text-right">
-                      Rate
-                    </th>
-                    <th className="pb-2 font-medium text-muted-foreground text-xs uppercase tracking-wider w-24 text-right">
-                      Amount
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineItems.map((li, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-border/50 last:border-0"
-                    >
-                      <td className="py-2 pr-4 tabular-nums text-muted-foreground">
-                        {li.sn}
-                      </td>
-                      <td className="py-2 pr-4">{li.description}</td>
-                      <td className="py-2 pr-4 text-right text-muted-foreground">
-                        {li.unit}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {li.qty}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {li.rate}
-                      </td>
-                      <td className="py-2 text-right tabular-nums font-medium">
-                        {li.amount}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {/* ── Card footer: actions ── */}
+      <div className="flex items-center justify-between border-t border-border px-6 py-4">
+        <div>
+          {onDiscard && (
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Discard
+            </button>
           )}
         </div>
-      )}
-
-      {/* Submit error */}
-      {submitError && (
-        <div
-          className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-4 py-3"
-          role="alert"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div className="text-sm">
-            <p className="font-medium text-foreground">Commit failed</p>
-            <p className="mt-0.5 text-muted-foreground">{submitError}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center justify-between border-t border-border pt-5">
-        <button
-          type="button"
-          onClick={resetForm}
-          className="rounded-md border border-border bg-background px-3.5 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors cursor-pointer"
-        >
-          Clear form
-        </button>
 
         <button
           type="button"
           onClick={handleCommit}
           disabled={!projectCode.trim() || submitting}
           className={cn(
-            "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all cursor-pointer",
-            "bg-primary text-primary-foreground hover:opacity-90",
-            "focus:outline-none focus:ring-2 focus:ring-primary/40",
-            "disabled:opacity-50 disabled:cursor-not-allowed"
+            "inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold shadow-sm transition-all cursor-pointer",
+            "bg-primary text-primary-foreground hover:bg-primary/90",
+            "focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2",
+            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           )}
         >
-          {submitting && (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          )}
+          {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {duplicate ? "Commit (fill blanks)" : "Commit project"}
         </button>
       </div>
@@ -614,11 +884,28 @@ export default function LOAReviewPage() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Field group helper                                                 */
-/* ------------------------------------------------------------------ */
+/* ================================================================== */
+/*  Small helpers                                                      */
+/* ================================================================== */
 
-function FieldGroup({
+function FormSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function Field({
   label,
   htmlFor,
   children,
@@ -631,7 +918,7 @@ function FieldGroup({
     <div>
       <label
         htmlFor={htmlFor}
-        className="mb-1.5 block text-sm font-medium text-foreground"
+        className="mb-1.5 block text-xs font-semibold text-foreground uppercase tracking-wide"
       >
         {label}
       </label>
