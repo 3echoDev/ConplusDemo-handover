@@ -21,7 +21,8 @@ import {
   type Invoice,
 } from "@/data/sampleData";
 import { printPO, exportPOToExcel } from "@/lib/poDocument";
-import { printWO, exportWOToExcel, woOrderTotal } from "@/lib/woDocument";
+import { printWO, woOrderTotal } from "@/lib/woDocument";
+import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import { printClaim, exportClaimToExcel, type ClaimDocContext } from "@/lib/claimDocument";
 import { fetchClaimLines } from "@/data/db";
 import { cn } from "@/lib/utils";
@@ -1142,10 +1143,10 @@ export default function LiveViewPage() {
                         )}
                         <div className="flex justify-end gap-1.5">
                           <button
-                            onClick={(e) => { e.stopPropagation(); exportWOToExcel(wo); }}
+                            onClick={(e) => { e.stopPropagation(); exportWOTemplateExcel(wo); }}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
                           >
-                            <FileSpreadsheet className="h-3.5 w-3.5 text-success" /> Excel
+                            <FileSpreadsheet className="h-3.5 w-3.5 text-success" /> Download WO
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); printWO(wo); }}
