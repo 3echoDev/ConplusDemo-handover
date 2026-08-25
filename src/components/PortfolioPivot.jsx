@@ -259,12 +259,12 @@ export default function PortfolioPivot() {
   // Expanded manager row
   const [expanded, setExpanded] = useState(null);
 
-  if (loading) return <Shell><div className="pp-loading">Loading portfolio data\u2026</div></Shell>;
+  if (loading) return <Shell><div className="pp-loading">Loading summary data\u2026</div></Shell>;
   if (err)
     return (
       <Shell>
         <div className="pp-error">
-          <strong>Couldn't load portfolio data.</strong> {err}
+          <strong>Couldn't load summary data.</strong> {err}
           <div className="pp-error-hint">Check the Supabase connection and that the anon key has read access to project_claim_summary.</div>
         </div>
       </Shell>

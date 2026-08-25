@@ -216,7 +216,7 @@ export default function LOAReviewPage() {
             </h2>
             <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
               {isNew
-                ? "All fields saved. The project now appears in Claims and Portfolio."
+                ? "All fields saved. The project now appears in Claims and Summary."
                 : "Missing fields filled in on the existing record. No data was overwritten."}
             </p>
 

@@ -35,7 +35,7 @@ const App = () => (
           {LIVE_VIEW_ONLY ? (
             <Routes>
               <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
-              <Route path="/portfolio" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
+              <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
               <Route path="/loa-review" element={<LOAReviewPage />} />
               <Route path="*" element={<LiveViewPage />} />
             </Routes>
@@ -59,7 +59,7 @@ const App = () => (
                       <Route path="/loa-review" element={<LOAReviewPage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
                       <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
-                      <Route path="/portfolio" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
+                      <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>
