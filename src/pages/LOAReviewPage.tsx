@@ -407,8 +407,14 @@ export default function LOAReviewPage() {
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8">
-      {/* Page header */}
+      {/* Back + Page header */}
       <div className="mb-8">
+        <a
+          href="/"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to Live View
+        </a>
         <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
           LOA Review
         </h1>
