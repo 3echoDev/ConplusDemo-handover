@@ -271,22 +271,20 @@ export default function LOAReviewPage() {
   return (
     <PageShell>
       <div className="mx-auto max-w-2xl">
-        {/* Action bar */}
-        <div className="mb-5 flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {loading
-              ? "Loading..."
-              : drafts.length === 0
-                ? "No LOAs waiting"
-                : `${drafts.length} pending`}
-          </p>
-          <button
-            onClick={openBlank}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors cursor-pointer"
-          >
-            <Plus className="h-3.5 w-3.5" /> Manual entry
-          </button>
-        </div>
+        {/* Action bar — only visible when there are drafts or loading */}
+        {(loading || drafts.length > 0) && (
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm font-medium text-muted-foreground">
+              {loading ? "Loading..." : `${drafts.length} pending`}
+            </p>
+            <button
+              onClick={openBlank}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" /> Manual entry
+            </button>
+          </div>
+        )}
 
         {/* Loading skeleton */}
         {loading && (
@@ -305,20 +303,19 @@ export default function LOAReviewPage() {
 
         {/* Empty state */}
         {!loading && drafts.length === 0 && (
-          <div className="rounded-xl border border-border bg-card px-8 py-16 text-center shadow-sm">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <FileCheck2 className="h-6 w-6 text-muted-foreground" />
+          <div className="rounded-xl border border-dashed border-border/60 bg-card/50 px-8 py-20 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/5">
+              <FileCheck2 className="h-7 w-7 text-primary/40" />
             </div>
             <h3 className="font-heading text-base font-semibold text-foreground">
               No LOAs waiting for review
             </h3>
-            <p className="mt-1.5 text-sm text-muted-foreground max-w-xs mx-auto">
-              Parsed LOAs will appear here automatically. You can also create a
-              project manually.
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              Parsed LOAs will appear here automatically. You can also create a project manually.
             </p>
             <button
               onClick={openBlank}
-              className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors cursor-pointer"
+              className="mt-6 inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-[0.97] transition-all cursor-pointer"
             >
               <Plus className="h-4 w-4" /> New manual entry
             </button>
@@ -331,7 +328,7 @@ export default function LOAReviewPage() {
             {drafts.map((d) => (
               <div
                 key={d.id}
-                className="group rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
+                className="group rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/30 hover:shadow-md active:scale-[0.99] transition-all cursor-pointer"
                 onClick={() => openDraft(d)}
                 role="button"
                 tabIndex={0}
@@ -409,13 +406,13 @@ export default function LOAReviewPage() {
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-6">
+    <div className="px-4 py-8 sm:px-6 lg:px-8">
       {/* Page header */}
-      <div>
+      <div className="mb-8">
         <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
           LOA Review
         </h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-muted-foreground">
           Review parsed Letters of Award and commit to projects
         </p>
       </div>
