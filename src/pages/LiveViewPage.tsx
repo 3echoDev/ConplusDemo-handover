@@ -117,9 +117,11 @@ function ProjectDetailBody({ project }: { project: Project }) {
           <p className="text-sm font-medium text-primary">{formatCurrency(cumClaims)}</p>
         </div>
         <Field label="Sales Manager" value={project.manager} />
-        <Field label="Contact" value={project.contactPerson} />
+        <Field label="Contact Person" value={project.contactPerson} />
+        <Field label="Contact Number" value={project.contactNumber || "—"} />
         <Field label="Client PO" value={project.clientPo || "—"} />
-        <Field label="Awarded / Start" value={project.startDate} />
+        <Field label="Start Date" value={!project.startDate || project.startDate === "—" ? "TBA" : project.startDate} />
+        <Field label="End Date" value={!project.endDate || project.endDate === "—" ? "TBA" : project.endDate} />
         {project.location !== "Singapore" && <div className="col-span-2"><Field label="Site Address" value={project.location} /></div>}
         {project.companyAddress && <div className="col-span-2"><Field label="Company Address" value={project.companyAddress} /></div>}
         <div className="col-span-2"><Field label="Scope of Work" value={project.scope} /></div>

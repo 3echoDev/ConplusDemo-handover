@@ -26,6 +26,7 @@ export interface Project {
   scope: string;
   manager: string;
   contactPerson: string;
+  contactNumber: string;
 }
 
 export interface ProjectVO {

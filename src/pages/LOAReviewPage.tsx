@@ -43,6 +43,10 @@ interface LOADraft {
   contract_value: number | null;
   quotation_ref: string | null;
   sales_manager: string | null;
+  contact_person: string | null;
+  contact_number: string | null;
+  start_date: string | null;
+  end_date: string | null;
   line_items: LineItem[] | null;
   suggested_code: string | null;
   source: string | null;
@@ -427,6 +431,10 @@ function ReviewForm({
   );
   const [quotationRef, setQuotationRef] = useState(draft?.quotation_ref ?? "");
   const [salesManager, setSalesManager] = useState(draft?.sales_manager ?? "");
+  const [contactPerson, setContactPerson] = useState(draft?.contact_person ?? "");
+  const [contactNumber, setContactNumber] = useState(draft?.contact_number ?? "");
+  const [startDate, setStartDate] = useState(draft?.start_date ?? "");
+  const [endDate, setEndDate] = useState(draft?.end_date ?? "");
 
   const lineItems: LineItem[] = draft?.line_items ?? [];
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -495,6 +503,10 @@ function ReviewForm({
           p_contract_value: val,
           p_quotation_ref: quotationRef.trim() || null,
           p_sales_manager: salesManager || null,
+          p_contact_person: contactPerson.trim() || null,
+          p_contact_number: contactNumber.trim() || null,
+          p_start_date: startDate || null,
+          p_end_date: endDate || null,
         });
         if (error) throw new Error(error.message);
         onCommitted(data as CommitResult);
@@ -513,6 +525,10 @@ function ReviewForm({
             contract_value: val,
             quotation_ref: quotationRef.trim() || null,
             sales_manager: salesManager || null,
+            contact_person: contactPerson.trim() || null,
+            contact_number: contactNumber.trim() || null,
+            start_date: startDate || null,
+            end_date: endDate || null,
             suggested_code: code,
           })
           .select("id")
@@ -530,6 +546,10 @@ function ReviewForm({
           p_contract_value: val,
           p_quotation_ref: quotationRef.trim() || null,
           p_sales_manager: salesManager || null,
+          p_contact_person: contactPerson.trim() || null,
+          p_contact_number: contactNumber.trim() || null,
+          p_start_date: startDate || null,
+          p_end_date: endDate || null,
         });
         if (error) throw new Error(error.message);
         onCommitted(data as CommitResult);
@@ -735,6 +755,58 @@ function ReviewForm({
               ))}
             </select>
           </Field>
+        </FormSection>
+
+        {/* ── Section: Contact & Schedule ── */}
+        <FormSection title="Contact & Schedule">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Contact person" htmlFor="loa-contact-person">
+              <input
+                id="loa-contact-person"
+                type="text"
+                className={INPUT_CLS}
+                placeholder="e.g. Ms Khine"
+                value={contactPerson}
+                onChange={(e) => setContactPerson(e.target.value)}
+              />
+            </Field>
+            <Field label="Contact number" htmlFor="loa-contact-number">
+              <input
+                id="loa-contact-number"
+                type="text"
+                className={INPUT_CLS}
+                placeholder="e.g. 9105 9549"
+                value={contactNumber}
+                onChange={(e) => setContactNumber(e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Start date" htmlFor="loa-start-date">
+              <input
+                id="loa-start-date"
+                type="date"
+                className={cn(INPUT_CLS, "cursor-pointer")}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              {!startDate && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Leave empty if TBA</p>
+              )}
+            </Field>
+            <Field label="End date" htmlFor="loa-end-date">
+              <input
+                id="loa-end-date"
+                type="date"
+                className={cn(INPUT_CLS, "cursor-pointer")}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+              {!endDate && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Leave empty if TBA</p>
+              )}
+            </Field>
+          </div>
         </FormSection>
 
         {/* ── Section: Works ── */}

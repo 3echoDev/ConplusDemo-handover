@@ -34,6 +34,7 @@ export interface ProjectRow {
   manager: string | null;
   sales_manager: string | null;
   contact_person: string | null;
+  contact_number: string | null;
   quotation_ref: string | null;
   retention_pct: number | null;
   retention_cap_pct: number | null;
@@ -378,6 +379,7 @@ export function mapProject(row: ProjectRow, allocCount: number, alertCount: numb
     scope: row.scope ?? "—",
     manager: row.manager ?? row.sales_manager ?? "—",
     contactPerson: row.contact_person ?? "—",
+    contactNumber: row.contact_number ?? "",
   };
 }
 
