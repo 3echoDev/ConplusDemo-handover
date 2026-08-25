@@ -137,8 +137,7 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
   /* ── Title ─────────────────────────────────────────────────────── */
   ws.mergeCells(r, 1, r, COL_COUNT);
   const titleCell = ws.getCell(r, 1);
-  const woNum = wo.woNumber.replace(/-/g, " - ").split("").join(" ").replace(/  /g, " ");
-  titleCell.value = `W O R K S   O R D E R   ${woNum}`;
+  titleCell.value = `W O R K S   O R D E R   ${wo.woNumber}`;
   titleCell.font = F_TITLE;
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
   ws.getRow(r).height = 30;
@@ -146,19 +145,23 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
 
   /* ── Header block ──────────────────────────────────────────────── */
   headerRow(ws, r, "Client", wo.clientName || "", null, "Sales", wo.sales || "");
-  r += 2; // blank row between header pairs (matches template spacing)
+  r++;
+  r++; // one blank row after Client/Sales
 
   headerRow(ws, r, "Project", wo.siteAddress || "", null, "Project IC", wo.projectIc || "");
-  r += 2;
+  r++;
+  r++;
 
   headerRow(ws, r, "Contact Person", wo.siteContact || "", wo.siteContactNumber || "", "Quotation", wo.quotationRef || "");
-  r += 2;
+  r++;
+  r++;
 
   headerRow(ws, r, "Site Contact Person", wo.siteContact || "", wo.siteContactNumber || "", "Job No.", wo.jobNo || wo.projectCode || "");
-  r += 2;
+  r++;
+  r++;
 
   headerRow(ws, r, "Start Date", wo.startDate || "", null, "Date", wo.issueDate || "");
-  r += 1;
+  r++;
 
   /* ── Column headers ────────────────────────────────────────────── */
   // DOSAGE spans D–E, PACKING spans F–G, ORDER QUANTITY spans H–I
@@ -322,10 +325,9 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
         ws.getCell(r, 10).alignment = { vertical: "middle", wrapText: true };
         ws.getCell(r, 10).border = THIN;
 
-        // CALCULATION in K: dosage × area_sqm ÷ packing (formula when possible)
+        // CALCULATION in K: Excel formula = D{row} * areaSqm / F{row}
         if (!l.isMixComponent && l.dosage != null && l.packingSize != null && l.packingSize > 0 && area.areaSqm != null) {
-          const calcVal = (l.dosage * area.areaSqm) / l.packingSize;
-          ws.getCell(r, 11).value = Math.round(calcVal * 100) / 100;
+          ws.getCell(r, 11).value = { formula: `D${r}*${area.areaSqm}/F${r}`, result: (l.dosage * area.areaSqm) / l.packingSize };
           ws.getCell(r, 11).numFmt = "0.00";
         } else {
           ws.getCell(r, 11).value = "";
