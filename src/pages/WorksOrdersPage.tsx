@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, FileSpreadsheet, Download } from "lucide-react";
 import { printWO, exportWOToExcel } from "@/lib/woDocument";
+import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import ActivityLog from "@/components/ActivityLog";
 import { useAppData } from "@/data/AppDataContext";
 import { StatusBadge } from "@/components/shared/UIComponents";
@@ -214,10 +215,16 @@ export default function WorksOrdersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <button
+                          onClick={() => exportWOTemplateExcel(wo)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download WO
+                        </button>
+                        <button
                           onClick={() => exportWOToExcel(wo)}
                           className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
                         >
-                          <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                          <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
                         </button>
                         <button
                           onClick={() => printWO(wo)}
