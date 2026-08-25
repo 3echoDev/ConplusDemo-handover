@@ -47,6 +47,8 @@ interface LOADraft {
   contact_number: string | null;
   start_date: string | null;
   end_date: string | null;
+  doc_type: string | null;
+  payment_terms_days: number | null;
   line_items: LineItem[] | null;
   suggested_code: string | null;
   source: string | null;
@@ -60,6 +62,7 @@ interface CommitResult {
   project_code?: string;
   action?: "created_new" | "matched_existing";
   error?: string;
+  _woNote?: string;
 }
 
 interface DuplicateInfo {
@@ -72,7 +75,14 @@ interface DuplicateInfo {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const SALES_MANAGERS = ["JENSEN", "WAN FERN", "DARYL", "JAMES", "ALEX"];
+const CODE_PREFIXES = ["E", "F", "M"] as const;
+const DOC_TYPE_LABELS: Record<string, string> = {
+  LOA: "LOA",
+  VO: "VO",
+  PO: "PO",
+  WO: "WO",
+  signed_quotation: "Signed Quotation",
+};
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -202,6 +212,7 @@ export default function LOAReviewPage() {
               {isNew
                 ? `Created project ${result.project_code}`
                 : `Updated project ${result.project_code}`}
+              {result._woNote && result._woNote}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
               {isNew
@@ -328,10 +339,17 @@ export default function LOAReviewPage() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    {/* Project name */}
-                    <h3 className="font-heading text-sm font-semibold text-foreground truncate">
-                      {d.name || "Unnamed project"}
-                    </h3>
+                    {/* Project name + doc-type pill */}
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-heading text-sm font-semibold text-foreground truncate">
+                        {d.name || "Unnamed project"}
+                      </h3>
+                      {d.doc_type && (
+                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wide">
+                          {DOC_TYPE_LABELS[d.doc_type] || d.doc_type}
+                        </span>
+                      )}
+                    </div>
 
                     {/* Client + value row */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -436,8 +454,45 @@ function ReviewForm({
   const [startDate, setStartDate] = useState(draft?.start_date ?? "");
   const [endDate, setEndDate] = useState(draft?.end_date ?? "");
 
+  const [paymentTerms, setPaymentTerms] = useState(
+    draft?.payment_terms_days != null ? String(draft.payment_terms_days) : "35"
+  );
+  const [draftWO, setDraftWO] = useState(true);
+
   const lineItems: LineItem[] = draft?.line_items ?? [];
+  const hasLineItems = lineItems.length > 0;
   const [scheduleOpen, setScheduleOpen] = useState(false);
+
+  // Salespeople from DB
+  const [salespeople, setSalespeople] = useState<string[]>([]);
+  useEffect(() => {
+    supabase
+      .from("salespeople")
+      .select("canonical_name")
+      .eq("active", true)
+      .order("canonical_name")
+      .then(({ data }) => {
+        if (data) setSalespeople(data.map((s: { canonical_name: string }) => s.canonical_name));
+      });
+  }, []);
+
+  // Prefix code suggestion
+  const [selectedPrefix, setSelectedPrefix] = useState<string>("");
+  const [suggestedCode, setSuggestedCode] = useState<string | null>(null);
+  const [suggestingCode, setSuggestingCode] = useState(false);
+
+  const handlePrefixPick = async (prefix: string) => {
+    setSelectedPrefix(prefix);
+    setSuggestingCode(true);
+    try {
+      const { data } = await supabase.rpc("suggest_next_code", { p_prefix: prefix });
+      if (data?.suggested_code) {
+        setSuggestedCode(data.suggested_code);
+        setProjectCode(data.suggested_code);
+      }
+    } catch { /* ignore */ }
+    finally { setSuggestingCode(false); }
+  };
 
   // Duplicate check
   const [duplicate, setDuplicate] = useState<DuplicateInfo | null>(null);
@@ -509,7 +564,24 @@ function ReviewForm({
           p_end_date: endDate || null,
         });
         if (error) throw new Error(error.message);
-        onCommitted(data as CommitResult);
+        const res = data as CommitResult;
+
+        // Payment terms — update project if user set/changed it
+        const terms = toNumber(paymentTerms);
+        if (res.project_id && terms != null && terms !== 35) {
+          await supabase.from("projects").update({ payment_terms_days: terms }).eq("id", res.project_id);
+        }
+
+        // WO skeleton
+        let woNote = "";
+        if (draftWO && hasLineItems && draft) {
+          try {
+            const { data: woData } = await supabase.rpc("create_wo_skeleton", { p_draft_id: draft.id });
+            if (woData?.ok) woNote = ` · Works Order draft started (${woData.areas ?? 0} areas)`;
+          } catch { /* non-blocking */ }
+        }
+
+        onCommitted({ ...res, _woNote: woNote } as CommitResult & { _woNote?: string });
       } else {
         // Manual entry — insert a draft then confirm it in one go
         const { data: newDraft, error: insertErr } = await supabase
@@ -552,7 +624,15 @@ function ReviewForm({
           p_end_date: endDate || null,
         });
         if (error) throw new Error(error.message);
-        onCommitted(data as CommitResult);
+
+        // Payment terms for manual entry
+        const mRes = data as CommitResult;
+        const mTerms = toNumber(paymentTerms);
+        if (mRes.project_id && mTerms != null && mTerms !== 35) {
+          await supabase.from("projects").update({ payment_terms_days: mTerms }).eq("id", mRes.project_id);
+        }
+
+        onCommitted(mRes);
       }
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Unexpected error");
@@ -569,9 +649,21 @@ function ReviewForm({
     <div className="rounded-xl border border-border bg-card shadow-sm">
       {/* Card header */}
       <div className="border-b border-border px-6 py-4">
-        <h2 className="font-heading text-lg font-semibold text-foreground">
-          {draft ? "Review LOA" : "New project (manual)"}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-heading text-lg font-semibold text-foreground">
+            {draft
+              ? `Reviewing${draft.doc_type ? `: ${DOC_TYPE_LABELS[draft.doc_type] || draft.doc_type}` : ""}`
+              : "New project (manual)"}
+          </h2>
+          {draft?.doc_type && (
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary uppercase tracking-wide">
+              {DOC_TYPE_LABELS[draft.doc_type] || draft.doc_type}
+            </span>
+          )}
+        </div>
+        {draft?.name && (
+          <p className="mt-0.5 text-sm text-foreground">{draft.name}</p>
+        )}
         {draft?.source && (
           <p className="mt-0.5 text-xs text-muted-foreground">
             Source: {draft.source} · received {timeAgo(draft.created_at)}
@@ -624,6 +716,26 @@ function ReviewForm({
             >
               Project code <span className="text-destructive">*</span>
             </label>
+            {/* Prefix selector */}
+            <div className="mb-2 flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground mr-1">Prefix:</span>
+              {CODE_PREFIXES.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => handlePrefixPick(p)}
+                  className={cn(
+                    "rounded-md border px-3 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                    selectedPrefix === p
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-foreground hover:bg-secondary"
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+              {suggestingCode && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />}
+            </div>
             <div className="relative">
               <input
                 id="loa-code"
@@ -641,9 +753,15 @@ function ReviewForm({
                 <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
               )}
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              You assign this code. Duplicates are checked automatically.
-            </p>
+            {suggestedCode && projectCode === suggestedCode ? (
+              <p className="mt-1 text-[11px] text-primary font-medium">
+                Suggested next number — edit if needed
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                You assign this code. Duplicates are checked automatically.
+              </p>
+            )}
           </div>
 
           <Field label="Project / site name" htmlFor="loa-name">
@@ -740,21 +858,38 @@ function ReviewForm({
             </Field>
           </div>
 
-          <Field label="Sales manager" htmlFor="loa-sales">
-            <select
-              id="loa-sales"
-              className={cn(INPUT_CLS, "cursor-pointer")}
-              value={salesManager}
-              onChange={(e) => setSalesManager(e.target.value)}
-            >
-              <option value="">— Select (optional) —</option>
-              {SALES_MANAGERS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Sales manager" htmlFor="loa-sales">
+              <select
+                id="loa-sales"
+                className={cn(INPUT_CLS, "cursor-pointer")}
+                value={salesManager}
+                onChange={(e) => setSalesManager(e.target.value)}
+              >
+                <option value="">— Select (optional) —</option>
+                {salespeople.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Payment terms (days after invoice)" htmlFor="loa-terms">
+              <input
+                id="loa-terms"
+                type="number"
+                min={0}
+                className={cn(INPUT_CLS, "tabular-nums")}
+                placeholder="35"
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Default 35 — from the award document if stated
+              </p>
+            </Field>
+          </div>
         </FormSection>
 
         {/* ── Section: Contact & Schedule ── */}
@@ -924,7 +1059,24 @@ function ReviewForm({
       </div>
 
       {/* ── Card footer: actions ── */}
-      <div className="flex items-center justify-between border-t border-border px-6 py-4">
+      <div className="border-t border-border px-6 py-4 space-y-3">
+        {/* WO skeleton toggle — only when draft has line_items */}
+        {hasLineItems && draft && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={draftWO}
+              onChange={(e) => setDraftWO(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+            />
+            <span className="text-sm text-foreground">
+              Also draft the Works Order
+              <span className="text-muted-foreground"> (header + areas — materials left for sales)</span>
+            </span>
+          </label>
+        )}
+
+        <div className="flex items-center justify-between">
         <div>
           {onDiscard && (
             <button
@@ -951,6 +1103,7 @@ function ReviewForm({
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {duplicate ? "Commit (fill blanks)" : "Commit project"}
         </button>
+        </div>
       </div>
     </div>
   );
