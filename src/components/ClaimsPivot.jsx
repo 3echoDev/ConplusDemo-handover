@@ -62,25 +62,37 @@ function cellTitle(c) {
 }
 
 // ---- email templates -------------------------------------------------------
+// Certificate-clock: drafted defaults (client hasn't provided their wording yet).
+// Payment-clock: VERBATIM from client's "Account – Payment-Chase Setup".
+// All emails use "Dear Sir/Madam" per client standard — no personalisation.
+
+const fmtNum = (n) =>
+  n == null ? "[amount]" : Number(n).toLocaleString("en-SG", { minimumFractionDigits: 2 });
+
+const deadlineIn7 = () => {
+  const d = new Date(Date.now() + 7 * 86400000);
+  return fmtDate(d.toISOString().slice(0, 10));
+};
+
 function getCertEmail(row) {
-  const who = row.contact_person || "Sir/Madam";
+  const claimNo = row.claim_no || "-";
   const proj = `${row.project_name} (${row.project_code})`;
   const daysOver = Math.abs(row.days_to_due || 0);
   switch (row.stage) {
     case "t-4":
       return {
-        subject: `Payment Response Certificate \u2014 ${row.project_name} (Claim ${row.claim_no})`,
-        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due by ${fmtDate(row.due_date)}. We would appreciate it if you could arrange for the certificate to be issued by the due date.\n\nThank you.`,
+        subject: `Payment Response Certificate \u2014 ${row.project_name} (Claim ${claimNo})`,
+        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due by ${fmtDate(row.due_date)}. We would appreciate it if you could arrange for the certificate to be issued by the due date.\n\nThank you.`,
       };
     case "due":
       return {
         subject: `Payment Response Certificate Due Today \u2014 ${row.project_name}`,
-        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due today (${fmtDate(row.due_date)}). Kindly arrange for the certificate to be issued. Please let us know if you require any further information.\n\nThank you.`,
+        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due today (${fmtDate(row.due_date)}). Kindly arrange for the certificate to be issued. Please let us know if you require any further information.\n\nThank you.`,
       };
     case "overdue":
       return {
-        subject: `Overdue: Payment Response Certificate \u2014 ${row.project_name} (Claim ${row.claim_no})`,
-        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate was due on ${fmtDate(row.due_date)} and is now ${daysOver} days overdue. We would be grateful if you could arrange for it to be issued at the earliest, or advise us of the expected date.\n\nThank you.`,
+        subject: `Overdue: Payment Response Certificate \u2014 ${row.project_name} (Claim ${claimNo})`,
+        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate was due on ${fmtDate(row.due_date)} and is now ${daysOver} days overdue. We would be grateful if you could arrange for it to be issued at the earliest, or advise us of the expected date.\n\nThank you.`,
       };
     default:
       return null; // not_due, t-7 — too early to chase
@@ -88,29 +100,45 @@ function getCertEmail(row) {
 }
 
 function getPayEmail(row) {
-  const who = row.contact_person || "Sir/Madam";
-  const proj = `${row.project_name} (${row.project_code})`;
+  const deadline = deadlineIn7();
+  const amt = fmtNum(row.invoice_amount);
   switch (row.stage) {
     case "soa":
-    case "soa_overdue":
       return {
         subject: `Statement of Account \u2014 ${row.project_name}`,
-        body: `Dear ${who},\n\nPlease find our Statement of Account for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, due on ${fmtDate(row.due_date)}.\n\nWe would appreciate your arrangement for payment by the due date. Please let us know if you need any supporting documents.\n\nThank you.`,
+        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nThank you.`,
+      };
+    case "soa_overdue":
+      return {
+        subject: `Statement of Account (Outstanding) \u2014 ${row.project_name}`,
+        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nMay I seek your kind assistance to check the payment status for the outstanding invoice please.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
       };
     case "1st":
       return {
-        subject: `Payment Reminder \u2014 ${row.project_name} (Invoice ${row.claim_no})`,
-        body: `Dear ${who},\n\nThis is a reminder that payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, was due on ${fmtDate(row.due_date)}.\n\nWe would be grateful for your arrangement of payment. If payment has already been made, kindly disregard this reminder and share the payment details.\n\nThank you.`,
+        subject: `1st Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
+        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
       };
     case "2nd":
       return {
-        subject: `2nd Payment Reminder \u2014 ${row.project_name} (Invoice ${row.claim_no})`,
-        body: `Dear ${who},\n\nFurther to our earlier reminder, payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, remains outstanding (due ${fmtDate(row.due_date)}).\n\nWe would appreciate your urgent attention to settle this amount, or advise us of the expected payment date.\n\nThank you.`,
+        subject: `2nd Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
+        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
       };
     case "final":
       return {
-        subject: `Final Reminder \u2014 Outstanding Payment \u2014 ${row.project_name}`,
-        body: `Dear ${who},\n\nDespite our previous reminders, payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)} (due ${fmtDate(row.due_date)}), remains outstanding.\n\nWe request that this amount be settled within 7 days. Should payment not be received, we may have to review the matter further. We would prefer to resolve this amicably and appreciate your prompt attention.\n\nThank you.`,
+        subject: `Final Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
+        body: null,
+        variants: [
+          {
+            id: "legal",
+            label: "Legal Action",
+            body: `Dear Sir/Madam,\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment SGD ${amt} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of SGD ${amt} is not received in full by ${deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+          },
+          {
+            id: "termination",
+            label: "Work Termination",
+            body: `Dear Sir/Madam,\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment SGD ${amt} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of SGD ${amt} is not received in full by ${deadline}, we will be unable to mobilize our manpower to provide further services. Also, we will not be responsible for all the charges due to the outstanding work.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+          },
+        ],
       };
     default:
       return null;
@@ -622,7 +650,7 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
 }
 
 // ============================================================================
-// CHASE PANEL (two-clock engine)
+// CHASE PANEL (two-clock engine — Step 16 aligned)
 // ============================================================================
 function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [emailModal, setEmailModal] = useState(null);
@@ -631,6 +659,10 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
   const rows = chaseTab === "certificate" ? certRows : payRows;
+
+  // Split into action vs full list
+  const actionRows = rows.filter((r) => r.needs_action_today);
+  const allRows = rows;
 
   const isCertOverdue = (row) => row.stage === "overdue";
   const isPayOverdue = (row) => ["final", "2nd", "soa_overdue"].includes(row.stage);
@@ -641,9 +673,9 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
     setTimeout(() => setFeedback(null), 4000);
   };
 
-  const handleProceed = async (row, subject, body) => {
+  const handleProceed = async (row, subject, body, isManual) => {
     try {
-      const { data, error } = await supabase.rpc("log_chase_reminder", {
+      const params = {
         p_claim_id: row.claim_id,
         p_clock: clock,
         p_decision: "proceed",
@@ -652,7 +684,9 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
         p_email_subject: subject,
         p_email_body: body,
         p_created_by: null,
-      });
+      };
+      if (isManual) params.p_is_manual = true;
+      const { data, error } = await supabase.rpc("log_chase_reminder", params);
       if (error) { showFeedback("Error: " + error.message); }
       else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); }
     } catch (e) { showFeedback("Error: " + e.message); }
@@ -713,6 +747,12 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
     await onRefresh();
   };
 
+  const openDraft = (row, isManual) => {
+    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    if (!email) return;
+    setEmailModal({ row, clock, email, isManual });
+  };
+
   // Summary
   const totalAmount = rows.reduce((s, r) => {
     const amt = clock === "certificate" ? Number(r.amount || 0) : Number(r.invoice_amount || 0);
@@ -720,6 +760,130 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   }, 0);
   const overdueCount = rows.filter(isOverdue).length;
   const heldCount = rows.filter((r) => r.on_hold).length;
+
+  // Shared row renderer
+  const renderRow = (row) => {
+    const overdue = isOverdue(row);
+    const held = row.on_hold;
+    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    const amt = clock === "certificate" ? row.amount : row.invoice_amount;
+    const daysVal = row.days_to_due;
+    let daysLabel = "\u2014";
+    if (daysVal != null) {
+      if (daysVal > 0) daysLabel = `${daysVal}d left`;
+      else if (daysVal === 0) daysLabel = "Due today";
+      else daysLabel = `${Math.abs(daysVal)}d over`;
+    }
+
+    return (
+      <tr
+        key={row.claim_id}
+        className={`${overdue ? "cp-chase-row-over" : ""} ${held ? "cp-chase-row-held" : ""}`}
+      >
+        <td>
+          <span className={`cp-stage cp-stage-${row.stage?.replace(/[^a-z0-9]/g, "")}`}>
+            {row.stage?.replace(/_/g, " ")}
+          </span>
+          {held && <span className="cp-hold-badge">HELD</span>}
+          {row.awareness_only && <span className="cp-awareness-tag">Heads-up</span>}
+        </td>
+        <td>
+          <div className="cp-chase-proj">{row.project_code}</div>
+          <div className="cp-chase-client">
+            {cleanClient(row.client_name)} &middot; {cleanName(row.project_name)}
+          </div>
+          {row.contact_person && (
+            <div className="cp-chase-contact">{row.contact_person}</div>
+          )}
+          {row.notify_salesperson && row.sales_manager && (
+            <div className="cp-salesperson-tag">Notify salesperson: {row.sales_manager}</div>
+          )}
+        </td>
+        <td>#{row.claim_no ?? "\u2014"}</td>
+        <td>
+          <span className={`cp-chase-days${overdue ? " cp-days-over" : ""}`}>
+            {daysLabel}
+          </span>
+          {overdue && row.overdue_weeks != null && (
+            <div className="cp-overdue-weeks">{row.overdue_weeks} wks</div>
+          )}
+        </td>
+        <td className="r">
+          <span className="cp-chase-amt">{fmtFull(amt)}</span>
+        </td>
+        <td className="cp-chase-remcol">{row.reminders_sent || 0}</td>
+        <td className="cp-chase-datecol">
+          {clock === "certificate" && (
+            <>
+              <label className="cp-date-row">
+                <span className="cp-date-tag">PRC</span>
+                <input
+                  type="date"
+                  className="cp-date-input"
+                  onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)}
+                />
+              </label>
+              <label className="cp-date-row">
+                <span className="cp-date-tag">Inv</span>
+                <input
+                  type="date"
+                  className="cp-date-input"
+                  onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)}
+                />
+              </label>
+            </>
+          )}
+          {clock === "payment" && (
+            <label className="cp-date-row">
+              <span className="cp-date-tag">Paid</span>
+              <input
+                type="date"
+                className="cp-date-input"
+                onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)}
+              />
+            </label>
+          )}
+        </td>
+        <td className="cp-chase-actcol">
+          {email && !held && (
+            <button className="cp-btn cp-btn-draft" onClick={() => openDraft(row, false)}>
+              Draft
+            </button>
+          )}
+          {/* Manual reminder — available on ANY row */}
+          {!held && (
+            <button className="cp-btn cp-btn-manual" onClick={() => openDraft(row, true)} title="Prepare a reminder outside the normal cadence">
+              Manual
+            </button>
+          )}
+          {held ? (
+            <button className="cp-btn cp-btn-release" onClick={() => handleReleaseHold(row.claim_id)}>
+              Release
+            </button>
+          ) : (
+            <button className="cp-btn cp-btn-hold" onClick={() => setHoldModal({ row, clock })}>
+              Hold
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  const tableHead = (
+    <thead>
+      <tr>
+        <th>Stage</th>
+        <th className="cp-th-proj">Project</th>
+        <th>Claim</th>
+        <th>Days</th>
+        <th className="r">Amount</th>
+        <th className="cp-th-rem">#</th>
+        <th>Record date</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+  );
 
   return (
     <>
@@ -747,6 +911,12 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
           <span className="cp-stat-val">{fmt(totalAmount)}</span>
           <span className="cp-stat-lbl">{clock === "certificate" ? "Awaiting PRC" : "Awaiting payment"}</span>
         </div>
+        {actionRows.length > 0 && (
+          <div className="cp-stat cp-stat-action">
+            <span className="cp-stat-val">{actionRows.length}</span>
+            <span className="cp-stat-lbl">Needs action today</span>
+          </div>
+        )}
         {overdueCount > 0 && (
           <div className="cp-stat cp-stat-danger">
             <span className="cp-stat-val">{overdueCount}</span>
@@ -764,133 +934,30 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
       {/* Feedback toast */}
       {feedback && <div className="cp-toast">{feedback}</div>}
 
-      {/* Table */}
-      {rows.length === 0 ? (
+      {/* Section 1: Needs action today */}
+      {actionRows.length > 0 && (
+        <>
+          <div className="cp-section-head cp-section-action">
+            <span className="cp-section-dot" />
+            Needs action today
+            <span className="cp-section-count">{actionRows.length}</span>
+          </div>
+          <div className="cp-chase-wrap cp-chase-action-wrap">
+            <table className="cp-chase">{tableHead}<tbody>{actionRows.map(renderRow)}</tbody></table>
+          </div>
+        </>
+      )}
+
+      {/* Section 2: All in progress */}
+      <div className="cp-section-head">
+        All in progress
+        <span className="cp-section-count">{allRows.length}</span>
+      </div>
+      {allRows.length === 0 ? (
         <div className="cp-empty">Nothing to chase here.</div>
       ) : (
         <div className="cp-chase-wrap">
-          <table className="cp-chase">
-            <thead>
-              <tr>
-                <th>Stage</th>
-                <th className="cp-th-proj">Project</th>
-                <th>Claim</th>
-                <th>Days</th>
-                <th className="r">Amount</th>
-                <th className="cp-th-rem">#</th>
-                <th>Record date</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const overdue = isOverdue(row);
-                const held = row.on_hold;
-                const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
-                const amt = clock === "certificate" ? row.amount : row.invoice_amount;
-                const daysVal = row.days_to_due;
-                let daysLabel = "\u2014";
-                if (daysVal != null) {
-                  if (daysVal > 0) daysLabel = `${daysVal}d left`;
-                  else if (daysVal === 0) daysLabel = "Due today";
-                  else daysLabel = `${Math.abs(daysVal)}d over`;
-                }
-
-                return (
-                  <tr
-                    key={row.claim_id}
-                    className={`${overdue ? "cp-chase-row-over" : ""} ${held ? "cp-chase-row-held" : ""}`}
-                  >
-                    <td>
-                      <span className={`cp-stage cp-stage-${row.stage?.replace(/[^a-z0-9]/g, "")}`}>
-                        {row.stage?.replace(/_/g, " ")}
-                      </span>
-                      {held && <span className="cp-hold-badge">HELD</span>}
-                    </td>
-                    <td>
-                      <div className="cp-chase-proj">{row.project_code}</div>
-                      <div className="cp-chase-client">
-                        {cleanClient(row.client_name)} &middot; {cleanName(row.project_name)}
-                      </div>
-                      {row.contact_person && (
-                        <div className="cp-chase-contact">{row.contact_person}</div>
-                      )}
-                    </td>
-                    <td>#{row.claim_no ?? "\u2014"}</td>
-                    <td>
-                      <span className={`cp-chase-days${overdue ? " cp-days-over" : ""}`}>
-                        {daysLabel}
-                      </span>
-                      {overdue && row.overdue_weeks != null && (
-                        <div className="cp-overdue-weeks">{row.overdue_weeks} wks</div>
-                      )}
-                    </td>
-                    <td className="r">
-                      <span className="cp-chase-amt">{fmtFull(amt)}</span>
-                    </td>
-                    <td className="cp-chase-remcol">{row.reminders_sent || 0}</td>
-                    <td className="cp-chase-datecol">
-                      {clock === "certificate" && (
-                        <>
-                          <label className="cp-date-row">
-                            <span className="cp-date-tag">PRC</span>
-                            <input
-                              type="date"
-                              className="cp-date-input"
-                              onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)}
-                            />
-                          </label>
-                          <label className="cp-date-row">
-                            <span className="cp-date-tag">Inv</span>
-                            <input
-                              type="date"
-                              className="cp-date-input"
-                              onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)}
-                            />
-                          </label>
-                        </>
-                      )}
-                      {clock === "payment" && (
-                        <label className="cp-date-row">
-                          <span className="cp-date-tag">Paid</span>
-                          <input
-                            type="date"
-                            className="cp-date-input"
-                            onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)}
-                          />
-                        </label>
-                      )}
-                    </td>
-                    <td className="cp-chase-actcol">
-                      {email && !held && (
-                        <button
-                          className="cp-btn cp-btn-draft"
-                          onClick={() => setEmailModal({ row, clock, email })}
-                        >
-                          Draft
-                        </button>
-                      )}
-                      {held ? (
-                        <button
-                          className="cp-btn cp-btn-release"
-                          onClick={() => handleReleaseHold(row.claim_id)}
-                        >
-                          Release
-                        </button>
-                      ) : (
-                        <button
-                          className="cp-btn cp-btn-hold"
-                          onClick={() => setHoldModal({ row, clock })}
-                        >
-                          Hold
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <table className="cp-chase">{tableHead}<tbody>{allRows.map(renderRow)}</tbody></table>
         </div>
       )}
 
@@ -898,8 +965,10 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
       {emailModal && (
         <EmailPreviewModal
           row={emailModal.row}
+          clock={emailModal.clock}
           email={emailModal.email}
-          onProceed={(subj, body) => handleProceed(emailModal.row, subj, body)}
+          isManual={emailModal.isManual}
+          onProceed={(subj, body) => handleProceed(emailModal.row, subj, body, emailModal.isManual)}
           onIgnore={(subj, body) => handleIgnore(emailModal.row, subj, body)}
           onClose={() => setEmailModal(null)}
         />
@@ -918,10 +987,18 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 }
 
 // ============================================================================
-// EMAIL PREVIEW MODAL
+// EMAIL PREVIEW MODAL (with variant picker for Final Reminder)
 // ============================================================================
-function EmailPreviewModal({ row, email, onProceed, onIgnore, onClose }) {
+function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, onClose }) {
   const [copied, setCopied] = useState("");
+  const [variant, setVariant] = useState(null); // for final reminder variant selection
+  const hasVariants = email.variants && email.variants.length > 0;
+
+  // Resolve the active body — either single body or selected variant
+  const activeBody = hasVariants
+    ? (variant ? email.variants.find((v) => v.id === variant)?.body : null)
+    : email.body;
+  const canProceed = activeBody != null;
 
   const copyText = async (text, what) => {
     try {
@@ -929,7 +1006,6 @@ function EmailPreviewModal({ row, email, onProceed, onIgnore, onClose }) {
       setCopied(what);
       setTimeout(() => setCopied(""), 2000);
     } catch {
-      // Fallback: select + execCommand
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.position = "fixed";
@@ -943,17 +1019,21 @@ function EmailPreviewModal({ row, email, onProceed, onIgnore, onClose }) {
     }
   };
 
+  const isPayment = clock === "payment";
+  const claimNo = row.claim_no || "-";
+
   return (
     <div className="cp-overlay" onClick={onClose}>
       <div className="cp-modal" onClick={(e) => e.stopPropagation()}>
         <div className="cp-modal-head">
           <h3 className="cp-modal-title">
-            Draft Reminder &mdash; {row.project_code} #{row.claim_no}
+            {isManual ? "Manual Reminder" : "Draft Reminder"} &mdash; {row.project_code} #{claimNo}
           </h3>
           <button className="cp-modal-x" onClick={onClose}>&times;</button>
         </div>
 
         <div className="cp-modal-content">
+          {/* Subject */}
           <div className="cp-modal-field">
             <div className="cp-modal-flabel">
               <span>Subject</span>
@@ -964,26 +1044,56 @@ function EmailPreviewModal({ row, email, onProceed, onIgnore, onClose }) {
             <div className="cp-modal-fvalue">{email.subject}</div>
           </div>
 
-          <div className="cp-modal-field">
-            <div className="cp-modal-flabel">
-              <span>Body</span>
-              <button className="cp-btn-copy" onClick={() => copyText(email.body, "body")}>
-                {copied === "body" ? "Copied!" : "Copy"}
-              </button>
+          {/* Variant picker (Final Reminder only) */}
+          {hasVariants && (
+            <div className="cp-modal-field">
+              <div className="cp-modal-flabel"><span>Select variant</span></div>
+              <div className="cp-variant-picker">
+                {email.variants.map((v) => (
+                  <button
+                    key={v.id}
+                    className={`cp-variant-btn${variant === v.id ? " on" : ""}`}
+                    onClick={() => setVariant(v.id)}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+              {!variant && <div className="cp-variant-hint">Please select a variant before proceeding.</div>}
             </div>
-            <pre className="cp-modal-body">{email.body}</pre>
-          </div>
+          )}
 
+          {/* Body */}
+          {activeBody && (
+            <div className="cp-modal-field">
+              <div className="cp-modal-flabel">
+                <span>Body</span>
+                <button className="cp-btn-copy" onClick={() => copyText(activeBody, "body")}>
+                  {copied === "body" ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <pre className="cp-modal-body">{activeBody}</pre>
+            </div>
+          )}
+
+          {/* Hints */}
           <div className="cp-modal-hint">
             Copy the subject and body into your mail client. Your signature appends automatically on send.
+            {isPayment && (
+              <><br /><strong>Remember to attach the Statement of Account (SOA).</strong></>
+            )}
           </div>
         </div>
 
         <div className="cp-modal-actions">
-          <button className="cp-btn cp-btn-proceed" onClick={() => onProceed(email.subject, email.body)}>
+          <button
+            className="cp-btn cp-btn-proceed"
+            disabled={!canProceed}
+            onClick={() => canProceed && onProceed(email.subject, activeBody)}
+          >
             Log as Sent
           </button>
-          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(email.subject, email.body)}>
+          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(email.subject, activeBody || "")}>
             Skip This Cycle
           </button>
           <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
@@ -1615,11 +1725,14 @@ const CSS = `
 .cp-btn-draft:hover { background: #252D4A; }
 
 .cp-btn-hold { color: var(--fg4); }
+.cp-btn-manual { color: var(--fg4); font-size: 11px; }
+.cp-btn-manual:hover { background: var(--orange-50); border-color: var(--orange); color: var(--orange-ink); }
 .cp-btn-release { background: var(--green-50); color: var(--green-ink); border-color: var(--green); }
 .cp-btn-release:hover { background: #DCFCE7; }
 
 .cp-btn-proceed { background: var(--navy); color: #fff; border-color: var(--navy); }
 .cp-btn-proceed:hover { background: #252D4A; }
+.cp-btn-proceed:disabled { opacity: 0.4; cursor: not-allowed; }
 .cp-btn-ignore { color: var(--fg3); }
 .cp-btn-cancel { color: var(--fg4); }
 
@@ -1771,6 +1884,84 @@ const CSS = `
   resize: vertical;
 }
 .cp-textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 2px rgba(28,35,64,0.08); }
+
+/* -- Section headers (needs action / all in progress) -- */
+.cp-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg3);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 10px 0 6px;
+  margin-top: 6px;
+}
+.cp-section-action { color: var(--orange-ink); }
+.cp-section-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--orange);
+  animation: cpPulse 2s ease-in-out infinite;
+}
+@keyframes cpPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.cp-section-count {
+  font-size: 11px; font-weight: 700;
+  background: var(--navy-50); color: var(--fg3);
+  padding: 1px 7px; border-radius: 99px;
+}
+.cp-section-action .cp-section-count { background: var(--orange-50); color: var(--orange-ink); }
+.cp-chase-action-wrap { border-color: var(--orange); border-left: 3px solid var(--orange); }
+
+.cp-stat-action { border-left: 3px solid var(--orange); }
+.cp-stat-action .cp-stat-val { color: var(--orange-ink); }
+
+/* -- Salesperson tag -- */
+.cp-salesperson-tag {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  color: #7C3AED; /* purple */
+  background: #F5F3FF;
+  padding: 2px 7px; border-radius: 4px;
+  margin-top: 3px;
+}
+
+/* -- Awareness tag (t-7 heads-up) -- */
+.cp-awareness-tag {
+  display: inline-block;
+  font-size: 9px; font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fg4); background: var(--navy-50);
+  padding: 2px 6px; border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* -- Variant picker (Final Reminder) -- */
+.cp-variant-picker {
+  display: flex; gap: 6px;
+}
+.cp-variant-btn {
+  font-family: inherit;
+  font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 16px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--fg3);
+  transition: background 120ms, border-color 120ms;
+}
+.cp-variant-btn:hover { border-color: var(--navy); color: var(--fg); }
+.cp-variant-btn.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.cp-variant-hint {
+  font-size: 11px; color: var(--orange-ink);
+  margin-top: 6px; font-style: italic;
+}
 
 /* -- Responsive -- */
 @media (max-width: 640px) {
