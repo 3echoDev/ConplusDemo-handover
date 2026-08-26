@@ -807,6 +807,24 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
           {overdue && row.overdue_weeks != null && (
             <div className="cp-overdue-weeks">{row.overdue_weeks} wks</div>
           )}
+          {/* Next-flag indicator */}
+          {!row.needs_action_today && row.next_reminder_label && row.days_to_next_flag != null && row.days_to_next_flag > 0 && (
+            <div className="cp-next-flag">
+              {row.last_sent_at ? (
+                <>
+                  <span className="cp-next-sent">{"\u2713"} {row.reminders_sent ? `#${row.reminders_sent}` : "Sent"} {row.days_since_last_sent}d ago</span>
+                  {" \u00B7 "}
+                </>
+              ) : null}
+              Next: {row.next_reminder_label} in {row.days_to_next_flag}d
+            </div>
+          )}
+          {row.last_sent_at && row.needs_action_today && (
+            <div className="cp-next-flag cp-next-ready">
+              <span className="cp-next-sent">{"\u2713"} #{row.reminders_sent} sent {row.days_since_last_sent}d ago</span>
+              {" \u2014 due now"}
+            </div>
+          )}
         </td>
         <td className="r">
           <span className="cp-chase-amt">{fmtFull(amt)}</span>
@@ -821,6 +839,19 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                   type="date"
                   className="cp-date-input"
                   onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)}
+                />
+              </label>
+              <label className="cp-date-row">
+                <span className="cp-date-tag">Cert$</span>
+                <input
+                  type="number"
+                  className="cp-date-input cp-amt-input"
+                  placeholder="Certified amt"
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v));
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
                 />
               </label>
               <label className="cp-date-row">
@@ -1919,6 +1950,22 @@ const CSS = `
 
 .cp-stat-action { border-left: 3px solid var(--orange); }
 .cp-stat-action .cp-stat-val { color: var(--orange-ink); }
+
+/* -- Next-flag indicator -- */
+.cp-next-flag {
+  font-size: 10px;
+  color: var(--fg4);
+  margin-top: 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.cp-next-sent { color: var(--green-ink); font-weight: 600; }
+.cp-next-ready { color: var(--orange-ink); }
+.cp-next-ready .cp-next-sent { color: var(--green-ink); }
+
+/* -- Certified amount input -- */
+.cp-amt-input { width: 90px !important; }
+.cp-amt-input::placeholder { font-size: 10px; color: var(--fg4); }
 
 /* -- Salesperson tag -- */
 .cp-salesperson-tag {
