@@ -1,30 +1,32 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
 /*
-  ConPlus — Claims Pivot & Payment Chase (v3 — To Claim + portfolio strip)
-  -------------------------------------------------------------------------
-  Reads `claims` joined to `projects` for the pivot grid + chase table.
-  Reads `project_claim_summary` (Supabase view) for billable_contract and
-  to_claim — these are live-computed, never stored.
+  ConPlus — Claims Pivot & Payment Chase (v4 — Two-clock engine)
+  ---------------------------------------------------------------
+  Reads `claims` joined to `projects` for the pivot grid.
+  Reads `project_claim_summary` for billable_contract and to_claim.
+  Reads `certificate_chase` and `payment_chase` views for the chase tabs.
 
   Uses the app's shared Supabase client. Do NOT add createClient here.
 */
 
-// ---- Chase anchor -----------------------------------------------------------
-// The T+30 age is computed from this field. When certified_date or paid_date
-// become populated in the data, change this to the correct anchor field.
-const CHASE_ANCHOR = "claim_date";
-
 // ---- helpers ---------------------------------------------------------------
 const fmt = (n) =>
-  n == null ? "—" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", maximumFractionDigits: 0 });
+  n == null ? "\u2014" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", maximumFractionDigits: 0 });
 const fmtFull = (n) =>
-  n == null ? "—" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
+  n == null ? "\u2014" : n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
+
+const fmtDate = (d) => {
+  if (!d) return "\u2014";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return String(d);
+  return dt.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" });
+};
 
 const monthKey = (d) => (d ? d.slice(0, 7) : null);
 const monthLabel = (key) => {
-  if (!key) return "—";
+  if (!key) return "\u2014";
   const [y, m] = key.split("-");
   const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m - 1];
   return `${mon}'${y.slice(2)}`;
@@ -47,16 +49,72 @@ function cleanClient(c) {
   return c.split("\n")[0].replace(/\*.*?\*/g, "").trim();
 }
 function compact(n) {
-  if (n == null) return "—";
+  if (n == null) return "\u2014";
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (abs >= 1000) return sign + (abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1) + "k";
   return sign + Math.round(abs).toString();
 }
 function cellTitle(c) {
-  return `Claim #${c.claim_no ?? "—"} · ${c.status}\nClaimed ${fmtFull(c.amount)}\nCertified ${
+  return `Claim #${c.claim_no ?? "\u2014"} \u00B7 ${c.status}\nClaimed ${fmtFull(c.amount)}\nCertified ${
     c.certified == null ? "pending" : fmtFull(c.certified)
   }`;
+}
+
+// ---- email templates -------------------------------------------------------
+function getCertEmail(row) {
+  const who = row.contact_person || "Sir/Madam";
+  const proj = `${row.project_name} (${row.project_code})`;
+  const daysOver = Math.abs(row.days_to_due || 0);
+  switch (row.stage) {
+    case "t-4":
+      return {
+        subject: `Payment Response Certificate \u2014 ${row.project_name} (Claim ${row.claim_no})`,
+        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due by ${fmtDate(row.due_date)}. We would appreciate it if you could arrange for the certificate to be issued by the due date.\n\nThank you.`,
+      };
+    case "due":
+      return {
+        subject: `Payment Response Certificate Due Today \u2014 ${row.project_name}`,
+        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due today (${fmtDate(row.due_date)}). Kindly arrange for the certificate to be issued. Please let us know if you require any further information.\n\nThank you.`,
+      };
+    case "overdue":
+      return {
+        subject: `Overdue: Payment Response Certificate \u2014 ${row.project_name} (Claim ${row.claim_no})`,
+        body: `Dear ${who},\n\nWe refer to our Progress Claim ${row.claim_no} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate was due on ${fmtDate(row.due_date)} and is now ${daysOver} days overdue. We would be grateful if you could arrange for it to be issued at the earliest, or advise us of the expected date.\n\nThank you.`,
+      };
+    default:
+      return null; // not_due, t-7 — too early to chase
+  }
+}
+
+function getPayEmail(row) {
+  const who = row.contact_person || "Sir/Madam";
+  const proj = `${row.project_name} (${row.project_code})`;
+  switch (row.stage) {
+    case "soa":
+    case "soa_overdue":
+      return {
+        subject: `Statement of Account \u2014 ${row.project_name}`,
+        body: `Dear ${who},\n\nPlease find our Statement of Account for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, due on ${fmtDate(row.due_date)}.\n\nWe would appreciate your arrangement for payment by the due date. Please let us know if you need any supporting documents.\n\nThank you.`,
+      };
+    case "1st":
+      return {
+        subject: `Payment Reminder \u2014 ${row.project_name} (Invoice ${row.claim_no})`,
+        body: `Dear ${who},\n\nThis is a reminder that payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, was due on ${fmtDate(row.due_date)}.\n\nWe would be grateful for your arrangement of payment. If payment has already been made, kindly disregard this reminder and share the payment details.\n\nThank you.`,
+      };
+    case "2nd":
+      return {
+        subject: `2nd Payment Reminder \u2014 ${row.project_name} (Invoice ${row.claim_no})`,
+        body: `Dear ${who},\n\nFurther to our earlier reminder, payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)}, remains outstanding (due ${fmtDate(row.due_date)}).\n\nWe would appreciate your urgent attention to settle this amount, or advise us of the expected payment date.\n\nThank you.`,
+      };
+    case "final":
+      return {
+        subject: `Final Reminder \u2014 Outstanding Payment \u2014 ${row.project_name}`,
+        body: `Dear ${who},\n\nDespite our previous reminders, payment for ${proj}, Invoice dated ${fmtDate(row.invoice_date)} for ${fmtFull(row.invoice_amount)} (due ${fmtDate(row.due_date)}), remains outstanding.\n\nWe request that this amount be settled within 7 days. Should payment not be received, we may have to review the matter further. We would prefer to resolve this amicably and appreciate your prompt attention.\n\nThank you.`,
+      };
+    default:
+      return null;
+  }
 }
 
 // ============================================================================
@@ -72,6 +130,20 @@ export default function ClaimsPivot() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
+
+  // Chase state
+  const [chaseTab, setChaseTab] = useState("certificate");
+  const [certRows, setCertRows] = useState([]);
+  const [payRows, setPayRows] = useState([]);
+
+  const fetchChase = useCallback(async () => {
+    const [certRes, payRes] = await Promise.all([
+      supabase.from("certificate_chase").select("*"),
+      supabase.from("payment_chase").select("*"),
+    ]);
+    if (!certRes.error) setCertRows(certRes.data || []);
+    if (!payRes.error) setPayRows(payRes.data || []);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -120,13 +192,15 @@ export default function ClaimsPivot() {
           });
         }
         setSummaryMap(sMap);
+
+        await fetchChase();
       } catch (e) {
         setErr(e.message || String(e));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [fetchChase]);
 
   const months = useMemo(() => {
     const set = new Set(rows.map((r) => monthKey(r.claim_date)).filter(Boolean));
@@ -189,20 +263,6 @@ export default function ClaimsPivot() {
     return arr;
   }, [rows, summaryMap, managerFilter, statusFilter, search]);
 
-  const chase = useMemo(() => {
-    const items = [];
-    for (const r of rows) {
-      const age = daysSince(r[CHASE_ANCHOR]);
-      if (r.status === "certified" && r.certified > 0 && age >= 30) {
-        items.push({ ...r, kind: "payment_due", age });
-      } else if (r.status === "submitted" && age >= 30) {
-        items.push({ ...r, kind: "awaiting_cert", age });
-      }
-    }
-    items.sort((a, b) => b.age - a.age);
-    return items;
-  }, [rows]);
-
   // Portfolio totals (filtered)
   const portfolio = useMemo(() => {
     let billable = 0, claimed = 0, certified = 0, toClaim = 0;
@@ -232,12 +292,11 @@ export default function ClaimsPivot() {
       </Shell>
     );
 
-  const totalOutstanding = chase.filter((c) => c.kind === "payment_due").reduce((s, c) => s + c.certified, 0);
-  const awaitingCount = chase.filter((c) => c.kind === "awaiting_cert").length;
+  const chaseCount = certRows.length + payRows.length;
 
   return (
     <Shell>
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <header className="cp-header">
         <div className="cp-header-left">
           <a href="/" className="cp-back" title="Back to Live Operations">
@@ -251,54 +310,46 @@ export default function ClaimsPivot() {
             Claims grid
           </button>
           <button className={`cp-tab${view === "chase" ? " on" : ""}`} onClick={() => setView("chase")}>
-            Payment chase
-            {chase.length > 0 && <span className="cp-badge">{chase.length}</span>}
+            Chase
+            {chaseCount > 0 && <span className="cp-badge">{chaseCount}</span>}
           </button>
         </div>
       </header>
 
-      {/* ── Summary cards (chase only) ── */}
-      {view === "chase" && (
-        <div className="cp-summary">
-          <div className="cp-stat cp-stat-warn">
-            <span className="cp-stat-val">{fmt(totalOutstanding)}</span>
-            <span className="cp-stat-lbl">Certified &amp; ageing (30+ days)</span>
-          </div>
-          <div className="cp-stat cp-stat-info">
-            <span className="cp-stat-val">{awaitingCount}</span>
-            <span className="cp-stat-lbl">Submitted, awaiting certification</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── Controls ── */}
-      <div className="cp-controls">
-        <input
-          className="cp-search"
-          placeholder="Search project, code, or client..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select className="cp-select" value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)}>
-          <option value="all">All managers</option>
-          {managers.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-        {view === "pivot" && (
+      {/* -- Controls (pivot only) -- */}
+      {view === "pivot" && (
+        <div className="cp-controls">
+          <input
+            className="cp-search"
+            placeholder="Search project, code, or client..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select className="cp-select" value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)}>
+            <option value="all">All managers</option>
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
           <select className="cp-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All projects</option>
             <option value="outstanding">Has outstanding</option>
           </select>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* ── Views ── */}
+      {/* -- Views -- */}
       {view === "pivot" ? (
         <>
           <PortfolioStrip portfolio={portfolio} />
           <PivotGrid projects={projects} months={months} expanded={expanded} setExpanded={setExpanded} />
         </>
       ) : (
-        <ChaseTable items={chase} />
+        <ChasePanel
+          chaseTab={chaseTab}
+          setChaseTab={setChaseTab}
+          certRows={certRows}
+          payRows={payRows}
+          onRefresh={fetchChase}
+        />
       )}
     </Shell>
   );
@@ -372,7 +423,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
                     return (
                       <td key={m} className={`cp-cell cp-cell-${c.status}`} title={cellTitle(c)}>
                         <span className="cp-cell-amt">{compact(c.certified ?? c.amount)}</span>
-                        <span className="cp-cell-no">#{c.claim_no ?? "—"}</span>
+                        <span className="cp-cell-no">#{c.claim_no ?? "\u2014"}</span>
                       </td>
                     );
                   })}
@@ -431,12 +482,12 @@ function ClaimDetail({ project }) {
             const variance = c.certified != null && c.amount != null ? c.certified - c.amount : null;
             return (
               <tr key={i}>
-                <td>#{c.claim_no ?? "—"}</td>
+                <td>#{c.claim_no ?? "\u2014"}</td>
                 <td>{monthLabel(monthKey(c.claim_date))}</td>
                 <td className="r">{fmtFull(c.amount)}</td>
                 <td className="r">{c.certified == null ? <em className="cp-pending">pending</em> : fmtFull(c.certified)}</td>
                 <td className={`r ${variance != null && variance < 0 ? "cp-neg" : ""} ${variance != null && variance > 0 ? "cp-pos" : ""}`}>
-                  {variance == null ? "—" : (variance >= 0 ? "+" : "") + fmtFull(variance)}
+                  {variance == null ? "\u2014" : (variance >= 0 ? "+" : "") + fmtFull(variance)}
                 </td>
                 <td><span className={`cp-pill cp-pill-${c.status}`}>{c.status}</span></td>
               </tr>
@@ -456,7 +507,7 @@ function ClaimDetail({ project }) {
         </div>
         <div className={`cp-recon-item cp-recon-toclaim${project.toClaim != null && project.toClaim > 10000 ? " cp-recon-high" : ""}${project.toClaim != null && Math.abs(project.toClaim) < 1 ? " cp-recon-zero" : ""}`}>
           <span className="cp-recon-label">To claim</span>
-          <span className="cp-recon-val">{project.toClaim == null ? "—" : fmtFull(project.toClaim)}</span>
+          <span className="cp-recon-val">{project.toClaim == null ? "\u2014" : fmtFull(project.toClaim)}</span>
         </div>
       </div>
       <VOSection
@@ -522,7 +573,7 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
         <div className="cp-vo-lump" title={lumpRow.description || ""}>
           <span className="cp-vo-lump-label">Unallocated VO value:</span>{" "}
           <span className="cp-vo-lump-amt">{fmt(Number(lumpRow.amount))}</span>
-          <span className="cp-vo-lump-note"> — recorded on the contract, not yet split to individual VOs.</span>
+          <span className="cp-vo-lump-note"> \u2014 recorded on the contract, not yet split to individual VOs.</span>
         </div>
       )}
 
@@ -571,51 +622,431 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
 }
 
 // ============================================================================
-// CHASE TABLE
+// CHASE PANEL (two-clock engine)
 // ============================================================================
-function ChaseTable({ items }) {
-  if (items.length === 0)
-    return <div className="cp-empty">Nothing to chase &mdash; no claims are 30+ days old and unpaid.</div>;
+function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
+  const [emailModal, setEmailModal] = useState(null);
+  const [holdModal, setHoldModal] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+
+  const clock = chaseTab === "certificate" ? "certificate" : "payment";
+  const rows = chaseTab === "certificate" ? certRows : payRows;
+
+  const isCertOverdue = (row) => row.stage === "overdue";
+  const isPayOverdue = (row) => ["final", "2nd", "soa_overdue"].includes(row.stage);
+  const isOverdue = (row) => (clock === "certificate" ? isCertOverdue(row) : isPayOverdue(row));
+
+  const showFeedback = (msg) => {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleProceed = async (row, subject, body) => {
+    try {
+      const { data, error } = await supabase.rpc("log_chase_reminder", {
+        p_claim_id: row.claim_id,
+        p_clock: clock,
+        p_decision: "proceed",
+        p_stage: row.stage,
+        p_email_to: row.contact_person || null,
+        p_email_subject: subject,
+        p_email_body: body,
+        p_created_by: null,
+      });
+      if (error) { showFeedback("Error: " + error.message); }
+      else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); }
+    } catch (e) { showFeedback("Error: " + e.message); }
+    setEmailModal(null);
+    await onRefresh();
+  };
+
+  const handleIgnore = async (row, subject, body) => {
+    try {
+      await supabase.rpc("log_chase_reminder", {
+        p_claim_id: row.claim_id,
+        p_clock: clock,
+        p_decision: "ignore",
+        p_stage: row.stage,
+        p_email_to: row.contact_person || null,
+        p_email_subject: subject,
+        p_email_body: body,
+        p_created_by: null,
+      });
+      showFeedback("Skipped this cycle.");
+    } catch (e) { showFeedback("Error: " + e.message); }
+    setEmailModal(null);
+    await onRefresh();
+  };
+
+  const handleSetHold = async (claimId, reason, note, resumeDate) => {
+    try {
+      await supabase.rpc("set_chase_hold", {
+        p_claim_id: claimId,
+        p_reason: reason,
+        p_clock: clock,
+        p_reason_note: note || null,
+        p_resume_date: resumeDate || null,
+      });
+      showFeedback("Hold set.");
+    } catch (e) { showFeedback("Error: " + e.message); }
+    setHoldModal(null);
+    await onRefresh();
+  };
+
+  const handleReleaseHold = async (claimId) => {
+    try {
+      await supabase.rpc("release_chase_hold", {
+        p_claim_id: claimId,
+        p_clock: clock,
+      });
+      showFeedback("Hold released.");
+    } catch (e) { showFeedback("Error: " + e.message); }
+    await onRefresh();
+  };
+
+  const handleDateUpdate = async (claimId, field, value) => {
+    try {
+      const { error } = await supabase.from("claims").update({ [field]: value || null }).eq("id", claimId);
+      if (error) { showFeedback("Error: " + error.message); }
+      else { showFeedback(`${field.replace("_", " ")} recorded.`); }
+    } catch (e) { showFeedback("Error: " + e.message); }
+    await onRefresh();
+  };
+
+  // Summary
+  const totalAmount = rows.reduce((s, r) => {
+    const amt = clock === "certificate" ? Number(r.amount || 0) : Number(r.invoice_amount || 0);
+    return s + amt;
+  }, 0);
+  const overdueCount = rows.filter(isOverdue).length;
+  const heldCount = rows.filter((r) => r.on_hold).length;
 
   return (
-    <div className="cp-chase-wrap">
-      <table className="cp-chase">
-        <thead>
-          <tr>
-            <th>Action</th>
-            <th>Project</th>
-            <th>Claim</th>
-            <th>Age</th>
-            <th className="r">Amount</th>
-            <th>Contact</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((c, i) => (
-            <tr key={i}>
-              <td>
-                <span className={`cp-chase-type ${c.kind === "payment_due" ? "cp-chase-pay" : "cp-chase-cert"}`}>
-                  {c.kind === "payment_due" ? "Chase payment" : "Chase certification"}
-                </span>
-              </td>
-              <td>
-                <div className="cp-chase-proj">{c.code}</div>
-                <div className="cp-chase-client">{cleanClient(c.client)} &middot; {cleanName(c.name)}</div>
-              </td>
-              <td>#{c.claim_no ?? "—"}</td>
-              <td><span className="cp-chase-age"><strong>{c.age}</strong> days</span></td>
-              <td className="r">
-                <span className="cp-chase-amt">{fmtFull(c.kind === "payment_due" ? c.certified : c.amount)}</span>
-              </td>
-              <td>
-                {c.contact && <div className="cp-chase-name">{c.contact}</div>}
-                {c.phone && <div className="cp-phone">{c.phone}</div>}
-                {!c.contact && !c.phone && <span className="cp-muted">&mdash;</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      {/* Sub-tabs */}
+      <div className="cp-chase-subtabs">
+        <button
+          className={`cp-chase-subtab${chaseTab === "certificate" ? " on" : ""}`}
+          onClick={() => setChaseTab("certificate")}
+        >
+          Certificate
+          {certRows.length > 0 && <span className="cp-badge">{certRows.length}</span>}
+        </button>
+        <button
+          className={`cp-chase-subtab${chaseTab === "payment" ? " on" : ""}`}
+          onClick={() => setChaseTab("payment")}
+        >
+          Payment
+          {payRows.length > 0 && <span className="cp-badge">{payRows.length}</span>}
+        </button>
+      </div>
+
+      {/* Summary strip */}
+      <div className="cp-summary">
+        <div className="cp-stat cp-stat-warn">
+          <span className="cp-stat-val">{fmt(totalAmount)}</span>
+          <span className="cp-stat-lbl">{clock === "certificate" ? "Awaiting PRC" : "Awaiting payment"}</span>
+        </div>
+        {overdueCount > 0 && (
+          <div className="cp-stat cp-stat-danger">
+            <span className="cp-stat-val">{overdueCount}</span>
+            <span className="cp-stat-lbl">Overdue</span>
+          </div>
+        )}
+        {heldCount > 0 && (
+          <div className="cp-stat">
+            <span className="cp-stat-val">{heldCount}</span>
+            <span className="cp-stat-lbl">On hold</span>
+          </div>
+        )}
+      </div>
+
+      {/* Feedback toast */}
+      {feedback && <div className="cp-toast">{feedback}</div>}
+
+      {/* Table */}
+      {rows.length === 0 ? (
+        <div className="cp-empty">Nothing to chase here.</div>
+      ) : (
+        <div className="cp-chase-wrap">
+          <table className="cp-chase">
+            <thead>
+              <tr>
+                <th>Stage</th>
+                <th className="cp-th-proj">Project</th>
+                <th>Claim</th>
+                <th>Days</th>
+                <th className="r">Amount</th>
+                <th className="cp-th-rem">#</th>
+                <th>Record date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const overdue = isOverdue(row);
+                const held = row.on_hold;
+                const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+                const amt = clock === "certificate" ? row.amount : row.invoice_amount;
+                const daysVal = row.days_to_due;
+                let daysLabel = "\u2014";
+                if (daysVal != null) {
+                  if (daysVal > 0) daysLabel = `${daysVal}d left`;
+                  else if (daysVal === 0) daysLabel = "Due today";
+                  else daysLabel = `${Math.abs(daysVal)}d over`;
+                }
+
+                return (
+                  <tr
+                    key={row.claim_id}
+                    className={`${overdue ? "cp-chase-row-over" : ""} ${held ? "cp-chase-row-held" : ""}`}
+                  >
+                    <td>
+                      <span className={`cp-stage cp-stage-${row.stage?.replace(/[^a-z0-9]/g, "")}`}>
+                        {row.stage?.replace(/_/g, " ")}
+                      </span>
+                      {held && <span className="cp-hold-badge">HELD</span>}
+                    </td>
+                    <td>
+                      <div className="cp-chase-proj">{row.project_code}</div>
+                      <div className="cp-chase-client">
+                        {cleanClient(row.client_name)} &middot; {cleanName(row.project_name)}
+                      </div>
+                      {row.contact_person && (
+                        <div className="cp-chase-contact">{row.contact_person}</div>
+                      )}
+                    </td>
+                    <td>#{row.claim_no ?? "\u2014"}</td>
+                    <td>
+                      <span className={`cp-chase-days${overdue ? " cp-days-over" : ""}`}>
+                        {daysLabel}
+                      </span>
+                      {overdue && row.overdue_weeks != null && (
+                        <div className="cp-overdue-weeks">{row.overdue_weeks} wks</div>
+                      )}
+                    </td>
+                    <td className="r">
+                      <span className="cp-chase-amt">{fmtFull(amt)}</span>
+                    </td>
+                    <td className="cp-chase-remcol">{row.reminders_sent || 0}</td>
+                    <td className="cp-chase-datecol">
+                      {clock === "certificate" && (
+                        <>
+                          <label className="cp-date-row">
+                            <span className="cp-date-tag">PRC</span>
+                            <input
+                              type="date"
+                              className="cp-date-input"
+                              onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)}
+                            />
+                          </label>
+                          <label className="cp-date-row">
+                            <span className="cp-date-tag">Inv</span>
+                            <input
+                              type="date"
+                              className="cp-date-input"
+                              onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)}
+                            />
+                          </label>
+                        </>
+                      )}
+                      {clock === "payment" && (
+                        <label className="cp-date-row">
+                          <span className="cp-date-tag">Paid</span>
+                          <input
+                            type="date"
+                            className="cp-date-input"
+                            onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)}
+                          />
+                        </label>
+                      )}
+                    </td>
+                    <td className="cp-chase-actcol">
+                      {email && !held && (
+                        <button
+                          className="cp-btn cp-btn-draft"
+                          onClick={() => setEmailModal({ row, clock, email })}
+                        >
+                          Draft
+                        </button>
+                      )}
+                      {held ? (
+                        <button
+                          className="cp-btn cp-btn-release"
+                          onClick={() => handleReleaseHold(row.claim_id)}
+                        >
+                          Release
+                        </button>
+                      ) : (
+                        <button
+                          className="cp-btn cp-btn-hold"
+                          onClick={() => setHoldModal({ row, clock })}
+                        >
+                          Hold
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Email preview modal */}
+      {emailModal && (
+        <EmailPreviewModal
+          row={emailModal.row}
+          email={emailModal.email}
+          onProceed={(subj, body) => handleProceed(emailModal.row, subj, body)}
+          onIgnore={(subj, body) => handleIgnore(emailModal.row, subj, body)}
+          onClose={() => setEmailModal(null)}
+        />
+      )}
+
+      {/* Hold modal */}
+      {holdModal && (
+        <HoldModal
+          row={holdModal.row}
+          onConfirm={(reason, note, date) => handleSetHold(holdModal.row.claim_id, reason, note, date)}
+          onClose={() => setHoldModal(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ============================================================================
+// EMAIL PREVIEW MODAL
+// ============================================================================
+function EmailPreviewModal({ row, email, onProceed, onIgnore, onClose }) {
+  const [copied, setCopied] = useState("");
+
+  const copyText = async (text, what) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+      setTimeout(() => setCopied(""), 2000);
+    } catch {
+      // Fallback: select + execCommand
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(what);
+      setTimeout(() => setCopied(""), 2000);
+    }
+  };
+
+  return (
+    <div className="cp-overlay" onClick={onClose}>
+      <div className="cp-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="cp-modal-head">
+          <h3 className="cp-modal-title">
+            Draft Reminder &mdash; {row.project_code} #{row.claim_no}
+          </h3>
+          <button className="cp-modal-x" onClick={onClose}>&times;</button>
+        </div>
+
+        <div className="cp-modal-content">
+          <div className="cp-modal-field">
+            <div className="cp-modal-flabel">
+              <span>Subject</span>
+              <button className="cp-btn-copy" onClick={() => copyText(email.subject, "subject")}>
+                {copied === "subject" ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <div className="cp-modal-fvalue">{email.subject}</div>
+          </div>
+
+          <div className="cp-modal-field">
+            <div className="cp-modal-flabel">
+              <span>Body</span>
+              <button className="cp-btn-copy" onClick={() => copyText(email.body, "body")}>
+                {copied === "body" ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <pre className="cp-modal-body">{email.body}</pre>
+          </div>
+
+          <div className="cp-modal-hint">
+            Copy the subject and body into your mail client. Your signature appends automatically on send.
+          </div>
+        </div>
+
+        <div className="cp-modal-actions">
+          <button className="cp-btn cp-btn-proceed" onClick={() => onProceed(email.subject, email.body)}>
+            Log as Sent
+          </button>
+          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(email.subject, email.body)}>
+            Skip This Cycle
+          </button>
+          <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// HOLD MODAL
+// ============================================================================
+function HoldModal({ row, onConfirm, onClose }) {
+  const [reason, setReason] = useState("work_issue");
+  const [note, setNote] = useState("");
+  const [resumeDate, setResumeDate] = useState("");
+
+  return (
+    <div className="cp-overlay" onClick={onClose}>
+      <div className="cp-modal cp-modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="cp-modal-head">
+          <h3 className="cp-modal-title">Hold &mdash; {row.project_code} #{row.claim_no}</h3>
+          <button className="cp-modal-x" onClick={onClose}>&times;</button>
+        </div>
+
+        <div className="cp-modal-content">
+          <label className="cp-form-group">
+            <span className="cp-form-lbl">Reason</span>
+            <select className="cp-select cp-form-input" value={reason} onChange={(e) => setReason(e.target.value)}>
+              <option value="work_issue">Work Issue</option>
+              <option value="agreed_date">Agreed Date</option>
+              <option value="relationship">Relationship</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="cp-form-group">
+            <span className="cp-form-lbl">Note (optional)</span>
+            <textarea
+              className="cp-textarea"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              placeholder="Why is this on hold?"
+            />
+          </label>
+          <label className="cp-form-group">
+            <span className="cp-form-lbl">Resume date (optional)</span>
+            <input
+              type="date"
+              className="cp-date-input cp-form-input"
+              value={resumeDate}
+              onChange={(e) => setResumeDate(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="cp-modal-actions">
+          <button className="cp-btn cp-btn-proceed" onClick={() => onConfirm(reason, note, resumeDate || null)}>
+            Set Hold
+          </button>
+          <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -633,7 +1064,7 @@ function Shell({ children }) {
 }
 
 const CSS = `
-/* ── Tokens ── */
+/* -- Tokens -- */
 .cp-root {
   --navy: #1C2340;
   --navy-50: #F0F1F5;
@@ -645,6 +1076,8 @@ const CSS = `
   --green-50: #F0FDF4;
   --green-ink: #166534;
   --red: #B91C1C;
+  --red-50: #FEF2F2;
+  --red-ink: #991B1B;
   --bg: #FAFBFC;
   --surface: #FFFFFF;
   --border: #D4D6DB;
@@ -663,12 +1096,12 @@ const CSS = `
 }
 .cp-root *, .cp-root *::before, .cp-root *::after { box-sizing: border-box; }
 
-/* ── States ── */
+/* -- States -- */
 .cp-loading, .cp-empty { padding: 48px; text-align: center; color: var(--fg3); font-size: 14px; }
 .cp-error { padding: 20px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius); color: #991B1B; font-size: 13px; }
 .cp-error-hint { margin-top: 6px; font-size: 12px; color: var(--fg3); }
 
-/* ── Header ── */
+/* -- Header -- */
 .cp-header {
   display: flex;
   align-items: center;
@@ -692,7 +1125,7 @@ const CSS = `
 .cp-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--navy); }
 .cp-stats { font-size: 12px; color: var(--fg3); }
 
-/* ── Tabs ── */
+/* -- Tabs -- */
 .cp-tabs {
   display: flex;
   background: var(--surface);
@@ -732,7 +1165,7 @@ const CSS = `
 }
 .cp-tab.on .cp-badge { background: rgba(255,255,255,0.25); }
 
-/* ── Summary ── */
+/* -- Summary -- */
 .cp-summary { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .cp-stat {
   background: var(--surface);
@@ -743,10 +1176,12 @@ const CSS = `
 }
 .cp-stat-warn { border-left: 3px solid var(--orange); }
 .cp-stat-info { border-left: 3px solid var(--navy); }
+.cp-stat-danger { border-left: 3px solid var(--red); }
 .cp-stat-val { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .cp-stat-lbl { display: block; font-size: 12px; color: var(--fg3); margin-top: 2px; }
+.cp-stat-danger .cp-stat-val { color: var(--red); }
 
-/* ── Portfolio strip ── */
+/* -- Portfolio strip -- */
 .cp-portfolio {
   display: flex;
   align-items: center;
@@ -765,7 +1200,7 @@ const CSS = `
 .cp-pf-sep { color: var(--fg4); }
 .cp-pf-highlight .cp-pf-val { color: var(--orange-ink); }
 
-/* ── Controls ── */
+/* -- Controls -- */
 .cp-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .cp-search {
   flex: 1; min-width: 200px;
@@ -786,9 +1221,9 @@ const CSS = `
   cursor: pointer;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/* PIVOT GRID                                                                 */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ======================================================================= */
+/* PIVOT GRID                                                                */
+/* ======================================================================= */
 .cp-grid-wrap {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -865,9 +1300,9 @@ const CSS = `
 }
 .cp-muted { color: var(--fg4); }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/* DETAIL (expanded row)                                                      */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ======================================================================= */
+/* DETAIL (expanded row)                                                     */
+/* ======================================================================= */
 .cp-detail-row td {
   background: var(--bg) !important;
   padding: 0 !important;
@@ -955,9 +1390,9 @@ const CSS = `
 .cp-recon-high .cp-recon-val { color: var(--orange-ink); font-weight: 800; }
 .cp-recon-zero .cp-recon-val { color: var(--fg4); font-weight: 500; }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/* VO SECTION                                                                  */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ======================================================================= */
+/* VO SECTION                                                                */
+/* ======================================================================= */
 .cp-vo {
   margin-top: 14px;
   max-width: 720px;
@@ -1026,9 +1461,38 @@ const CSS = `
 .cp-vo-footer-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; color: var(--fg3); }
 .cp-vo-footer-val { font-weight: 800; font-size: 14px; color: var(--navy); font-variant-numeric: tabular-nums; }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/* CHASE TABLE                                                                */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ======================================================================= */
+/* CHASE — Sub-tabs                                                          */
+/* ======================================================================= */
+.cp-chase-subtabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  background: var(--navy-50);
+  border-radius: var(--radius);
+  padding: 3px;
+  width: fit-content;
+}
+.cp-chase-subtab {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg3);
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.cp-chase-subtab:hover { color: var(--fg); background: rgba(255,255,255,0.5); }
+.cp-chase-subtab.on { background: var(--surface); color: var(--navy); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.cp-chase-subtab .cp-badge { font-size: 10px; }
+
+/* ======================================================================= */
+/* CHASE TABLE                                                               */
+/* ======================================================================= */
 .cp-chase-wrap {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1047,6 +1511,7 @@ const CSS = `
   border-bottom: 1px solid var(--border);
 }
 .cp-chase th.r { text-align: right; }
+.cp-th-rem { width: 40px; text-align: center !important; }
 .cp-chase td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-lt);
@@ -1057,32 +1522,270 @@ const CSS = `
 .cp-chase tbody tr { transition: background 120ms ease-out; }
 .cp-chase tbody tr:hover { background: var(--navy-50); }
 
-.cp-chase-type {
-  display: inline-block; font-size: 11px; font-weight: 700;
-  padding: 4px 10px; border-radius: 99px; white-space: nowrap;
-}
-.cp-chase-pay { background: var(--orange-50); color: var(--orange-ink); }
-.cp-chase-cert { background: var(--navy-50); color: var(--navy); }
+/* Overdue rows */
+.cp-chase-row-over { background: var(--red-50) !important; }
+.cp-chase-row-over:hover { background: #FEE2E2 !important; }
 
-.cp-chase-age { font-size: 13px; color: var(--fg2); }
-.cp-chase-age strong { font-weight: 800; color: var(--fg); }
-.cp-chase-amt { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--fg); }
+/* Held rows */
+.cp-chase-row-held { opacity: 0.55; }
+.cp-chase-row-held:hover { opacity: 0.75; }
+
+/* Stage badges */
+.cp-stage {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.02em;
+  padding: 3px 8px; border-radius: 99px;
+  white-space: nowrap;
+}
+.cp-stage-notdue { background: var(--navy-50); color: var(--fg3); }
+.cp-stage-t7 { background: var(--navy-50); color: var(--navy); }
+.cp-stage-t4 { background: var(--orange-50); color: var(--orange-ink); }
+.cp-stage-due { background: #FEF3C7; color: #92400E; }
+.cp-stage-overdue { background: var(--red-50); color: var(--red-ink); }
+.cp-stage-soa { background: var(--navy-50); color: var(--navy); }
+.cp-stage-soaoverdue { background: var(--red-50); color: var(--red-ink); }
+.cp-stage-1st { background: var(--orange-50); color: var(--orange-ink); }
+.cp-stage-2nd { background: #FEE2E2; color: var(--red-ink); }
+.cp-stage-final { background: var(--red-50); color: var(--red); font-weight: 800; }
+
+.cp-hold-badge {
+  display: inline-block;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 5px; border-radius: 3px;
+  background: var(--fg4); color: #fff;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* Chase cell content */
 .cp-chase-proj { font-weight: 700; color: var(--navy); font-size: 13px; }
 .cp-chase-client { font-size: 12px; color: var(--fg3); }
-.cp-chase-name { font-size: 12px; color: var(--fg2); }
+.cp-chase-contact { font-size: 11px; color: var(--fg4); margin-top: 2px; }
+.cp-chase-days { font-size: 13px; color: var(--fg2); white-space: nowrap; }
+.cp-days-over { color: var(--red); font-weight: 700; }
+.cp-overdue-weeks { font-size: 10px; color: var(--red-ink); margin-top: 2px; }
+.cp-chase-amt { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--fg); }
+.cp-chase-remcol { text-align: center; font-weight: 700; color: var(--fg3); }
 
-/* ── Responsive ── */
+/* Date capture */
+.cp-chase-datecol { min-width: 140px; }
+.cp-date-row {
+  display: flex; align-items: center; gap: 4px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.cp-date-row:last-child { margin-bottom: 0; }
+.cp-date-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  color: var(--fg3); width: 28px; flex-shrink: 0;
+}
+.cp-date-input {
+  font-family: inherit; font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  width: 110px;
+}
+.cp-date-input:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 2px rgba(28,35,64,0.08); }
+
+/* Action buttons */
+.cp-chase-actcol { white-space: nowrap; }
+.cp-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--fg2);
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+  margin-right: 4px;
+}
+.cp-btn:last-child { margin-right: 0; }
+.cp-btn:hover { background: var(--navy-50); border-color: var(--navy); }
+.cp-btn:active { transform: scale(0.97); }
+
+.cp-btn-draft { background: var(--navy); color: #fff; border-color: var(--navy); }
+.cp-btn-draft:hover { background: #252D4A; }
+
+.cp-btn-hold { color: var(--fg4); }
+.cp-btn-release { background: var(--green-50); color: var(--green-ink); border-color: var(--green); }
+.cp-btn-release:hover { background: #DCFCE7; }
+
+.cp-btn-proceed { background: var(--navy); color: #fff; border-color: var(--navy); }
+.cp-btn-proceed:hover { background: #252D4A; }
+.cp-btn-ignore { color: var(--fg3); }
+.cp-btn-cancel { color: var(--fg4); }
+
+/* Toast */
+.cp-toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 13px; font-weight: 600;
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: cpToastIn 200ms ease-out;
+}
+@keyframes cpToastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ======================================================================= */
+/* MODALS                                                                    */
+/* ======================================================================= */
+.cp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: cpFadeIn 150ms ease-out;
+}
+@keyframes cpFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.cp-modal {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  width: 560px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: cpModalIn 200ms cubic-bezier(0.23,1,0.32,1);
+}
+.cp-modal-sm { width: 400px; }
+@keyframes cpModalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.cp-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-lt);
+}
+.cp-modal-title { font-size: 15px; font-weight: 700; color: var(--navy); margin: 0; }
+.cp-modal-x {
+  border: none; background: none;
+  font-size: 22px; color: var(--fg4);
+  cursor: pointer; padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.cp-modal-x:hover { background: var(--navy-50); color: var(--fg); }
+
+.cp-modal-content { padding: 16px 20px; }
+
+.cp-modal-field { margin-bottom: 14px; }
+.cp-modal-flabel {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--fg3);
+}
+.cp-modal-fvalue {
+  font-size: 13px; color: var(--fg); font-weight: 600;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-lt);
+}
+.cp-modal-body {
+  font-family: inherit;
+  font-size: 13px; color: var(--fg);
+  line-height: 1.6;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-lt);
+  white-space: pre-wrap;
+  margin: 0;
+}
+.cp-modal-hint {
+  font-size: 12px; color: var(--fg4);
+  padding: 8px 12px;
+  background: var(--navy-50);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.cp-btn-copy {
+  font-family: inherit;
+  font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--fg3);
+  transition: background 120ms;
+}
+.cp-btn-copy:hover { background: var(--navy-50); color: var(--navy); }
+
+.cp-modal-actions {
+  display: flex; gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-lt);
+  justify-content: flex-end;
+}
+
+/* Form fields in modals */
+.cp-form-group {
+  display: block;
+  margin-bottom: 12px;
+}
+.cp-form-lbl {
+  display: block;
+  font-size: 12px; font-weight: 600;
+  color: var(--fg3);
+  margin-bottom: 4px;
+}
+.cp-form-input {
+  width: 100%;
+}
+.cp-textarea {
+  font-family: inherit;
+  font-size: 13px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  resize: vertical;
+}
+.cp-textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 2px rgba(28,35,64,0.08); }
+
+/* -- Responsive -- */
 @media (max-width: 640px) {
   .cp-root { padding: 12px; }
   .cp-header { flex-direction: column; align-items: flex-start; }
   .cp-summary { flex-direction: column; }
   .cp-portfolio { flex-direction: column; gap: 4px; }
   .cp-pf-sep { display: none; }
+  .cp-chase-subtabs { width: 100%; }
+  .cp-chase-subtab { flex: 1; text-align: center; }
 }
 
-/* ── Reduced motion ── */
+/* -- Reduced motion -- */
 @media (prefers-reduced-motion: reduce) {
-  .cp-detail { animation: none; }
-  .cp-tab, .cp-grid tbody tr, .cp-back, .cp-chase tbody tr, .cp-search { transition: none; }
+  .cp-detail, .cp-toast, .cp-overlay, .cp-modal { animation: none; }
+  .cp-tab, .cp-grid tbody tr, .cp-back, .cp-chase tbody tr, .cp-search, .cp-btn, .cp-chase-subtab { transition: none; }
 }
 `;
