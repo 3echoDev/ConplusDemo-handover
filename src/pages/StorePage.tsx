@@ -60,11 +60,13 @@ interface MovementRow {
 }
 
 // Collapse a wide ledger row to the single-movement shape the UI works with.
+// The unused qty column defaults to 0 (not null), so key off qty_in > 0 to
+// tell IN from OUT — the RPC always writes a positive qty on exactly one side.
 function movementView(row: MovementRow) {
-  const isIn = row.qty_in != null;
+  const isIn = Number(row.qty_in ?? 0) > 0;
   return {
     direction: (isIn ? "in" : "out") as "in" | "out",
-    qty: (isIn ? row.qty_in : row.qty_out) ?? 0,
+    qty: Number((isIn ? row.qty_in : row.qty_out) ?? 0),
     project_ref: (isIn ? row.project_in : row.project_out) ?? "",
     remarks: (isIn ? row.remarks_in : row.remarks_out) ?? null,
   };
