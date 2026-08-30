@@ -42,16 +42,32 @@ interface ProjectOption {
   name: string;
 }
 
+// material_movements is a wide Excel-style ledger: the RPC writes IN rows into
+// qty_in/date_in/project_in/remarks_in and OUT rows into qty_out/.../remarks_out.
+// There is no single direction/qty/project column, and p_doc_ref is folded into
+// the remarks column by the RPC (no separate doc_ref column exists).
 interface MovementRow {
   id: string;
   sno: number;
   material_id: string;
-  direction: "in" | "out";
-  qty: number;
-  project_ref: string;
-  remarks: string | null;
-  doc_ref: string | null;
+  qty_in: number | null;
+  qty_out: number | null;
+  project_in: string | null;
+  project_out: string | null;
+  remarks_in: string | null;
+  remarks_out: string | null;
   created_at: string;
+}
+
+// Collapse a wide ledger row to the single-movement shape the UI works with.
+function movementView(row: MovementRow) {
+  const isIn = row.qty_in != null;
+  return {
+    direction: (isIn ? "in" : "out") as "in" | "out",
+    qty: (isIn ? row.qty_in : row.qty_out) ?? 0,
+    project_ref: (isIn ? row.project_in : row.project_out) ?? "",
+    remarks: (isIn ? row.remarks_in : row.remarks_out) ?? null,
+  };
 }
 
 interface RpcResult {
@@ -142,7 +158,7 @@ export default function StorePage() {
   const loadToday = useCallback(async () => {
     const { data } = await supabase
       .from("material_movements")
-      .select("id,sno,material_id,direction,qty,project_ref,remarks,doc_ref,created_at")
+      .select("id,sno,material_id,qty_in,qty_out,project_in,project_out,remarks_in,remarks_out,created_at")
       .eq("source", "store_form")
       .gte("created_at", startOfTodayISO())
       .order("created_at", { ascending: false });
@@ -248,12 +264,13 @@ export default function StorePage() {
   };
 
   const reverse = async (row: MovementRow) => {
+    const v = movementView(row);
     setReversing(row.id);
     const { data, error } = await supabase.rpc("log_material_movement", {
       p_material_id: row.material_id,
-      p_direction: row.direction === "in" ? "out" : "in",
-      p_qty: row.qty,
-      p_project_ref: row.project_ref,
+      p_direction: v.direction === "in" ? "out" : "in",
+      p_qty: v.qty,
+      p_project_ref: v.project_ref,
       p_remarks: `Reversal of #${row.sno}`,
       p_doc_ref: null,
     });
@@ -545,8 +562,9 @@ export default function StorePage() {
             <ul className="space-y-2">
               {today.map((row) => {
                 const m = materialById.get(row.material_id);
-                const rowIn = row.direction === "in";
-                const isReversal = (row.remarks || "").startsWith("Reversal of #");
+                const v = movementView(row);
+                const rowIn = v.direction === "in";
+                const isReversal = (v.remarks || "").startsWith("Reversal of #");
                 return (
                   <li key={row.id} className="rounded-xl border border-border bg-card p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -560,13 +578,12 @@ export default function StorePage() {
                           >
                             {rowIn ? "IN" : "OUT"}
                           </span>
-                          <span className="font-semibold text-foreground">{row.qty}</span>
+                          <span className="font-semibold text-foreground">{v.qty}</span>
                           <span className="truncate font-medium text-foreground">{m?.name ?? row.material_id}</span>
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {fmtTime(row.created_at)} · {row.project_ref}
-                          {row.doc_ref ? ` · ${row.doc_ref}` : ""}
-                          {row.remarks ? ` · ${row.remarks}` : ""}
+                          {fmtTime(row.created_at)} · {v.project_ref}
+                          {v.remarks ? ` · ${v.remarks}` : ""}
                         </div>
                       </div>
                       {!isReversal && (
