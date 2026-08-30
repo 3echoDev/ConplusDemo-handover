@@ -25,6 +25,7 @@ import { printWO, woOrderTotal } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import { printClaim, exportClaimToExcel, type ClaimDocContext } from "@/lib/claimDocument";
 import { fetchClaimLines } from "@/data/db";
+import StockWatchlist from "@/components/StockWatchlist";
 import { cn } from "@/lib/utils";
 
 type Detail =
@@ -915,14 +916,13 @@ export default function LiveViewPage() {
   const [woStatus, setWoStatus] = useState<WOStatus | "all">("all");
   const [claimFilter, setClaimFilter] = useState<"all" | "outstanding">("all");
   const [invFilter, setInvFilter] = useState<"all" | "open">("all");
-  const [stockOnly, setStockOnly] = useState(false);
+  const [stockCounts, setStockCounts] = useState({ out: 0, critical: 0, low: 0 });
   const [poFrom, setPoFrom] = useState("");
   const [poTo, setPoTo] = useState("");
   const [claimFrom, setClaimFrom] = useState("");
   const [claimTo, setClaimTo] = useState("");
   const [openWO, setOpenWO] = useState<string | null>(null);
   const [projSearch, setProjSearch] = useState("");
-  const [stockSearch, setStockSearch] = useState("");
   const [invSearch, setInvSearch] = useState("");
   const [claimSearch, setClaimSearch] = useState("");
   const [yearFrom, setYearFrom] = useState("");
@@ -939,19 +939,9 @@ export default function LiveViewPage() {
   const activeProjects = projects.filter((p) => p.status === "active");
   const contractValue = projects.reduce((s, p) => s + p.budget, 0);
   const pendingPOs = purchaseOrders.filter((po) => po.status === "pending" || po.status === "draft");
-  const stockIssues = inventory.filter((i) => i.status === "critical" || i.status === "out").length;
+  const stockIssues = stockCounts.out + stockCounts.critical;
   const outstandingClaims = claims.filter((c) => c.status !== "paid").reduce((s, c) => s + c.amount, 0);
   const unpaidInvoices = invoices.filter((i) => i.status !== "paid" && i.status !== "rejected").length;
-
-  const lowStock = useMemo(() => {
-    const base = stockSearch
-      ? inventory.filter((i) => has(i.name, stockSearch) || has(i.supplier, stockSearch) || has(i.code, stockSearch))
-      : inventory.filter((i) =>
-          stockOnly ? i.status === "critical" || i.status === "out" : (i.status === "low" || i.status === "critical") && i.totalQty > 0,
-        );
-    const filtering = stockSearch !== "" || stockOnly;
-    return [...base].sort((a, b) => a.totalQty - b.totalQty).slice(0, filtering ? 40 : 8);
-  }, [inventory, stockSearch, stockOnly]);
 
   const woFiltered = useMemo(() => {
     const base = woSearch
@@ -1091,7 +1081,7 @@ export default function LiveViewPage() {
           <Kpi label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
           <Kpi label="Contract Value" value={formatCurrency(contractValue)} />
           <Kpi label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
-          <Kpi label="Stock Issues" value={stockIssues} sub="critical / out" active={stockOnly} onClick={() => { setStockOnly(!stockOnly); }} />
+          <Kpi label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
           <Kpi label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
           <Kpi label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
         </div>
@@ -1301,30 +1291,8 @@ export default function LiveViewPage() {
             </div>
           </Section>
 
-          {/* Low stock */}
-          <Section
-            title={stockSearch ? "Stock Search" : "Stock Watchlist"}
-            icon={<Package className="h-4 w-4" />}
-            action={<div className="flex items-center gap-1.5">{stockOnly && <ClearChip onClick={() => setStockOnly(false)} />}<SearchBox value={stockSearch} onChange={setStockSearch} placeholder="Search all stock..." /></div>}
-          >
-            <div className="divide-y divide-border">
-              {lowStock.length === 0 && (
-                <p className="p-6 text-center text-sm text-muted-foreground">No low-stock items right now.</p>
-              )}
-              {lowStock.map((i) => (
-                <div key={i.id} onClick={() => setDetail({ type: "material", item: i })} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors">
-                  <div className="min-w-0">
-                    <p className="font-medium text-card-foreground truncate">{i.name}</p>
-                    <p className="text-xs text-muted-foreground">{i.supplier} · {i.location}</p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-semibold text-card-foreground">{i.totalQty} {i.unit}</span>
-                    <StatusBadge status={i.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
+          {/* Stock watchlist — honest thresholds from stock_watchlist view, grouped by supplier */}
+          <StockWatchlist onCounts={setStockCounts} />
 
           {/* Progress Claims — contract work, claimed monthly, retention held */}
           <Section
