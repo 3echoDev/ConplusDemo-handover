@@ -13,6 +13,7 @@ import PurchaseOrdersPage from "@/pages/PurchaseOrdersPage";
 import WorksOrdersPage from "@/pages/WorksOrdersPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import LOAReviewPage from "@/pages/LOAReviewPage";
+import StorePage from "@/pages/StorePage";
 import LiveViewPage from "@/pages/LiveViewPage";
 import { lazy, Suspense } from "react";
 const ClaimsPivot = lazy(() => import("@/components/ClaimsPivot"));
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
               <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
               <Route path="/loa-review" element={<LOAReviewPage />} />
+              <Route path="/store" element={<StorePage />} />
               <Route path="*" element={<LiveViewPage />} />
             </Routes>
           ) : (
@@ -57,6 +59,7 @@ const App = () => (
                       <Route path="/works-orders" element={<WorksOrdersPage />} />
                       <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
                       <Route path="/loa-review" element={<LOAReviewPage />} />
+                      <Route path="/store" element={<StorePage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
                       <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
                       <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />

@@ -1061,6 +1061,13 @@ export default function LiveViewPage() {
               <FileCheck2 className="h-3.5 w-3.5 text-primary" />
               LOA Review
             </a>
+            <a
+              href="/store"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Package className="h-3.5 w-3.5 text-primary" />
+              Store
+            </a>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
