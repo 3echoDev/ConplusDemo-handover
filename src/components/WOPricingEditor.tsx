@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Save, X, Printer, Download, Layers, AlertTriangle } from "lucide-react";
+import { Save, X, Printer, Download, FileEdit, Layers, AlertTriangle } from "lucide-react";
 import { useAppData } from "@/data/AppDataContext";
 import { formatCurrency, type WorksOrder } from "@/data/sampleData";
 import { qtyUnitLabel, printWO } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
+import { downloadWOAmendmentSheet } from "@/lib/woAmendmentSheet";
 import type { WOLineEdit } from "@/data/db";
 import { cn } from "@/lib/utils";
 
@@ -270,6 +271,12 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
       {/* Sticky action bar */}
       <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/40 py-3 backdrop-blur">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => downloadWOAmendmentSheet(wo)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            <FileEdit className="h-3.5 w-3.5" /> Download editable sheet
+          </button>
           <button
             onClick={() => exportWOTemplateExcel(wo)}
             className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
