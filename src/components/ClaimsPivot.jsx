@@ -513,6 +513,51 @@ function ClaimDetail({ project }) {
           {project.claims[0]?.phone && <span className="cp-phone">{project.claims[0].phone}</span>}
         </div>
       </div>
+      {/* CUM Progress Claim strip — money-on-the-table at a glance, above the
+          claims table. Aggregates the same claim rows; reconciles with the
+          financial breakdown row below (Total Outstanding / Bal Outstanding). */}
+      {(() => {
+        const cumClaim = project.totalClaimed;                       // (A) net of retention
+        const cumRetention = project.totalRetention;                 // (B)
+        const cumCertified = project.totalCertified;                 // (C)
+        const cumTotalClaim = cumClaim + cumRetention;               // gross, before retention
+        const cumBalanceInclRet = cumClaim + cumRetention - cumCertified; // (A)+(B)-(C)
+        const cumBalance = cumClaim - cumCertified;                  // (A)-(C)
+        return (
+          <div className="cp-cum">
+            <div className="cp-cum-head">
+              <h3>CUM PROGRESS CLAIM</h3>
+              <span className="cp-cum-proj">PROJECT: <b>{project.code}</b> {cleanName(project.name)}</span>
+            </div>
+            <div className="cp-cum-grid">
+              <div className="cp-cum-cell">
+                <span className="cp-cum-lbl">Cum. Total Claim</span>
+                <span className="cp-cum-val">{fmtFull(cumTotalClaim)}</span>
+              </div>
+              <div className="cp-cum-cell">
+                <span className="cp-cum-lbl">Cum. Retention</span>
+                <span className="cp-cum-val">{fmtFull(cumRetention)}</span>
+              </div>
+              <div className="cp-cum-cell">
+                <span className="cp-cum-lbl">Cum. Claim</span>
+                <span className="cp-cum-val">{fmtFull(cumClaim)}</span>
+              </div>
+              <div className="cp-cum-cell">
+                <span className="cp-cum-lbl">Cum. Certified</span>
+                <span className="cp-cum-val">{fmtFull(cumCertified)}</span>
+              </div>
+              <div className="cp-cum-cell cp-cum-hl">
+                <span className="cp-cum-lbl">Cum. Balance (+Ret)</span>
+                <span className="cp-cum-val">{fmtFull(cumBalanceInclRet)}</span>
+              </div>
+              <div className="cp-cum-cell cp-cum-hl">
+                <span className="cp-cum-lbl">Cum. Balance</span>
+                <span className="cp-cum-val">{fmtFull(cumBalance)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <table className="cp-dtable">
         <thead>
           <tr>
@@ -622,6 +667,7 @@ const LUMP_LABEL = "VO-LEGACY (unallocated)";
 function VOSection({ projectId, voValue, contractBase, totalContract }) {
   const [vos, setVos] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false); // collapsed by default
 
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
@@ -652,13 +698,63 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
     });
   const realCount = voRows.length;
 
+  // Split into two columns by count (VO1–VOn left, rest right) so the visual
+  // order still matches the VO numbering.
+  const mid = Math.ceil(voRows.length / 2);
+  const leftRows = voRows.slice(0, mid);
+  const rightRows = voRows.slice(mid);
+
+  const renderTable = (rows) => (
+    <table className="cp-vo-table">
+      <colgroup>
+        <col className="cp-col-vo" />
+        <col className="cp-col-ref" />
+        <col className="cp-col-amt" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>VO</th>
+          <th>Quotation Ref</th>
+          <th className="r">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((v, i) => {
+          const amt = v.amount != null ? Number(v.amount) : null;
+          const isRefOnly = amt === 0 || amt == null;
+          return (
+            <tr key={i}>
+              <td className="cp-vo-name">{v.vo_number}</td>
+              <td className="cp-vo-ref">{v.quotation_ref || <span className="cp-muted">&mdash;</span>}</td>
+              <td className="r">
+                {isRefOnly ? (
+                  <span className="cp-vo-dash" title={lumpRow ? "Value in unallocated" : ""}>&mdash;</span>
+                ) : (
+                  fmtFull(amt)
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+
   return (
     <div className="cp-vo">
-      <div className="cp-vo-header">
-        <span className="cp-vo-title">Variation Orders ({realCount})</span>
+      <div
+        className={`cp-vo-header${open ? " cp-vo-open" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
+      >
+        <span className="cp-vo-title">
+          <span className="cp-vo-chev">&#9654;</span> Variation Orders ({realCount})
+        </span>
         {contractBase != null && voValue != null && totalContract != null && (
           <span className="cp-vo-summary">
-            Contract {fmt(contractBase)} + VOs {fmt(voValue)} = {fmt(totalContract)} total
+            Contract {fmt(contractBase)} + VOs <b>{fmt(voValue)}</b> = Total <b>{fmt(totalContract)}</b>
           </span>
         )}
       </div>
@@ -667,50 +763,24 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
         <div className="cp-vo-lump" title={lumpRow.description || ""}>
           <span className="cp-vo-lump-label">Unallocated VO value:</span>{" "}
           <span className="cp-vo-lump-amt">{fmt(Number(lumpRow.amount))}</span>
-          <span className="cp-vo-lump-note"> \u2014 recorded on the contract, not yet split to individual VOs.</span>
+          <span className="cp-vo-lump-note">{" \u2014 recorded on the contract, not yet split to individual VOs."}</span>
         </div>
       )}
 
-      {realCount > 0 && (
-        <table className="cp-vo-table">
-          <colgroup>
-            <col className="cp-col-vo" />
-            <col className="cp-col-ref" />
-            <col className="cp-col-amt" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>VO</th>
-              <th>Quotation Ref</th>
-              <th className="r">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {voRows.map((v, i) => {
-              const amt = v.amount != null ? Number(v.amount) : null;
-              const isRefOnly = amt === 0 || amt == null;
-              return (
-                <tr key={i}>
-                  <td className="cp-vo-name">{v.vo_number}</td>
-                  <td className="cp-vo-ref">{v.quotation_ref || <span className="cp-muted">&mdash;</span>}</td>
-                  <td className="r">
-                    {isRefOnly ? (
-                      <span className="cp-vo-dash" title={lumpRow ? "Value in unallocated" : ""}>&mdash;</span>
-                    ) : (
-                      fmtFull(amt)
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {open && (
+        <div className="cp-vo-body">
+          {realCount > 0 && (
+            <div className="cp-vo-columns">
+              {renderTable(leftRows)}
+              {rightRows.length > 0 && renderTable(rightRows)}
+            </div>
+          )}
+          <div className="cp-vo-footer">
+            <span className="cp-vo-footer-label">VO total (authoritative)</span>
+            <span className="cp-vo-footer-val">{fmtFull(voValue)}</span>
+          </div>
+        </div>
       )}
-
-      <div className="cp-vo-footer">
-        <span className="cp-vo-footer-label">VO total (authoritative)</span>
-        <span className="cp-vo-footer-val">{fmtFull(voValue)}</span>
-      </div>
     </div>
   );
 }
@@ -1848,27 +1918,83 @@ const CSS = `
 .cp-recon-fin .cp-recon-val { font-size: 14px; }
 
 /* ======================================================================= */
+/* CUM PROGRESS CLAIM strip                                                  */
+/* ======================================================================= */
+.cp-cum {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px 14px;
+  margin-bottom: 16px;
+}
+.cp-cum-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.cp-cum-head h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--navy); letter-spacing: 0.02em; }
+.cp-cum-proj { color: var(--fg3); font-size: 12px; }
+.cp-cum-proj b { color: var(--fg); }
+.cp-cum-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px;
+  background: var(--border); border-radius: 8px; overflow: hidden;
+}
+.cp-cum-cell {
+  background: var(--surface); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.cp-cum-lbl {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--fg3); font-weight: 600; white-space: nowrap;
+}
+.cp-cum-val {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--fg); font-variant-numeric: tabular-nums;
+}
+.cp-cum-hl { background: var(--orange-50); }
+.cp-cum-hl .cp-cum-val { color: var(--orange-ink); }
+.cp-cum-hl .cp-cum-lbl { color: var(--orange-ink); opacity: 0.7; }
+@media (max-width: 900px) {
+  .cp-cum-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ======================================================================= */
 /* VO SECTION                                                                */
 /* ======================================================================= */
 .cp-vo {
   margin-top: 14px;
-  max-width: 720px;
+  max-width: 1000px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 .cp-vo-loading { font-size: 13px; color: var(--fg3); padding: 8px 0; }
 .cp-vo-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  padding: 12px 16px;
   flex-wrap: wrap;
+  cursor: pointer;
+  user-select: none;
 }
-.cp-vo-title { font-size: 14px; font-weight: 700; color: var(--navy); }
+.cp-vo-header:hover { background: var(--bg); }
+.cp-vo-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
+.cp-vo-chev { font-size: 10px; color: var(--fg4); display: inline-block; transition: transform 150ms ease-out; }
+.cp-vo-open .cp-vo-chev { transform: rotate(90deg); }
 .cp-vo-summary { font-size: 13px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.cp-vo-summary b { color: var(--fg); font-weight: 700; }
+.cp-vo-body { padding: 0 16px 16px; }
+.cp-vo-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+@media (max-width: 900px) {
+  .cp-vo-columns { grid-template-columns: 1fr; }
+}
 
 .cp-vo-lump {
   padding: 10px 14px;
-  margin-bottom: 10px;
-  background: var(--surface);
+  margin: 0 16px 12px;
+  background: var(--orange-50);
   border: 1px solid var(--border);
   border-left: 3px solid var(--orange-ink);
   border-radius: 6px;
