@@ -154,10 +154,12 @@ export interface PurchaseOrder {
   vendorQuotationRef?: string;
   attnName?: string;
   deliveryCharge?: number;
+  vendorCode?: string;
+  projectPic?: string;
   deliveryAddress?: string;
   deliveryContact?: string;
   deliveryContactNumber?: string;
-  items: { material: string; qty: number; unitPrice: number; unit?: string; discountPct?: number }[];
+  items: { material: string; qty: number; unitPrice: number; unit?: string; discountPct?: number; itemCode?: string; discPerUnit?: number }[];
 }
 
 export interface SupplierInfo {

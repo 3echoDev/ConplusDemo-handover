@@ -59,6 +59,7 @@ import {
   dbCreateWorksOrder,
   dbUpdateWOStatus,
   dbUpdateWOLines,
+  dbCreateWOLine,
   nextWONumber,
   type AddMaterialInput,
   type CreateProjectInput,
@@ -67,6 +68,7 @@ import {
   type CreateWOInput,
   type ClaimFieldUpdates,
   type WOLineEdit,
+  type NewWOLine,
 } from "./db";
 
 // Poll so that changes made outside the app (e.g. by Claude via MCP) show up live.
@@ -119,6 +121,7 @@ interface AppData {
   createWorksOrder: (input: CreateWOInput) => Promise<void>;
   updateWOStatus: (woId: string, status: WOStatus) => Promise<void>;
   updateWOLines: (edits: WOLineEdit[]) => Promise<void>;
+  createWOLine: (line: NewWOLine) => Promise<void>;
   getNextWONumber: () => Promise<string>;
 }
 
@@ -446,6 +449,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [run]
   );
 
+  const createWOLine = useCallback(
+    (line: NewWOLine) =>
+      run(() => dbCreateWOLine(line), "Material added", ["woLines", "worksOrders"]),
+    [run]
+  );
+
   const getNextWONumber = useCallback(() => nextWONumber(), []);
 
   const updateClaimFields = useCallback(
@@ -499,6 +508,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         createWorksOrder,
         updateWOStatus,
         updateWOLines,
+        createWOLine,
         getNextWONumber,
       }}
     >

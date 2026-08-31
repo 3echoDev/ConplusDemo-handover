@@ -101,6 +101,8 @@ export interface PORow {
   vendor_quotation_ref?: string | null;
   attn_name?: string | null;
   delivery_charge?: number | null;
+  vendor_code?: string | null;
+  project_pic?: string | null;
   created_date: string | null;
   delivery_date: string | null;
   created_at: string;
@@ -136,6 +138,8 @@ export interface POLineRow {
   unit: string | null;
   unit_price: number;
   discount_pct: number | null;
+  item_code?: string | null;
+  disc_per_unit?: number | null;
 }
 
 export interface InvoiceRow {
@@ -315,7 +319,7 @@ export const fetchVOs = () => selectAll<VORow>("project_vos", "*", { column: "cr
 export const fetchMaterials = () => selectAll<MaterialRow>("materials", "*", { column: "qty_on_hand" });
 export const fetchAllocations = () => selectAll<AllocationRow>("material_allocations", "*", { column: "updated_at" });
 export const fetchPOs = () => selectAll<PORow>("purchase_orders", "*", { column: "created_date" });
-export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price,discount_pct");
+export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price,discount_pct,item_code,disc_per_unit");
 export const fetchInvoices = () => selectAll<InvoiceRow>("supplier_invoices", "*", { column: "invoice_date" });
 export const fetchClaims = () => selectAll<ClaimRow>("claims", "*", { column: "submitted_date" });
 export const fetchWorksOrders = () =>
@@ -458,6 +462,8 @@ export function mapPO(
     vendorQuotationRef: row.vendor_quotation_ref ?? "",
     attnName: row.attn_name ?? "",
     deliveryCharge: row.delivery_charge ?? 0,
+    vendorCode: row.vendor_code ?? "",
+    projectPic: row.project_pic ?? "",
     deliveryAddress: delivery?.address ?? "",
     deliveryContact: delivery?.contact ?? "",
     deliveryContactNumber: delivery?.contactNumber ?? "",
@@ -467,6 +473,8 @@ export function mapPO(
       unitPrice: l.unit_price,
       unit: l.unit ?? undefined,
       discountPct: l.discount_pct ?? 0,
+      itemCode: l.item_code ?? "",
+      discPerUnit: l.disc_per_unit ?? 0,
     })),
   };
 }
@@ -1275,6 +1283,52 @@ export async function dbUpdateWOLines(edits: WOLineEdit[]): Promise<void> {
       .eq("id", e.id);
     if (error) throw new Error(`Line ${e.id}: ${error.message}`);
   }
+}
+
+export interface NewWOLine {
+  woId: string;
+  areaId: string;
+  description: string;
+  colour?: string;
+  dosage: number | null;
+  dosageUnit: string;
+  packingSize: number | null;
+  packingUnit: string;
+  orderQty: number | null;
+  unitPrice: number | null;
+}
+
+/**
+ * Adds a material line to a works-order area. Used to flesh out an LOA skeleton
+ * (areas with an m² but no materials yet). seq continues after the last line in
+ * that area; order_qty seeds required_qty so the printed/priced views agree.
+ */
+export async function dbCreateWOLine(line: NewWOLine): Promise<void> {
+  const { data: last, error: seqErr } = await supabase
+    .from("works_order_lines")
+    .select("seq")
+    .eq("area_id", line.areaId)
+    .order("seq", { ascending: false })
+    .limit(1);
+  if (seqErr) throw new Error(seqErr.message);
+  const seq = ((last?.[0]?.seq as number | undefined) ?? 0) + 1;
+  const { error } = await supabase.from("works_order_lines").insert({
+    wo_id: line.woId,
+    area_id: line.areaId,
+    seq,
+    description: line.description,
+    colour: line.colour ?? null,
+    dosage: line.dosage,
+    dosage_unit: line.dosageUnit,
+    packing_size: line.packingSize,
+    packing_unit: line.packingUnit,
+    required_qty: line.orderQty,
+    order_qty: line.orderQty,
+    unit_price: line.unitPrice,
+    qty_unit: "sets",
+    is_mix_component: false,
+  });
+  if (error) throw new Error(error.message);
 }
 
 /** Next WO number, continuing the client's existing numbering. */

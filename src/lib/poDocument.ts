@@ -1,170 +1,197 @@
-// Printable PO form, modelled on the client's "Purchase Order - MISC template"
-// layout (header fields + item table + totals). Print-to-PDF via the browser.
+// Printable PO form, modelled on the client's "Purchase Order" reference
+// (PO_Template.pdf): header grid + Item Code / Disc-per-unit table + totals.
+// Print-to-PDF via the browser.
 import type { PurchaseOrder } from "@/data/sampleData";
 import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 
 const money = (n: number) =>
   n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
 
-// Standing correspondence note carried by every Conplus PO (from the real Coway
-// PO footer). Spec 2.5 wants this in app_settings.po_footer_note; until that
-// table exists it lives here so the layout matches the reference.
+// Company letterhead (from the reference PO header).
+const CO_NAME = "CONPLUS RESOURCES PTE LTD";
+const CO_ADDR = "10 Admiralty Street · #02-26 · North Link Building · Singapore 757695";
+const CO_CONTACT = "Tel: 65 6753 9939 · Fax: 65 6753 9949 · Email: conplus@singnet.com.sg";
+const CO_REG = "Reg. No.: 199404220W";
+
+// Standing correspondence notes (reference PO footer).
 const PO_FOOTER_NOTES = [
-  "1. Please quote our Purchase Order Number on all related correspondence.",
-  "2. Please notify us immediately if you are unable to deliver by the required date.",
-  "3. Send all correspondence to: Wendy Wong · 10 Admiralty Street #02-26, North Link Building, Singapore 757695 · Tel: +65 6753 9939 | Fax: +65 6753 9949 · Email: contract@conplus.com.sg",
+  "1. Please quote our Purchase Order Number on all related correspondence, delivery order and invoices.",
+  "2. Please notify us immediately if you are unable to deliver as specified.",
+  "3. Send all correspondence to:",
+];
+const PO_CORRESPONDENCE = [
+  "Wendy Wong",
+  "10 Admiralty Street, #02-26",
+  "North Link Building",
+  "Singapore 757695",
+  "Tel: +65 6753 9939 | Fax: +65 6753 9949",
+  "Email: contract@conplus.com.sg",
 ];
 const PO_GOVERNING_NOTE =
-  "This Purchase Order shall be governed by Conplus Resources Pte Ltd's standard terms and conditions of purchase.";
+  "This Purchase Order shall be governed by Conplus Resources Pte Ltd's General Terms and Conditions";
+const PO_COMPUTER_NOTE = "This is a computer generated report. No SIGNATURE is required";
+
+// Minimum visible item rows (reference sheet reserves ten).
+const MIN_ROWS = 10;
+
+type POItem = PurchaseOrder["items"][number];
+
+// Line amount = qty × (unit price − discount per unit).
+const lineAmount = (i: POItem) => i.qty * (i.unitPrice - (i.discPerUnit ?? 0));
+
+function computeTotals(po: PurchaseOrder) {
+  const hasItems = po.items.length > 0;
+  const subtotal = hasItems ? po.items.reduce((s, i) => s + lineAmount(i), 0) : po.amount;
+  const discount = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
+  const delivery = po.deliveryCharge ?? 0;
+  const total = subtotal + delivery;
+  const gst = hasItems ? Math.round(total * 0.09 * 100) / 100 : po.gst;
+  const grand = total + gst;
+  return { subtotal, discount, delivery, total, gst, grand };
+}
 
 export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
-  const hasDiscount = po.items.some((i) => (i.discountPct ?? 0) > 0);
+  const t = computeTotals(po);
 
-  const lineNet = (i: { qty: number; unitPrice: number; discountPct?: number }) =>
-    i.qty * i.unitPrice * (1 - (i.discountPct ?? 0) / 100);
-
-  const rows = po.items
-    .map(
-      (i, n) => `
+  const bodyRows = po.items.map((i, n) => {
+    const disc = i.discPerUnit ?? 0;
+    return `
       <tr>
         <td class="c">${n + 1}</td>
+        <td>${escapeHtml(i.itemCode || "")}</td>
         <td>${escapeHtml(i.material)}</td>
-        <td class="c">${escapeHtml(i.unit || "—")}</td>
+        <td class="c">${escapeHtml(i.unit || "")}</td>
         <td class="r">${i.qty}</td>
         <td class="r">${money(i.unitPrice)}</td>
-        ${hasDiscount ? `<td class="r">${i.discountPct ? `${i.discountPct}%` : "—"}</td>` : ""}
-        <td class="r">${money(lineNet(i))}</td>
-      </tr>`
-    )
-    .join("");
-
-  // Totals (spec 2.3). Line amounts are already net of discount; the discount
-  // total row is informational and is not subtracted again.
-  const subtotal = po.items.length
-    ? po.items.reduce((s, i) => s + lineNet(i), 0)
-    : po.amount;
-  const discountTotal = po.items.reduce(
-    (s, i) => s + i.qty * i.unitPrice * ((i.discountPct ?? 0) / 100),
-    0
-  );
-  const delivery = po.deliveryCharge ?? 0;
-  const gstBase = subtotal + delivery;
-  const gst = po.items.length ? Math.round(gstBase * 0.09 * 100) / 100 : po.gst;
-  const grand = gstBase + gst;
-
-  const colSpan = hasDiscount ? 7 : 6;
+        <td class="r">${disc > 0 ? money(disc) : "$ -"}</td>
+        <td class="r">${money(lineAmount(i))}</td>
+      </tr>`;
+  });
+  for (let n = po.items.length; n < MIN_ROWS; n++) {
+    bodyRows.push(
+      `<tr><td class="c">${n + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`
+    );
+  }
 
   const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
-<title>${po.poNumber} — Purchase Order</title>
+<title>${escapeHtml(po.poNumber)} — Purchase Order</title>
 <style>
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; margin: 40px; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #111; padding-bottom: 12px; }
-  .co { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
-  .co small { display: block; font-size: 10px; font-weight: 400; letter-spacing: 3px; color: #555; }
-  .title { font-size: 22px; font-weight: 700; text-align: right; }
-  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 32px; margin: 18px 0; }
-  .meta div { display: flex; justify-content: space-between; border-bottom: 1px dotted #bbb; padding: 3px 0; }
-  .meta span:first-child { color: #555; font-weight: 600; text-transform: uppercase; font-size: 10px; }
-  .vendor-addr { font-size: 10px; color: #444; border-bottom: 1px dotted #bbb; padding: 4px 0; margin-bottom: 6px; }
-  .blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
-  .vendor-block { border: 1px solid #ccc; padding: 8px 10px; }
-  .vendor-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #666; margin-bottom: 4px; }
-  .vline { display: flex; gap: 10px; font-size: 10px; padding: 2px 0; }
-  .vline span { color: #666; font-weight: 600; text-transform: uppercase; min-width: 92px; }
-  .vline b { flex: 1; }
-  .vendor-addr span { font-weight: 700; color: #555; margin-right: 8px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th { background: #f0f0f0; border: 1px solid #999; padding: 6px; font-size: 10px; text-transform: uppercase; }
-  td { border: 1px solid #999; padding: 6px; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 34px; }
+  .co { font-size: 18px; font-weight: 800; letter-spacing: 1px; }
+  .co small { display: block; font-size: 9px; font-weight: 400; letter-spacing: .5px; color: #555; margin-top: 2px; }
+  .titlebar { background: #ffe100; border: 1px solid #111; text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 2px; padding: 4px 0; margin: 14px 0 0; }
+  .hdr { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .hdr td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: top; font-size: 10px; }
+  .hdr .lbl { background: #f5f5f5; font-weight: 700; width: 15%; }
+  .hdr .val { width: 35%; }
+  .hdr b { font-weight: 700; }
+  .stack { line-height: 1.5; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  table.items th { background: #ffe100; border: 1px solid #111; padding: 5px 6px; font-size: 10px; }
+  table.items td { border: 1px solid #999; padding: 4px 6px; font-size: 10px; height: 18px; }
   .c { text-align: center; } .r { text-align: right; }
-  .totals { margin-top: 12px; margin-left: auto; width: 280px; }
-  .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
-  .totals .grand { border-top: 2px solid #111; font-weight: 800; font-size: 14px; }
-  .foot { margin-top: 40px; display: flex; justify-content: space-between; gap: 24px; align-items: stretch; }
-  .sig { flex: 1; border-top: 1px solid #111; padding-top: 6px; font-size: 10px; color: #555; text-transform: uppercase; }
-  .chop { flex: 1; border: 1px dashed #999; border-radius: 4px; min-height: 90px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: .5px; }
-  .notes { margin-top: 22px; border-top: 1px solid #ccc; padding-top: 10px; font-size: 9px; color: #555; line-height: 1.5; }
-  .notes p { margin: 2px 0; }
-  .notes .gov { margin-top: 6px; font-style: italic; color: #777; }
-  .status { margin-top: 14px; font-size: 10px; color: #777; }
-  @media print { body { margin: 20px; } }
+  .lower { display: flex; justify-content: space-between; gap: 24px; margin-top: 10px; align-items: flex-start; }
+  .notes { flex: 1; font-size: 9px; color: #333; line-height: 1.5; }
+  .notes p { margin: 1px 0; }
+  .corr { margin-top: 2px; }
+  .totals { width: 260px; border-collapse: collapse; }
+  .totals td { border: 1px solid #999; padding: 4px 8px; font-size: 11px; }
+  .totals td.k { background: #f5f5f5; font-weight: 700; text-align: right; }
+  .totals td.v { text-align: right; }
+  .totals tr.grand td { font-weight: 800; font-size: 12px; }
+  .cgen { text-align: right; font-size: 9px; color: #333; margin-top: 6px; font-weight: 600; }
+  .gov { text-align: center; font-size: 10px; font-weight: 600; margin-top: 26px; }
+  .pageno { text-align: center; font-size: 9px; color: #777; margin-top: 8px; }
+  @media print { body { margin: 18px; } }
 </style>
 </head>
 <body>
-  <div class="head">
-    <div class="co">CONPLUS RESOURCES PTE LTD<small>Protective Coatings · Flooring · Waterproofing</small></div>
-    <div class="title">PURCHASE ORDER</div>
-  </div>
-  <div class="meta">
-    <div><span>PO No</span><b>${escapeHtml(po.poNumber)}</b></div>
-    <div><span>PO Date</span><b>${escapeHtml(po.createdDate)}</b></div>
-    <div><span>Vendor</span><b>${escapeHtml(po.supplier)}</b></div>
-    <div><span>Required Date</span><b>${escapeHtml(po.deliveryDate)}</b></div>
-    <div><span>Our PO Ref</span><b>${escapeHtml(po.poNumber)}</b></div>
-    ${po.vendorQuotationRef ? `<div><span>Vendor Ref / Quotation</span><b>${escapeHtml(po.vendorQuotationRef)}</b></div>` : ""}
-    <div><span>Project Site</span><b>${escapeHtml(po.project)}</b></div>
-    <div><span>Project Code</span><b>${escapeHtml(po.projectCode || "—")}</b></div>
-    <div><span>Works Order</span><b>${escapeHtml(po.worksOrder || "—")}</b></div>
-    <div><span>Currency</span><b>SGD</b></div>
-    <div><span>Ship To</span><b>${escapeHtml(po.shipTo || po.project)}</b></div>
-    <div><span>Payment Terms</span><b>${escapeHtml(po.paymentTerms || "—")}</b></div>
-    <div><span>Requested By</span><b>${escapeHtml(po.requestedBy || "—")}</b></div>
-    ${po.attnName ? `<div><span>Attn</span><b>${escapeHtml(po.attnName)}</b></div>` : ""}
-    <div><span>Status</span><b style="text-transform:capitalize">${escapeHtml(po.status)}</b></div>
-  </div>
-  <div class="blocks">
-    ${
-      po.supplierAddress || po.supplierContact || po.supplierPhone || po.supplierEmail
-        ? `<div class="vendor-block">
-             <div class="vendor-title">Vendor Details</div>
-             ${po.supplierAddress ? `<div class="vline"><span>Address</span><b>${escapeHtml(po.supplierAddress)}</b></div>` : ""}
-             ${po.supplierContact ? `<div class="vline"><span>Contact Person</span><b>${escapeHtml(po.supplierContact)}</b></div>` : ""}
-             ${po.supplierPhone ? `<div class="vline"><span>Phone</span><b>${escapeHtml(po.supplierPhone)}</b></div>` : ""}
-             ${po.supplierEmail ? `<div class="vline"><span>Email</span><b>${escapeHtml(po.supplierEmail)}</b></div>` : ""}
-           </div>`
-        : "<div></div>"
-    }
-    <div class="vendor-block">
-      <div class="vendor-title">Delivery Address</div>
-      <div class="vline"><span>Deliver To</span><b>${escapeHtml(po.deliveryAddress || po.shipTo || po.project || "—")}</b></div>
-      ${po.deliveryContact ? `<div class="vline"><span>Site Contact</span><b>${escapeHtml(po.deliveryContact)}${po.deliveryContactNumber ? ` · ${escapeHtml(po.deliveryContactNumber)}` : ""}</b></div>` : ""}
-    </div>
-  </div>
-  ${po.remarks ? `<div class="vendor-addr"><span>REMARKS</span> ${escapeHtml(po.remarks)}</div>` : ""}
-  <table>
+  <div class="co">${CO_NAME}<small>${escapeHtml(CO_ADDR)}</small><small>${escapeHtml(CO_CONTACT)} · ${escapeHtml(CO_REG)}</small></div>
+  <div class="titlebar">PURCHASE ORDER</div>
+  <table class="hdr">
+    <tr>
+      <td class="lbl">Purchase Order No.</td>
+      <td class="val"><b>${escapeHtml(po.poNumber)}</b></td>
+      <td class="lbl">Payment Terms</td>
+      <td class="val"><b>${escapeHtml(po.paymentTerms || "—")}</b></td>
+    </tr>
+    <tr>
+      <td class="lbl">Purchase Order Date</td>
+      <td class="val"><b>${escapeHtml(po.createdDate)}</b></td>
+      <td class="lbl">Currency</td>
+      <td class="val"><b>SGD</b></td>
+    </tr>
+    <tr>
+      <td class="lbl">Vendor Code</td>
+      <td class="val"><b>${escapeHtml(po.vendorCode || "—")}</b></td>
+      <td class="lbl">Requested By</td>
+      <td class="val"><b>${escapeHtml(po.requestedBy || "—")}</b></td>
+    </tr>
+    <tr>
+      <td class="lbl">Vendor</td>
+      <td class="val stack"><b>${escapeHtml(po.supplier)}</b>${po.supplierAddress ? `<br>${escapeHtml(po.supplierAddress)}` : ""}${po.supplierPhone ? `<br>Tel: ${escapeHtml(po.supplierPhone)}` : ""}${po.supplierContact || po.supplierEmail ? `<br>Attn: ${escapeHtml([po.supplierContact, po.supplierEmail].filter(Boolean).join(" | "))}` : ""}</td>
+      <td class="lbl">Project PIC</td>
+      <td class="val"><b>${escapeHtml(po.projectPic || "—")}</b></td>
+    </tr>
+    <tr>
+      <td class="lbl">Project Site</td>
+      <td class="val"><b>${escapeHtml(po.project || "—")}</b></td>
+      <td class="lbl">Required Date</td>
+      <td class="val"><b>${escapeHtml(po.deliveryDate || "—")}</b></td>
+    </tr>
+    <tr>
+      <td class="lbl">Project Code</td>
+      <td class="val"><b>${escapeHtml(po.projectCode || "—")}</b></td>
+      <td class="lbl">Ship To</td>
+      <td class="val stack"><b>${escapeHtml(po.deliveryAddress || po.shipTo || po.project || "—")}</b>${po.deliveryContact ? `<br>${escapeHtml(po.deliveryContact)}${po.deliveryContactNumber ? ` · ${escapeHtml(po.deliveryContactNumber)}` : ""}` : ""}<br>Date: (TBC)</td>
+    </tr>
+    <tr>
+      <td class="lbl">Works Order</td>
+      <td class="val"><b>${escapeHtml(po.worksOrder || "—")}</b></td>
+      <td class="lbl">Vendor Ref / Quotation</td>
+      <td class="val"><b>${escapeHtml(po.vendorQuotationRef || "—")}</b></td>
+    </tr>
+  </table>
+
+  ${po.remarks ? `<div style="margin-top:8px;font-size:10px;"><b>Remarks:</b> ${escapeHtml(po.remarks)}</div>` : ""}
+
+  <table class="items">
     <thead>
       <tr>
-        <th style="width:36px">S/No</th>
+        <th style="width:34px">S/No.</th>
+        <th style="width:110px">Item Code</th>
         <th>Item Description</th>
-        <th style="width:60px">Unit</th>
-        <th style="width:56px">Qty</th>
-        <th style="width:96px">Unit Price</th>
-        ${hasDiscount ? `<th style="width:72px">Discount</th>` : ""}
-        <th style="width:110px">Amount</th>
+        <th style="width:64px">Unit</th>
+        <th style="width:44px">QTY</th>
+        <th style="width:82px">Unit Price</th>
+        <th style="width:72px">Disc/Unit</th>
+        <th style="width:96px">Amount</th>
       </tr>
     </thead>
-    <tbody>${rows || `<tr><td colspan="${colSpan}" class="c">No line items recorded</td></tr>`}</tbody>
+    <tbody>${bodyRows.join("")}</tbody>
   </table>
-  <div class="totals">
-    <div><span>Subtotal</span><span>${money(subtotal)}</span></div>
-    ${discountTotal > 0 ? `<div><span>Line Discount Total</span><span>−${money(discountTotal)}</span></div>` : ""}
-    ${delivery > 0 ? `<div><span>Delivery Charge</span><span>${money(delivery)}</span></div>` : ""}
-    <div><span>GST (9%)</span><span>${money(gst)}</span></div>
-    <div class="grand"><span>Total</span><span>${money(grand)}</span></div>
+
+  <div class="lower">
+    <div class="notes">
+      ${PO_FOOTER_NOTES.map((n) => `<p>${escapeHtml(n)}</p>`).join("")}
+      <div class="corr">${PO_CORRESPONDENCE.map((n) => `<p>${escapeHtml(n)}</p>`).join("")}</div>
+    </div>
+    <table class="totals">
+      <tr><td class="k">Subtotal</td><td class="v">${money(t.subtotal)}</td></tr>
+      <tr><td class="k">Discount</td><td class="v">${t.discount > 0 ? `−${money(t.discount)}` : "$ -"}</td></tr>
+      ${t.delivery > 0 ? `<tr><td class="k">Delivery Charge</td><td class="v">${money(t.delivery)}</td></tr>` : ""}
+      <tr><td class="k">Total</td><td class="v">${money(t.total)}</td></tr>
+      <tr><td class="k">GST 9%</td><td class="v">${money(t.gst)}</td></tr>
+      <tr class="grand"><td class="k">Grand Total</td><td class="v">${money(t.grand)}</td></tr>
+    </table>
   </div>
-  <div class="foot">
-    <div class="sig">Requested By</div>
-    <div class="sig">Approved By</div>
-    <div class="chop">Vendor Sign &amp; Company Chop</div>
-  </div>
-  <div class="notes">
-    ${PO_FOOTER_NOTES.map((n) => `<p>${escapeHtml(n)}</p>`).join("")}
-    <p class="gov">${escapeHtml(PO_GOVERNING_NOTE)}</p>
-  </div>
-  <div class="status">Status: ${escapeHtml(po.status)} · Generated by ConPlus AI Transformation Suite</div>
+
+  <div class="cgen">${escapeHtml(PO_COMPUTER_NOTE)}</div>
+  <div class="gov">${escapeHtml(PO_GOVERNING_NOTE)}</div>
+  <div class="pageno">Page 1 of 1</div>
   ${opts.autoPrint ? "<script>window.onload = () => window.print();</script>" : ""}
 </body>
 </html>`;
@@ -186,72 +213,54 @@ function escapeHtml(s: string) {
 
 /** The same purchase order as a spreadsheet, keeping the template's shape. */
 export function exportPOToExcel(po: PurchaseOrder): void {
-  const lineNet = (i: { qty: number; unitPrice: number; discountPct?: number }) =>
-    i.qty * i.unitPrice * (1 - (i.discountPct ?? 0) / 100);
-  const subtotal = po.items.length ? po.items.reduce((s, i) => s + lineNet(i), 0) : po.amount;
-  const discountTotal = po.items.reduce(
-    (s, i) => s + i.qty * i.unitPrice * ((i.discountPct ?? 0) / 100),
-    0
-  );
-  const delivery = po.deliveryCharge ?? 0;
-  const gst = po.items.length ? Math.round((subtotal + delivery) * 0.09 * 100) / 100 : po.gst;
+  const t = computeTotals(po);
 
   const totalsFields = [
-    { label: "Subtotal", value: subtotal },
-    ...(discountTotal > 0 ? [{ label: "Line Discount Total", value: -discountTotal }] : []),
-    ...(delivery > 0 ? [{ label: "Delivery Charge", value: delivery }] : []),
-    { label: "GST (9%)", value: gst },
-    { label: "Total", value: subtotal + delivery + gst },
+    { label: "Subtotal", value: t.subtotal },
+    { label: "Discount", value: -t.discount },
+    ...(t.delivery > 0 ? [{ label: "Delivery Charge", value: t.delivery }] : []),
+    { label: "Total", value: t.total },
+    { label: "GST 9%", value: t.gst },
+    { label: "Grand Total", value: t.grand },
   ];
 
   const sections: RecordSection[] = [
     {
       heading: `Purchase Order ${po.poNumber}`,
       fields: [
-        { label: "PO Date", value: po.createdDate },
+        { label: "Purchase Order Date", value: po.createdDate },
+        { label: "Vendor Code", value: po.vendorCode },
         { label: "Vendor", value: po.supplier },
-        { label: "Attn", value: po.attnName },
+        { label: "Vendor Address", value: po.supplierAddress },
+        { label: "Vendor Contact", value: po.supplierContact },
+        { label: "Vendor Phone", value: po.supplierPhone },
+        { label: "Vendor Email", value: po.supplierEmail },
         { label: "Vendor Ref / Quotation", value: po.vendorQuotationRef },
-        { label: "Required Date", value: po.deliveryDate },
+        { label: "Payment Terms", value: po.paymentTerms },
+        { label: "Currency", value: "SGD" },
+        { label: "Requested By", value: po.requestedBy },
         { label: "Project Site", value: po.project },
         { label: "Project Code", value: po.projectCode },
+        { label: "Project PIC", value: po.projectPic },
         { label: "Works Order", value: po.worksOrder },
-        { label: "Ship To", value: po.shipTo || po.project },
-        { label: "Payment Terms", value: po.paymentTerms },
-        { label: "Requested By", value: po.requestedBy },
-        { label: "Status", value: po.status },
+        { label: "Ship To", value: po.deliveryAddress || po.shipTo || po.project },
+        { label: "Required Date", value: po.deliveryDate },
         { label: "Remarks", value: po.remarks },
-      ],
-    },
-    {
-      heading: "Vendor Details",
-      fields: [
-        { label: "Address", value: po.supplierAddress },
-        { label: "Contact Person", value: po.supplierContact },
-        { label: "Phone", value: po.supplierPhone },
-        { label: "Email", value: po.supplierEmail },
-      ],
-    },
-    {
-      heading: "Delivery Address",
-      fields: [
-        { label: "Deliver To", value: po.deliveryAddress || po.shipTo || po.project },
-        { label: "Site Contact", value: po.deliveryContact },
-        { label: "Contact Number", value: po.deliveryContactNumber },
       ],
     },
     {
       heading: "Items",
       table: {
-        headers: ["S/No", "Item Description", "Unit", "Qty", "Unit Price", "Discount %", "Amount"],
+        headers: ["S/No.", "Item Code", "Item Description", "Unit", "QTY", "Unit Price", "Disc/Unit", "Amount"],
         rows: po.items.map((i, n) => [
           n + 1,
+          i.itemCode ?? "",
           i.material,
           i.unit ?? "",
           i.qty,
           i.unitPrice,
-          i.discountPct ?? 0,
-          lineNet(i),
+          i.discPerUnit ?? 0,
+          lineAmount(i),
         ]),
       },
     },

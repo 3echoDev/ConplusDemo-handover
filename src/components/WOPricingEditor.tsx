@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
-import { Save, X, Printer, Download, FileEdit, Layers, AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Save, X, Printer, Download, FileEdit, Plus, Layers, AlertTriangle } from "lucide-react";
 import { useAppData } from "@/data/AppDataContext";
-import { formatCurrency, type WorksOrder } from "@/data/sampleData";
+import { formatCurrency, type WorksOrder, type WorksOrderArea } from "@/data/sampleData";
 import { qtyUnitLabel, printWO } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import { downloadWOAmendmentSheet } from "@/lib/woAmendmentSheet";
-import type { WOLineEdit } from "@/data/db";
+import type { WOLineEdit, NewWOLine } from "@/data/db";
 import { cn } from "@/lib/utils";
 
 const GST_RATE = 0.09;
@@ -20,13 +20,149 @@ const numOrNull = (s: string): number | null => {
 };
 
 /**
+ * Inline "add material" form for a scope area. LOA-generated works orders arrive
+ * as skeletons (areas carry m² but no material lines); this lets the user add a
+ * priced material, auto-computing order qty = ceil(area m² × dosage ÷ pack size).
+ */
+function AddMaterial({ area, onAdd }: { area: WorksOrderArea; onAdd: (f: NewWOLine) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [f, setF] = useState({
+    description: "",
+    colour: "",
+    dosage: "",
+    dosageUnit: "kg/m²",
+    packingSize: "",
+    packingUnit: "kg",
+    unitPrice: "",
+    orderQty: "",
+  });
+
+  const dosage = numOrNull(f.dosage);
+  const pack = numOrNull(f.packingSize);
+  const suggested =
+    area.areaSqm != null && dosage != null && pack != null && pack > 0
+      ? Math.ceil((area.areaSqm * dosage) / pack)
+      : null;
+  const orderQty = f.orderQty.trim() !== "" ? numOrNull(f.orderQty) : suggested;
+
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
+  const reset = () =>
+    setF({ description: "", colour: "", dosage: "", dosageUnit: "kg/m²", packingSize: "", packingUnit: "kg", unitPrice: "", orderQty: "" });
+
+  const submit = async () => {
+    if (!f.description.trim()) return;
+    setBusy(true);
+    try {
+      await onAdd({
+        woId: "", // filled by caller
+        areaId: area.id,
+        description: f.description.trim(),
+        colour: f.colour.trim() || undefined,
+        dosage,
+        dosageUnit: f.dosageUnit.trim(),
+        packingSize: pack,
+        packingUnit: f.packingUnit.trim(),
+        orderQty,
+        unitPrice: numOrNull(f.unitPrice),
+      });
+      reset();
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="border-t border-border/60 px-3 py-2">
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add material to {area.areaName}
+        </button>
+      </div>
+    );
+  }
+
+  const cell = "rounded border border-border bg-background px-2 py-1 text-sm";
+  return (
+    <div className="border-t border-border/60 bg-muted/30 px-3 py-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-2">
+          <span className="text-[11px] font-medium text-muted-foreground">Description</span>
+          <input className={cell} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="e.g. Epoxy primer coat" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Colour</span>
+          <input className={cell} value={f.colour} onChange={(e) => set("colour", e.target.value)} placeholder="RAL / colour" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Unit price (S$)</span>
+          <input type="number" min="0" step="0.01" className={cn(cell, "text-right")} value={f.unitPrice} onChange={(e) => set("unitPrice", e.target.value)} placeholder="0.00" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Dosage</span>
+          <div className="flex gap-1">
+            <input type="number" min="0" step="0.001" className={cn(cell, "w-full text-right")} value={f.dosage} onChange={(e) => set("dosage", e.target.value)} placeholder="0" />
+            <input className={cn(cell, "w-20")} value={f.dosageUnit} onChange={(e) => set("dosageUnit", e.target.value)} />
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Packing size</span>
+          <div className="flex gap-1">
+            <input type="number" min="0" step="0.001" className={cn(cell, "w-full text-right")} value={f.packingSize} onChange={(e) => set("packingSize", e.target.value)} placeholder="0" />
+            <input className={cn(cell, "w-20")} value={f.packingUnit} onChange={(e) => set("packingUnit", e.target.value)} />
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Order qty {suggested != null && f.orderQty.trim() === "" && <span className="text-primary">(auto {suggested})</span>}
+          </span>
+          <input
+            type="number"
+            min="0"
+            className={cn(cell, "text-right")}
+            value={f.orderQty}
+            onChange={(e) => set("orderQty", e.target.value)}
+            placeholder={suggested != null ? String(suggested) : "0"}
+          />
+        </label>
+      </div>
+      {area.areaSqm != null && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Suggested qty = ⌈{area.areaSqm.toLocaleString()} m² × dosage ÷ pack size⌉. Override above if needed.
+        </p>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={submit}
+          disabled={busy || !f.description.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" /> {busy ? "Adding…" : "Add material"}
+        </button>
+        <button
+          onClick={() => { reset(); setOpen(false); }}
+          disabled={busy}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Spec 1.4 — editable web view. Lets the user edit order_qty and unit_price per
  * line, watch line / section / grand totals recompute live, then save back to
  * works_order_lines (only those two columns). Read-only once the WO is completed
  * or pending invoice.
  */
 export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClose: () => void }) {
-  const { updateWOLines } = useAppData();
+  const { updateWOLines, createWOLine } = useAppData();
   const readOnly = wo.status === "completed" || wo.status === "pending_invoice";
 
   // Editable lines only (mix components are shown but not priced/edited).
@@ -50,6 +186,25 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
   const [saving, setSaving] = useState(false);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
+  // Merge in any lines that appear after mount (e.g. a material just added to an
+  // area) without clobbering in-progress edits on existing rows.
+  useEffect(() => {
+    setDraft((d) => {
+      let changed = false;
+      const next = { ...d };
+      for (const l of editableLines) {
+        if (!next[l.id]) {
+          next[l.id] = {
+            orderQty: l.orderQty != null ? String(l.orderQty) : "",
+            unitPrice: l.unitPrice != null ? String(l.unitPrice) : "",
+          };
+          changed = true;
+        }
+      }
+      return changed ? next : d;
+    });
+  }, [editableLines]);
+
   const patch = (id: string, field: "orderQty" | "unitPrice", value: string) =>
     setDraft((d) => ({ ...d, [id]: { ...d[id], [field]: value } }));
 
@@ -63,21 +218,20 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
 
   const dirty = useMemo(
     () =>
-      editableLines.some(
-        (l) =>
-          draft[l.id].orderQty !== initial[l.id].orderQty ||
-          draft[l.id].unitPrice !== initial[l.id].unitPrice
-      ),
+      editableLines.some((l) => {
+        const row = draft[l.id] ?? initial[l.id];
+        return row.orderQty !== initial[l.id].orderQty || row.unitPrice !== initial[l.id].unitPrice;
+      }),
     [draft, initial, editableLines]
   );
 
   const modifiedFromAward = useMemo(
     () =>
       editableLines.some((l) => {
-        const q = numOrNull(draft[l.id].orderQty);
+        const q = numOrNull((draft[l.id] ?? initial[l.id]).orderQty);
         return l.requiredQty != null && q != null && q !== l.requiredQty;
       }),
-    [draft, editableLines]
+    [draft, initial, editableLines]
   );
 
   const grand = useMemo(
@@ -96,16 +250,14 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
     setSaving(true);
     setFailedIds(new Set());
     const edits: WOLineEdit[] = editableLines
-      .filter(
-        (l) =>
-          draft[l.id].orderQty !== initial[l.id].orderQty ||
-          draft[l.id].unitPrice !== initial[l.id].unitPrice
-      )
-      .map((l) => ({
-        id: l.id,
-        orderQty: numOrNull(draft[l.id].orderQty),
-        unitPrice: numOrNull(draft[l.id].unitPrice),
-      }));
+      .filter((l) => {
+        const row = draft[l.id] ?? initial[l.id];
+        return row.orderQty !== initial[l.id].orderQty || row.unitPrice !== initial[l.id].unitPrice;
+      })
+      .map((l) => {
+        const row = draft[l.id] ?? initial[l.id];
+        return { id: l.id, orderQty: numOrNull(row.orderQty), unitPrice: numOrNull(row.unitPrice) };
+      });
     try {
       if (edits.length) await updateWOLines(edits);
       onClose();
@@ -192,7 +344,7 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
                       </tr>
                     );
                   }
-                  const row = draft[l.id];
+                  const row = draft[l.id] ?? { orderQty: "", unitPrice: "" };
                   const q = numOrNull(row.orderQty);
                   const unit = qtyUnitLabel(l, q);
                   const failed = failedIds.has(l.id);
@@ -248,6 +400,10 @@ export default function WOPricingEditor({ wo, onClose }: { wo: WorksOrder; onClo
                 })}
               </tbody>
             </table>
+
+            {!readOnly && (
+              <AddMaterial area={area} onAdd={(f) => createWOLine({ ...f, woId: wo.id })} />
+            )}
           </div>
         );
       })}
