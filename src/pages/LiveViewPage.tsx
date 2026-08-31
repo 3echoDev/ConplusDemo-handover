@@ -256,26 +256,39 @@ function ProjectDetailBody({ project }: { project: Project }) {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Project Code" value={project.code} />
-        <Field label="Client" value={project.client} />
-        <div className="rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/40 transition-colors" onClick={() => setShowVOs(!showVOs)}>
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Contract Value {tableVOs.length + legacyVOs.length > 0 ? "▾" : ""}</p>
-          <p className="text-sm font-medium text-primary">{formatCurrency(project.budget)}</p>
+      {/* Header block — structured columns matching the PO template */}
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="space-y-1.5 p-3">
+            <KV label="Project Code" value={project.code} />
+            <KV label="Client" value={project.client} />
+            <KV label="Sales Mgr" value={project.manager} />
+            <KV label="Client PO" value={project.clientPo || "—"} />
+          </div>
+          <div className="space-y-1.5 p-3">
+            <KV label="Contact" value={project.contactPerson} />
+            <KV label="Contact No." value={project.contactNumber || "—"} />
+            <KV label="Start Date" value={!project.startDate || project.startDate === "—" ? "TBA" : project.startDate} />
+            <KV label="End Date" value={!project.endDate || project.endDate === "—" ? "TBA" : project.endDate} />
+          </div>
+          <div className="space-y-1.5 p-3">
+            <button onClick={() => setShowVOs(!showVOs)} className="flex w-full items-center gap-2 rounded text-left text-xs hover:bg-secondary/40">
+              <span className="w-24 shrink-0 text-muted-foreground">Contract Value {tableVOs.length + legacyVOs.length > 0 ? "▾" : ""}</span>
+              <span className="min-w-0 flex-1 font-medium text-primary">{formatCurrency(project.budget)}</span>
+            </button>
+            <button onClick={() => setShowClaims(!showClaims)} className="flex w-full items-center gap-2 rounded text-left text-xs hover:bg-secondary/40">
+              <span className="w-24 shrink-0 text-muted-foreground">Cum Claim {projClaims.length > 0 ? "▾" : ""}</span>
+              <span className="min-w-0 flex-1 font-medium text-primary">{formatCurrency(cumClaims)}</span>
+            </button>
+          </div>
         </div>
-        <div className="rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/40 transition-colors" onClick={() => setShowClaims(!showClaims)}>
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Cum Progress Claim {projClaims.length > 0 ? "▾" : ""}</p>
-          <p className="text-sm font-medium text-primary">{formatCurrency(cumClaims)}</p>
-        </div>
-        <Field label="Sales Manager" value={project.manager} />
-        <Field label="Contact Person" value={project.contactPerson} />
-        <Field label="Contact Number" value={project.contactNumber || "—"} />
-        <Field label="Client PO" value={project.clientPo || "—"} />
-        <Field label="Start Date" value={!project.startDate || project.startDate === "—" ? "TBA" : project.startDate} />
-        <Field label="End Date" value={!project.endDate || project.endDate === "—" ? "TBA" : project.endDate} />
-        {project.location !== "Singapore" && <div className="col-span-2"><Field label="Site Address" value={project.location} /></div>}
-        {project.companyAddress && <div className="col-span-2"><Field label="Company Address" value={project.companyAddress} /></div>}
-        <div className="col-span-2"><Field label="Scope of Work" value={project.scope} /></div>
+        {(project.location !== "Singapore" || project.companyAddress || project.scope) && (
+          <div className="space-y-1.5 border-t border-border bg-secondary/30 p-3">
+            {project.location !== "Singapore" && <KV label="Site Address" value={project.location} />}
+            {project.companyAddress && <KV label="Company" value={project.companyAddress} />}
+            <KV label="Scope" value={project.scope} />
+          </div>
+        )}
       </div>
 
       {showVOs && (
@@ -390,7 +403,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className={cn("w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl", detail.type === "po" ? "max-w-3xl" : "max-w-xl")} onClick={(e) => e.stopPropagation()}>
+      <div className={cn("w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl", detail.type === "po" || detail.type === "project" ? "max-w-3xl" : "max-w-xl")} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{titles[detail.type]}</p>
@@ -1251,16 +1264,35 @@ export default function LiveViewPage() {
 
                     {isOpen && (
                       <div className="bg-secondary/20 px-4 py-3 space-y-3">
-                        {(wo.siteContact || wo.issueDate) && (
-                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                            {wo.siteContact && (
-                              <span>Site contact: <span className="text-card-foreground">{wo.siteContact}{wo.siteContactNumber ? ` (${wo.siteContactNumber})` : ""}</span></span>
-                            )}
-                            {wo.issueDate && (
-                              <span>Issued: <span className="text-card-foreground">{wo.issueDate}</span></span>
-                            )}
+                        {/* Header block — structured columns matching the WO template */}
+                        <div className="overflow-hidden rounded-lg border border-border bg-card">
+                          <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                            <div className="space-y-1.5 p-3">
+                              <KV label="WO No." value={wo.woNumber} />
+                              <KV label="Job No." value={wo.jobNo || "—"} />
+                              <KV label="Project Code" value={wo.projectCode} />
+                              <KV label="Quotation" value={wo.quotationRef || "—"} />
+                            </div>
+                            <div className="space-y-1.5 p-3">
+                              <KV label="Client" value={wo.clientName} />
+                              <KV label="Sales" value={wo.sales || "—"} />
+                              <KV label="Project I/C" value={wo.projectIc || "—"} />
+                              <KV label="Contact" value={wo.contactPerson || "—"} />
+                            </div>
+                            <div className="space-y-1.5 p-3">
+                              <KV label="Start Date" value={wo.startDate || "—"} />
+                              <KV label="Issue Date" value={wo.issueDate || "—"} />
+                              <KV label="Site Contact" value={wo.siteContact ? `${wo.siteContact}${wo.siteContactNumber ? ` (${wo.siteContactNumber})` : ""}` : "—"} />
+                              <KV label="Total" value={`${sets} sets`} />
+                            </div>
                           </div>
-                        )}
+                          {(wo.siteAddress || wo.remarks) && (
+                            <div className="space-y-1.5 border-t border-border bg-secondary/30 p-3">
+                              {wo.siteAddress && <KV label="Site Address" value={wo.siteAddress} />}
+                              {wo.remarks && <KV label="Remarks" value={wo.remarks} />}
+                            </div>
+                          )}
+                        </div>
                         <div className="flex justify-end gap-1.5">
                           <button
                             onClick={(e) => { e.stopPropagation(); exportWOTemplateExcel(wo); }}
