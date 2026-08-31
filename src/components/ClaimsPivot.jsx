@@ -709,13 +709,14 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [holdModal, setHoldModal] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [sendingId, setSendingId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("days");
+  const [chip, setChip] = useState("all");
+  const [expandedId, setExpandedId] = useState(null);
+  const [detailMap, setDetailMap] = useState({}); // claim_id -> { history, hold }
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
   const rows = chaseTab === "certificate" ? certRows : payRows;
-
-  // Split into action vs full list
-  const actionRows = rows.filter((r) => r.needs_action_today);
-  const allRows = rows;
 
   const isCertOverdue = (row) => row.stage === "overdue";
   const isPayOverdue = (row) => ["final", "2nd", "soa_overdue"].includes(row.stage);
@@ -824,6 +825,43 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
     setEmailModal({ row, clock, email, isManual });
   };
 
+  // Skip this cycle directly (logs decision=ignore with the default draft text).
+  const handleQuickIgnore = async (row) => {
+    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    const subject = email?.subject || `Chase ${row.claim_number || row.claim_no}`;
+    const body = email?.body || email?.variants?.[0]?.body || "";
+    await handleIgnore(row, subject, body);
+  };
+
+  // Expand a card: lazily load its reminder history (+ active hold, if paused).
+  const toggleExpand = async (row) => {
+    if (expandedId === row.claim_id) { setExpandedId(null); return; }
+    setExpandedId(row.claim_id);
+    if (!detailMap[row.claim_id]) {
+      const [histRes, holdRes] = await Promise.all([
+        supabase
+          .from("chase_reminders")
+          .select("reminder_no, decision, stage, is_manual, sent_at, created_at, created_by")
+          .eq("claim_id", row.claim_id)
+          .eq("clock", clock)
+          .order("created_at", { ascending: false }),
+        row.on_hold
+          ? supabase
+              .from("chase_holds")
+              .select("reason, reason_note, resume_date, created_by, created_at")
+              .eq("claim_id", row.claim_id)
+              .eq("clock", clock)
+              .eq("active", true)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      setDetailMap((m) => ({
+        ...m,
+        [row.claim_id]: { history: histRes.data || [], hold: holdRes.data || null },
+      }));
+    }
+  };
+
   // Summary
   const totalAmount = rows.reduce((s, r) => {
     const amt = clock === "certificate" ? Number(r.amount || 0) : Number(r.invoice_amount || 0);
@@ -832,246 +870,392 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const overdueCount = rows.filter(isOverdue).length;
   const heldCount = rows.filter((r) => r.on_hold).length;
 
-  // Shared row renderer
-  const renderRow = (row) => {
-    const overdue = isOverdue(row);
+  const prettyReason = (r) => (r || "").replace(/_/g, " ");
+
+  // Current cadence position + tone, derived from real stage + reminders_sent.
+  const chaseStageMeta = (row) => {
+    const sent = Number(row.reminders_sent || 0);
+    if (row.on_hold) {
+      const reason = detailMap[row.claim_id]?.hold?.reason;
+      return { tone: "paused", label: `Chase paused${reason ? " \u00B7 " + prettyReason(reason) : ""}` };
+    }
+    if (!row.needs_action_today && sent > 0 && row.days_since_last_sent != null && row.days_since_last_sent <= 2) {
+      const when = row.days_since_last_sent === 0 ? "today" : `${row.days_since_last_sent}d ago`;
+      return { tone: "sent", label: `Reminder ${sent} sent ${when}` };
+    }
+    const s = row.stage;
+    if (clock === "certificate") {
+      if (s === "not_due") return { tone: "ok", label: "Not due yet" };
+      if (s === "t-7") return { tone: "warn", label: "T\u22127 warning \u00B7 no email yet" };
+      if (s === "t-4") return { tone: "warn", label: `Reminder ${sent + 1} \u00B7 T\u22124 draft` };
+      if (s === "due") return { tone: "due", label: `Reminder ${sent + 1} \u00B7 due today` };
+      if (s === "overdue")
+        return { tone: "over", label: `Reminder ${sent + 1}${row.overdue_weeks != null ? ` \u00B7 ${row.overdue_weeks} wks overdue` : " \u00B7 overdue"}` };
+      return { tone: "ok", label: (s || "\u2014").replace(/_/g, " ") };
+    }
+    if (s === "soa") return { tone: "warn", label: `SOA \u00B7 reminder ${sent + 1}` };
+    if (s === "soa_overdue") return { tone: "due", label: `SOA overdue \u00B7 reminder ${sent + 1}` };
+    if (s === "1st") return { tone: "due", label: "1st reminder \u00B7 overdue" };
+    if (s === "2nd") return { tone: "over", label: "2nd reminder \u00B7 overdue" };
+    if (s === "final") return { tone: "over", label: "Final reminder \u00B7 escalation" };
+    return { tone: "ok", label: (s || "\u2014").replace(/_/g, " ") };
+  };
+
+  // 7-segment stepper. `cur` is driven by stage; `done` count by reminders_sent.
+  const buildStepper = (row, tone) => {
+    const sent = Number(row.reminders_sent || 0);
+    const s = row.stage;
+    let cur;
+    if (clock === "certificate") {
+      cur = s === "not_due" || s === "t-7" ? 1
+        : s === "t-4" ? 2
+        : s === "due" ? 3
+        : s === "overdue" ? 4 + Math.min(Math.max(sent - 2, 0), 2)
+        : 1;
+    } else {
+      cur = s === "soa" ? 2 : s === "soa_overdue" ? 3 : s === "1st" ? 4 : s === "2nd" ? 5 : s === "final" ? 6 : 1;
+    }
+    cur = Math.max(1, Math.min(cur, 6));
+    const stepTone = tone === "paused" || tone === "sent" || tone === "ok" ? "sent" : tone;
+    const steps = Array.from({ length: 7 }, (_, i) => ({ done: i < cur, current: i === cur, tone: stepTone }));
+    let labels;
+    if (clock === "certificate") {
+      labels = ["Submit", "T\u22127", "R1", "R2", "R3", "R4", "R5"];
+      if (sent > 4) labels[6] = `R${sent + 1}`;
+    } else {
+      labels = ["Inv", "SOA", "+35", "+42", "+49", "+56", "+63"];
+    }
+    return { steps, labels };
+  };
+
+  const renderCard = (row) => {
     const held = row.on_hold;
     const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
     const amt = clock === "certificate" ? row.amount : row.invoice_amount;
+    const meta = chaseStageMeta(row);
+    const { steps, labels } = buildStepper(row, meta.tone);
     const daysVal = row.days_to_due;
-    let daysLabel = "\u2014";
-    if (daysVal != null) {
-      if (daysVal > 0) daysLabel = `${daysVal}d left`;
-      else if (daysVal === 0) daysLabel = "Due today";
-      else daysLabel = `${Math.abs(daysVal)}d over`;
-    }
+    const overdue = daysVal != null && daysVal < 0;
+    const daysLabel =
+      daysVal == null ? "" : daysVal > 0 ? `${daysVal}d to due` : daysVal === 0 ? "Due today" : `${Math.abs(daysVal)}d over`;
+    const daysAgo = clock === "certificate" ? row.days_since_claim : row.days_since_invoice;
+    const anchorDate = clock === "certificate" ? row.anchor_date : row.invoice_date;
+    const isOpen = expandedId === row.claim_id;
+    const detail = detailMap[row.claim_id];
+    const emailBody = email ? email.body || email.variants?.[0]?.body || "" : "";
 
     return (
-      <tr
-        key={row.claim_id}
-        className={`${overdue ? "cp-chase-row-over" : ""} ${held ? "cp-chase-row-held" : ""}`}
-      >
-        <td>
-          <span className={`cp-stage cp-stage-${row.stage?.replace(/[^a-z0-9]/g, "")}`}>
-            {row.stage?.replace(/_/g, " ")}
-          </span>
-          {held && <span className="cp-hold-badge">HELD</span>}
-          {row.awareness_only && <span className="cp-awareness-tag">Heads-up</span>}
-        </td>
-        <td>
-          <div className="cp-chase-proj">{row.project_code}</div>
-          <div className="cp-chase-client">
-            {cleanClient(row.client_name)} &middot; {cleanName(row.project_name)}
+      <div key={row.claim_id} className={`cpc-claim ${overdue ? "cpc-overdue" : ""} ${held ? "cpc-paused" : ""}`}>
+        <div className="cpc-row">
+          <div className="cpc-project">
+            <div className="cpc-code">
+              {row.project_code} <span className="cpc-claimno">&middot; Claim #{row.claim_no ?? "\u2014"}</span>
+            </div>
+            <div className="cpc-client">
+              {cleanClient(row.client_name)}
+              {row.contact_person ? ` \u00B7 ${row.contact_person}` : ""}
+            </div>
+            {row.notify_salesperson && row.sales_manager && (
+              <div className="cpc-sales">Notify {row.sales_manager}</div>
+            )}
           </div>
-          {row.contact_person && (
-            <div className="cp-chase-contact">{row.contact_person}</div>
-          )}
-          {row.notify_salesperson && row.sales_manager && (
-            <div className="cp-salesperson-tag">Notify salesperson: {row.sales_manager}</div>
-          )}
-        </td>
-        <td>#{row.claim_no ?? "\u2014"}</td>
-        <td>
-          <span className={`cp-chase-days${overdue ? " cp-days-over" : ""}`}>
-            {daysLabel}
-          </span>
-          {overdue && row.overdue_weeks != null && (
-            <div className="cp-overdue-weeks">{row.overdue_weeks} wks</div>
-          )}
-          {/* Next-flag indicator */}
-          {!row.needs_action_today && row.next_reminder_label && row.days_to_next_flag != null && row.days_to_next_flag > 0 && (
-            <div className="cp-next-flag">
-              {row.last_sent_at ? (
-                <>
-                  <span className="cp-next-sent">{"\u2713"} {row.reminders_sent ? `#${row.reminders_sent}` : "Sent"} {row.days_since_last_sent}d ago</span>
-                  {" \u00B7 "}
-                </>
-              ) : null}
-              Next: {row.next_reminder_label} in {row.days_to_next_flag}d
+
+          <div className="cpc-strip">
+            <div className="cpc-strip-head">
+              <span className={`cpc-badge cpc-${meta.tone}`}>
+                <span className="cpc-dotmini" />
+                {meta.label}
+              </span>
+              <span className="cpc-strip-detail"><strong>{row.reminders_sent || 0} sent</strong></span>
             </div>
-          )}
-          {row.last_sent_at && row.needs_action_today && (
-            <div className="cp-next-flag cp-next-ready">
-              <span className="cp-next-sent">{"\u2713"} #{row.reminders_sent} sent {row.days_since_last_sent}d ago</span>
-              {" \u2014 due now"}
+            <div className="cpc-stepper">
+              {steps.map((st, i) => (
+                <div key={i} className={`cpc-step ${st.done ? "done" : ""} ${st.current ? "current " + st.tone : ""}`} />
+              ))}
             </div>
-          )}
-        </td>
-        <td className="r">
-          <span className="cp-chase-amt">{fmtFull(amt)}</span>
-        </td>
-        <td className="cp-chase-remcol">{row.reminders_sent || 0}</td>
-        <td className="cp-chase-datecol">
-          {clock === "certificate" && (
-            <>
-              <label className="cp-date-row">
-                <span className="cp-date-tag">PRC</span>
-                <input
-                  type="date"
-                  className="cp-date-input"
-                  onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)}
-                />
-              </label>
-              <label className="cp-date-row">
-                <span className="cp-date-tag">Cert$</span>
-                <input
-                  type="number"
-                  className="cp-date-input cp-amt-input"
-                  placeholder="Certified amt"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v));
-                  }}
-                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                />
-              </label>
-              <label className="cp-date-row">
-                <span className="cp-date-tag">Inv</span>
-                <input
-                  type="date"
-                  className="cp-date-input"
-                  onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)}
-                />
-              </label>
-            </>
-          )}
-          {clock === "payment" && (
-            <label className="cp-date-row">
-              <span className="cp-date-tag">Paid</span>
-              <input
-                type="date"
-                className="cp-date-input"
-                onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)}
-              />
-            </label>
-          )}
-        </td>
-        <td className="cp-chase-actcol">
-          {email && !held && (
-            <button className="cp-btn cp-btn-draft" onClick={() => openDraft(row, false)}>
-              Draft
-            </button>
-          )}
-          {row.needs_action_today && !held && (
-            <button
-              className="cp-btn cp-btn-send"
-              onClick={() => handleSend(row)}
-              disabled={sendingId === row.claim_id}
-              title="Send the reminder email now"
-            >
-              {sendingId === row.claim_id ? "Sending\u2026" : "Send"}
-            </button>
-          )}
-          {/* Manual reminder — available on ANY row */}
-          {!held && (
-            <button className="cp-btn cp-btn-manual" onClick={() => openDraft(row, true)} title="Prepare a reminder outside the normal cadence">
-              Manual
-            </button>
-          )}
-          {held ? (
-            <button className="cp-btn cp-btn-release" onClick={() => handleReleaseHold(row.claim_id)}>
-              Release
-            </button>
-          ) : (
-            <button className="cp-btn cp-btn-hold" onClick={() => setHoldModal({ row, clock })}>
-              Hold
-            </button>
-          )}
-        </td>
-      </tr>
+            <div className="cpc-steplabels">
+              {labels.map((l, i) => (
+                <span key={i} className={steps[i]?.current ? "active" : ""}>{l}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="cpc-amount">
+            <div className="cpc-amt">{fmtFull(amt)}</div>
+            <div className={`cpc-days ${overdue ? "over" : "warn"}`}>
+              {daysLabel}
+              {overdue && row.overdue_weeks != null ? ` \u00B7 ${row.overdue_weeks} wks` : ""}
+            </div>
+          </div>
+
+          <div className="cpc-actions">
+            <div className="cpc-actrow">
+              {row.needs_action_today && !held && email && (
+                <button
+                  className="cpc-btn primary"
+                  onClick={() => handleSend(row)}
+                  disabled={sendingId === row.claim_id}
+                  title="Send the reminder email now via n8n"
+                >
+                  {sendingId === row.claim_id ? "Sending\u2026" : "Proceed & send"}
+                </button>
+              )}
+              {row.needs_action_today && !held && (
+                <button className="cpc-btn ghost-danger" onClick={() => handleQuickIgnore(row)}>Ignore</button>
+              )}
+              {held && (
+                <button className="cpc-btn" onClick={() => handleReleaseHold(row.claim_id)}>Resume chase</button>
+              )}
+            </div>
+            <div className="cpc-actrow">
+              {email && !held && (
+                <button className="cpc-btn small" onClick={() => openDraft(row, false)}>Edit draft</button>
+              )}
+              {!held && (
+                <button className="cpc-btn small" onClick={() => openDraft(row, true)} title="Reminder outside the normal cadence">Manual</button>
+              )}
+              {!held && (
+                <button className="cpc-btn small" onClick={() => setHoldModal({ row, clock })}>Pause chase</button>
+              )}
+              <button
+                className={`cpc-btn small icon ${isOpen ? "open" : ""}`}
+                onClick={() => toggleExpand(row)}
+                title={isOpen ? "Collapse" : "Expand"}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {held && detail?.hold && (
+          <div className="cpc-pausebanner">
+            <span>{"\u23F8"}</span>
+            <div>
+              <strong>Paused: {prettyReason(detail.hold.reason)}</strong>
+              {detail.hold.reason_note ? ` \u00B7 ${detail.hold.reason_note}` : ""}
+              {detail.hold.resume_date ? ` \u00B7 resumes ${fmtDate(detail.hold.resume_date)}` : ""}
+              {detail.hold.created_by ? ` (${detail.hold.created_by})` : ""}
+            </div>
+            <button className="cpc-btn small" style={{ marginLeft: "auto" }} onClick={() => handleReleaseHold(row.claim_id)}>Resume now</button>
+          </div>
+        )}
+
+        {isOpen && (
+          <div className="cpc-detail">
+            <div className="cpc-detail-grid">
+              <div className="cpc-detail-block">
+                <h4>{clock === "certificate" ? "Certificate cycle" : "Payment cycle"}</h4>
+                <div className="cpc-timeline">
+                  <div className="cpc-node done">
+                    <div className="cpc-node-lbl">{"\u2713"} {clock === "certificate" ? "Claim submitted" : "Invoice submitted"}</div>
+                    <div className="cpc-node-val">{anchorDate ? fmtDate(anchorDate) : "\u2014"}</div>
+                    <div className="cpc-node-rel">{daysAgo != null ? `${daysAgo}d ago` : ""}</div>
+                  </div>
+                  <div className={`cpc-node ${overdue ? "overdue" : ""}`}>
+                    <div className="cpc-node-lbl">{clock === "certificate" ? "PRC due" : "Payment due"}</div>
+                    <div className="cpc-node-val">{row.due_date ? fmtDate(row.due_date) : "\u2014"}</div>
+                    <div className="cpc-node-rel">{daysVal == null ? "" : overdue ? `${Math.abs(daysVal)}d overdue` : `in ${daysVal}d`}</div>
+                  </div>
+                  {clock === "certificate" ? (
+                    <>
+                      <div className="cpc-node">
+                        <div className="cpc-node-lbl">PRC received</div>
+                        <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)} />
+                      </div>
+                      <div className="cpc-node">
+                        <div className="cpc-node-lbl">Invoice submitted</div>
+                        <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)} />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="cpc-node">
+                      <div className="cpc-node-lbl">Payment received</div>
+                      <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)} />
+                    </div>
+                  )}
+                </div>
+                {clock === "certificate" && (
+                  <div style={{ marginTop: 8 }}>
+                    <input
+                      className="cpc-node-input"
+                      type="number"
+                      placeholder="Certified amount ($)"
+                      style={{ maxWidth: 200 }}
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v)); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                    />
+                  </div>
+                )}
+
+                <h4 style={{ marginTop: 16 }}>Chase history</h4>
+                <div className="cpc-history">
+                  {!detail ? (
+                    <div className="cpc-hist-empty">{"Loading\u2026"}</div>
+                  ) : detail.history.length === 0 ? (
+                    <div className="cpc-hist-empty">No reminders logged yet.</div>
+                  ) : (
+                    detail.history.map((h, i) => {
+                      const when = h.sent_at || h.created_at;
+                      return (
+                        <div key={i} className={`cpc-hist ${h.decision === "proceed" ? "sent" : "ignored"}`}>
+                          <span className="cpc-hist-dot" />
+                          <span>
+                            <strong>{h.decision === "proceed" ? `Reminder ${h.reminder_no} sent` : "Skipped cycle"}</strong>
+                            {when ? ` \u00B7 ${fmtDate(String(when).slice(0, 10))}` : ""}
+                            {h.is_manual ? " \u00B7 manual" : ""}
+                            {h.created_by ? ` \u00B7 ${h.created_by}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="cpc-detail-block">
+                <h4>{email ? "Reminder draft \u00B7 ready to send" : "No draft at this stage"}</h4>
+                {email ? (
+                  <div className="cpc-email">
+                    <div className="cpc-email-head">
+                      <div><strong>To:</strong> {row.contact_person || "\u2014"}</div>
+                    </div>
+                    <div className="cpc-email-body">
+                      <div className="cpc-email-subj">{email.subject}</div>
+                      <div className="cpc-email-text">
+                        {emailBody.split("\n").map((p, i) => (<p key={i}>{p}</p>))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="cpc-hist-empty">This claim is not yet at a stage that drafts a chase email.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
 
-  const tableHead = (
-    <thead>
-      <tr>
-        <th>Stage</th>
-        <th className="cp-th-proj">Project</th>
-        <th>Claim</th>
-        <th>Days</th>
-        <th className="r">Amount</th>
-        <th className="cp-th-rem">#</th>
-        <th>Record date</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-  );
+  // Portfolio counts (over the full clock, not the current chip filter)
+  const actionTotal = rows.filter((r) => r.needs_action_today && !r.on_hold).length;
+  const sentTotal = rows.filter((r) => (r.reminders_sent || 0) > 0 && r.days_since_last_sent != null && r.days_since_last_sent <= 2).length;
+
+  // Filter + sort
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (r) =>
+    !q || [r.project_code, r.project_name, r.client_name, r.contact_person, r.claim_number].some((v) => (v || "").toLowerCase().includes(q));
+  const matchesChip = (r) => {
+    if (chip === "action") return r.needs_action_today && !r.on_hold;
+    if (chip === "overdue") return isOverdue(r);
+    if (chip === "paused") return r.on_hold;
+    if (chip === "sent") return (r.reminders_sent || 0) > 0 && r.days_since_last_sent != null && r.days_since_last_sent <= 2;
+    return true;
+  };
+  const amtOf = (r) => Number((clock === "certificate" ? r.amount : r.invoice_amount) || 0);
+  const sorted = rows.filter((r) => matchesSearch(r) && matchesChip(r)).sort((a, b) => {
+    if (sortBy === "amount") return amtOf(b) - amtOf(a);
+    if (sortBy === "reminders") return (b.reminders_sent || 0) - (a.reminders_sent || 0);
+    return (a.days_to_due ?? 99999) - (b.days_to_due ?? 99999); // most overdue first
+  });
+  const actionCards = sorted.filter((r) => r.needs_action_today && !r.on_hold);
+  const restCards = sorted.filter((r) => !(r.needs_action_today && !r.on_hold));
+
+  const chips = [
+    ["all", "All", rows.length],
+    ["action", "Needs action today", actionTotal],
+    ["overdue", "Overdue", overdueCount],
+    ["sent", "Sent recently", sentTotal],
+    ["paused", "Paused", heldCount],
+  ];
 
   return (
     <>
-      {/* Sub-tabs */}
-      <div className="cp-chase-subtabs">
-        <button
-          className={`cp-chase-subtab${chaseTab === "certificate" ? " on" : ""}`}
-          onClick={() => setChaseTab("certificate")}
-        >
-          Certificate
-          {certRows.length > 0 && <span className="cp-badge">{certRows.length}</span>}
-        </button>
-        <button
-          className={`cp-chase-subtab${chaseTab === "payment" ? " on" : ""}`}
-          onClick={() => setChaseTab("payment")}
-        >
-          Payment
-          {payRows.length > 0 && <span className="cp-badge">{payRows.length}</span>}
-        </button>
-      </div>
-
-      {/* Summary strip */}
-      <div className="cp-summary">
-        <div className="cp-stat cp-stat-warn">
-          <span className="cp-stat-val">{fmt(totalAmount)}</span>
-          <span className="cp-stat-lbl">{clock === "certificate" ? "Awaiting PRC" : "Awaiting payment"}</span>
+      <div className="cpc-wrap">
+        {/* Cadence tabs */}
+        <div className="cpc-tabs">
+          <button className={`cpc-tab ${chaseTab === "certificate" ? "active" : ""}`} onClick={() => setChaseTab("certificate")}>
+            <div className="cpc-tab-title">
+              Certificate chase
+              {certRows.length > 0 && <span className="cpc-tab-count">{certRows.length}</span>}
+            </div>
+            <div className="cpc-tab-sub">21 days from claim submission &middot; PRC follow-up</div>
+          </button>
+          <button className={`cpc-tab ${chaseTab === "payment" ? "active" : ""}`} onClick={() => setChaseTab("payment")}>
+            <div className="cpc-tab-title">
+              Payment chase
+              {payRows.length > 0 && <span className="cpc-tab-count">{payRows.length}</span>}
+            </div>
+            <div className="cpc-tab-sub">35 days from invoice &middot; SOA &rarr; Legal &rarr; Termination</div>
+          </button>
         </div>
-        {actionRows.length > 0 && (
-          <div className="cp-stat cp-stat-action">
-            <span className="cp-stat-val">{actionRows.length}</span>
-            <span className="cp-stat-lbl">Needs action today</span>
-          </div>
-        )}
-        {overdueCount > 0 && (
-          <div className="cp-stat cp-stat-danger">
-            <span className="cp-stat-val">{overdueCount}</span>
-            <span className="cp-stat-lbl">Overdue</span>
-          </div>
-        )}
-        {heldCount > 0 && (
-          <div className="cp-stat">
-            <span className="cp-stat-val">{heldCount}</span>
-            <span className="cp-stat-lbl">On hold</span>
-          </div>
-        )}
-      </div>
 
-      {/* Feedback toast */}
-      {feedback && <div className="cp-toast">{feedback}</div>}
-
-      {/* Section 1: Needs action today */}
-      {actionRows.length > 0 && (
-        <>
-          <div className="cp-section-head cp-section-action">
-            <span className="cp-section-dot" />
-            Needs action today
-            <span className="cp-section-count">{actionRows.length}</span>
+        {/* KPI row */}
+        <div className="cpc-kpis">
+          <div className="cpc-kpi">
+            <div className="cpc-kpi-lbl">{clock === "certificate" ? "Total awaiting PRC" : "Total awaiting payment"}</div>
+            <div className="cpc-kpi-val">{fmt(totalAmount)}</div>
+            <div className="cpc-kpi-sub">{rows.length} claims</div>
           </div>
-          <div className="cp-chase-wrap cp-chase-action-wrap">
-            <table className="cp-chase">{tableHead}<tbody>{actionRows.map(renderRow)}</tbody></table>
+          <div className="cpc-kpi action">
+            <div className="cpc-kpi-lbl">Needs action today</div>
+            <div className="cpc-kpi-val">{actionTotal}</div>
+            <div className="cpc-kpi-sub">drafts ready to proceed / ignore</div>
           </div>
-        </>
-      )}
-
-      {/* Section 2: All in progress */}
-      <div className="cp-section-head">
-        All in progress
-        <span className="cp-section-count">{allRows.length}</span>
-      </div>
-      {allRows.length === 0 ? (
-        <div className="cp-empty">Nothing to chase here.</div>
-      ) : (
-        <div className="cp-chase-wrap">
-          <table className="cp-chase">{tableHead}<tbody>{allRows.map(renderRow)}</tbody></table>
+          <div className="cpc-kpi over">
+            <div className="cpc-kpi-lbl">Overdue</div>
+            <div className="cpc-kpi-val">{overdueCount}</div>
+            <div className="cpc-kpi-sub">past {clock === "certificate" ? "21-day PRC" : "payment"} deadline</div>
+          </div>
+          <div className="cpc-kpi paused">
+            <div className="cpc-kpi-lbl">Paused</div>
+            <div className="cpc-kpi-val">{heldCount}</div>
+            <div className="cpc-kpi-sub">on hold by agreed date or VIP</div>
+          </div>
         </div>
-      )}
+
+        {/* Filter bar */}
+        <div className="cpc-filterbar">
+          <div className="cpc-chips">
+            {chips.map(([id, lbl, n]) => (
+              <button key={id} className={`cpc-chip ${chip === id ? "active" : ""}`} onClick={() => setChip(id)}>
+                {lbl}<span className="cpc-chip-count">{n}</span>
+              </button>
+            ))}
+          </div>
+          <div className="cpc-controls">
+            <input className="cpc-search" placeholder={"Search project, client, claim\u2026"} value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select className="cpc-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="days">Sort: Days overdue (most first)</option>
+              <option value="amount">Sort: Amount (highest first)</option>
+              <option value="reminders">Sort: Reminder count</option>
+            </select>
+          </div>
+        </div>
+
+        {feedback && <div className="cpc-toast">{feedback}</div>}
+
+        {actionCards.length > 0 && (
+          <>
+            <div className="cpc-sechead">
+              <span className="cpc-secdot action" />
+              Needs action today <span className="cpc-seccount">&middot; {actionCards.length} claims &middot; drafts ready</span>
+            </div>
+            {actionCards.map(renderCard)}
+          </>
+        )}
+
+        <div className="cpc-sechead">
+          <span className="cpc-secdot upcoming" />
+          {chip === "all" ? "In progress" : "Results"} <span className="cpc-seccount">&middot; {restCards.length} claims</span>
+        </div>
+        {restCards.length === 0 ? (
+          <div className="cpc-empty">Nothing to chase here.</div>
+        ) : (
+          restCards.map(renderCard)
+        )}
+      </div>
 
       {/* Email preview modal */}
       {emailModal && (
@@ -2115,5 +2299,144 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) {
   .cp-detail, .cp-toast, .cp-overlay, .cp-modal { animation: none; }
   .cp-tab, .cp-grid tbody tr, .cp-back, .cp-chase tbody tr, .cp-search, .cp-btn, .cp-chase-subtab { transition: none; }
+  .cpc-btn.icon svg { transition: none; }
+}
+
+/* ============================================================================
+   CHASE REDESIGN — card layout (cpc- namespace, vars scoped to .cpc-wrap)
+   ============================================================================ */
+.cpc-wrap {
+  --c-panel:#fff; --c-border:#e2e8f0; --c-text:#0f172a; --c-muted:#64748b; --c-muted2:#94a3b8;
+  --c-warn:#f59e0b; --c-warn-bg:#fffbeb; --c-warn-fg:#92400e;
+  --c-due:#f97316; --c-due-bg:#fff7ed; --c-due-fg:#9a3412;
+  --c-over:#dc2626; --c-over-bg:#fef2f2; --c-over-fg:#991b1b;
+  --c-ok:#10b981; --c-ok-bg:#ecfdf5; --c-ok-fg:#065f46;
+  --c-paused:#6366f1; --c-paused-bg:#eef2ff; --c-paused-fg:#3730a3;
+  --c-sent:#64748b; --c-sent-bg:#f1f5f9; --c-sent-fg:#334155;
+  --c-accent:#0f172a; --c-idle:#cbd5e1;
+  color: var(--c-text);
+}
+.cpc-tabs { display:flex; gap:10px; margin-bottom:18px; padding:6px; background:var(--c-panel); border:1px solid var(--c-border); border-radius:12px; width:fit-content; max-width:100%; }
+.cpc-tab { padding:10px 18px; border:0; background:transparent; border-radius:8px; text-align:left; cursor:pointer; min-width:200px; opacity:.6; transition:opacity .12s; }
+.cpc-tab.active { background:#f1f5f9; opacity:1; }
+.cpc-tab-title { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; color:var(--c-text); }
+.cpc-tab-sub { font-size:12px; color:var(--c-muted); margin-top:2px; }
+.cpc-tab-count { background:var(--c-over-bg); color:var(--c-over-fg); padding:1px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+
+.cpc-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+.cpc-kpi { background:var(--c-panel); border:1px solid var(--c-border); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:5px; }
+.cpc-kpi-lbl { font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; color:var(--c-muted); }
+.cpc-kpi-val { font-size:24px; font-weight:700; letter-spacing:-.02em; }
+.cpc-kpi-sub { font-size:12px; color:var(--c-muted); }
+.cpc-kpi.action .cpc-kpi-val { color:var(--c-warn); }
+.cpc-kpi.over .cpc-kpi-val { color:var(--c-over); }
+.cpc-kpi.paused .cpc-kpi-val { color:var(--c-paused); }
+
+.cpc-filterbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.cpc-chips { display:flex; gap:6px; flex-wrap:wrap; }
+.cpc-chip { padding:6px 12px; border-radius:20px; border:1px solid var(--c-border); background:var(--c-panel); font-size:13px; color:var(--c-muted); cursor:pointer; display:flex; align-items:center; gap:6px; }
+.cpc-chip.active { background:var(--c-accent); color:#fff; border-color:var(--c-accent); }
+.cpc-chip-count { background:var(--c-border); color:var(--c-muted); padding:1px 6px; border-radius:8px; font-size:11px; }
+.cpc-chip.active .cpc-chip-count { background:rgba(255,255,255,.25); color:#fff; }
+.cpc-controls { display:flex; gap:8px; align-items:center; }
+.cpc-search { padding:8px 12px; border:1px solid var(--c-border); border-radius:8px; font-size:13px; width:230px; max-width:100%; background:var(--c-panel); color:var(--c-text); }
+.cpc-sort { padding:8px 12px; border:1px solid var(--c-border); border-radius:8px; font-size:13px; background:var(--c-panel); color:var(--c-text); }
+
+.cpc-sechead { display:flex; align-items:center; gap:10px; padding:18px 4px 10px; font-size:12px; text-transform:uppercase; color:var(--c-muted); font-weight:600; letter-spacing:.06em; }
+.cpc-secdot { width:7px; height:7px; border-radius:50%; }
+.cpc-secdot.action { background:var(--c-warn); }
+.cpc-secdot.upcoming { background:var(--c-idle); }
+.cpc-seccount { color:var(--c-muted2); font-weight:500; text-transform:none; letter-spacing:0; }
+
+.cpc-claim { background:var(--c-panel); border:1px solid var(--c-border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
+.cpc-claim.cpc-overdue { border-color:#fecaca; }
+.cpc-claim.cpc-paused { background:#fafafd; }
+.cpc-row { display:grid; grid-template-columns:240px 1fr 160px 250px; gap:18px; padding:15px 18px; align-items:center; }
+.cpc-project { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.cpc-code { font-weight:700; font-size:15px; }
+.cpc-claimno { font-weight:500; color:var(--c-muted); font-size:13px; }
+.cpc-client { font-size:13px; color:var(--c-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cpc-sales { font-size:12px; margin-top:3px; color:var(--c-paused); font-weight:500; }
+.cpc-sales::before { content:"@"; font-weight:700; }
+
+.cpc-strip { display:flex; flex-direction:column; gap:7px; min-width:0; }
+.cpc-strip-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.cpc-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:6px; font-weight:600; font-size:12px; }
+.cpc-dotmini { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.cpc-badge.cpc-warn { background:var(--c-warn-bg); color:var(--c-warn-fg); }
+.cpc-badge.cpc-due { background:var(--c-due-bg); color:var(--c-due-fg); }
+.cpc-badge.cpc-over { background:var(--c-over-bg); color:var(--c-over-fg); }
+.cpc-badge.cpc-ok { background:var(--c-ok-bg); color:var(--c-ok-fg); }
+.cpc-badge.cpc-paused { background:var(--c-paused-bg); color:var(--c-paused-fg); }
+.cpc-badge.cpc-sent { background:var(--c-sent-bg); color:var(--c-sent-fg); }
+.cpc-strip-detail { font-size:12px; color:var(--c-muted); white-space:nowrap; }
+.cpc-strip-detail strong { color:var(--c-text); }
+.cpc-stepper { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.cpc-step { height:5px; background:var(--c-idle); border-radius:2px; }
+.cpc-step.done { background:var(--c-sent); }
+.cpc-step.current { box-shadow:0 0 0 2px #fff, 0 0 0 3px currentColor; }
+.cpc-step.current.warn { background:var(--c-warn); color:var(--c-warn); }
+.cpc-step.current.due { background:var(--c-due); color:var(--c-due); }
+.cpc-step.current.over { background:var(--c-over); color:var(--c-over); }
+.cpc-step.current.paused { background:var(--c-paused); color:var(--c-paused); }
+.cpc-step.current.sent { background:var(--c-sent); color:var(--c-sent); }
+.cpc-steplabels { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; font-size:10px; color:var(--c-muted2); margin-top:1px; }
+.cpc-steplabels span { text-align:center; overflow:hidden; text-overflow:ellipsis; }
+.cpc-steplabels span.active { color:var(--c-text); font-weight:600; }
+
+.cpc-amount { text-align:right; }
+.cpc-amt { font-size:17px; font-weight:700; letter-spacing:-.01em; }
+.cpc-days { font-size:12px; font-weight:500; margin-top:2px; }
+.cpc-days.over { color:var(--c-over); }
+.cpc-days.warn { color:var(--c-warn); }
+
+.cpc-actions { display:flex; flex-direction:column; gap:7px; align-items:flex-end; }
+.cpc-actrow { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.cpc-btn { padding:7px 12px; border-radius:8px; font-size:13px; font-weight:600; border:1px solid var(--c-border); background:var(--c-panel); color:var(--c-text); cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.cpc-btn:hover { background:#f8fafc; }
+.cpc-btn.primary { background:var(--c-accent); color:#fff; border-color:var(--c-accent); }
+.cpc-btn.primary:hover { background:#1e293b; }
+.cpc-btn.primary:disabled { opacity:.6; cursor:default; }
+.cpc-btn.ghost-danger { color:var(--c-over); border-color:#fecaca; }
+.cpc-btn.small { padding:5px 9px; font-size:12px; }
+.cpc-btn.icon { padding:6px; }
+.cpc-btn.icon svg { transition:transform .15s; }
+.cpc-btn.icon.open svg { transform:rotate(180deg); }
+
+.cpc-pausebanner { background:var(--c-paused-bg); border-top:1px dashed var(--c-paused); padding:8px 16px; display:flex; align-items:center; gap:10px; font-size:13px; color:var(--c-paused-fg); }
+.cpc-pausebanner strong { font-weight:600; }
+.cpc-detail { border-top:1px solid var(--c-border); background:#fafbfc; padding:18px 20px; }
+.cpc-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+.cpc-detail-block h4 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--c-muted); margin:0 0 10px; font-weight:600; }
+.cpc-timeline { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.cpc-node { padding:9px 11px; background:var(--c-panel); border:1px solid var(--c-border); border-radius:8px; display:flex; flex-direction:column; gap:3px; }
+.cpc-node.done { border-color:#a7f3d0; background:#f0fdf4; }
+.cpc-node.overdue { border-color:#fecaca; background:#fef2f2; }
+.cpc-node-lbl { font-size:11px; color:var(--c-muted); font-weight:500; }
+.cpc-node-val { font-size:13px; font-weight:600; }
+.cpc-node-rel { font-size:11px; color:var(--c-muted); }
+.cpc-node-input { font-size:12px; padding:4px 6px; border:1px solid var(--c-border); border-radius:4px; width:100%; font-family:inherit; }
+.cpc-history { display:flex; flex-direction:column; gap:8px; }
+.cpc-hist { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--c-muted); }
+.cpc-hist-dot { width:8px; height:8px; border-radius:50%; background:var(--c-sent); flex-shrink:0; }
+.cpc-hist.sent .cpc-hist-dot { background:var(--c-ok); }
+.cpc-hist strong { color:var(--c-text); font-weight:600; }
+.cpc-hist-empty { font-size:12px; color:var(--c-muted2); font-style:italic; }
+.cpc-email { background:var(--c-panel); border:1px solid var(--c-border); border-radius:8px; overflow:hidden; }
+.cpc-email-head { padding:9px 12px; border-bottom:1px solid var(--c-border); background:#f8fafc; font-size:12px; color:var(--c-muted); }
+.cpc-email-head strong { color:var(--c-text); }
+.cpc-email-body { padding:12px; font-size:13px; line-height:1.55; }
+.cpc-email-subj { font-weight:600; margin-bottom:8px; }
+.cpc-email-text { color:#334155; }
+.cpc-email-text p { margin:0 0 6px; }
+.cpc-empty { padding:24px; text-align:center; color:var(--c-muted); font-size:13px; border:1px dashed var(--c-border); border-radius:12px; }
+.cpc-toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--c-accent); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; z-index:60; box-shadow:0 8px 24px rgba(0,0,0,.18); }
+@media (max-width:900px) {
+  .cpc-kpis { grid-template-columns:repeat(2,1fr); }
+  .cpc-row { grid-template-columns:1fr; gap:12px; }
+  .cpc-amount { text-align:left; }
+  .cpc-actions { align-items:flex-start; }
+  .cpc-actrow { justify-content:flex-start; }
+  .cpc-detail-grid, .cpc-timeline { grid-template-columns:1fr; }
 }
 `;
