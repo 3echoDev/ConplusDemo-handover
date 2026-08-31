@@ -190,8 +190,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       linesByPO.set(l.po_id, list);
     }
     const supplierByName = new Map((suppliersQ.data ?? []).map((s) => [s.name, s]));
-    return rows.map((r) => mapPO(r, linesByPO.get(r.id) ?? [], supplierByName.get(r.supplier_name ?? "")));
-  }, [posQ.data, poLinesQ.data, suppliersQ.data]);
+    // Delivery block (spec 2.1) comes from the works order the PO is raised against.
+    const deliveryByWO = new Map(
+      (wosQ.data ?? []).map((w) => [
+        w.wo_number,
+        {
+          address: w.site_address ?? "",
+          contact: w.site_contact ?? "",
+          contactNumber: w.site_contact_number ?? "",
+        },
+      ]),
+    );
+    return rows.map((r) =>
+      mapPO(
+        r,
+        linesByPO.get(r.id) ?? [],
+        supplierByName.get(r.supplier_name ?? ""),
+        r.works_order ? deliveryByWO.get(r.works_order) : undefined,
+      ),
+    );
+  }, [posQ.data, poLinesQ.data, suppliersQ.data, wosQ.data]);
 
   // Derive material unit values from real PO line-item prices.
   // Conservative name matching only: a material matches a PO line when the

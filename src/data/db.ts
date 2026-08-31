@@ -98,6 +98,9 @@ export interface PORow {
   ship_to?: string | null;
   payment_terms?: string | null;
   requested_by?: string | null;
+  vendor_quotation_ref?: string | null;
+  attn_name?: string | null;
+  delivery_charge?: number | null;
   created_date: string | null;
   delivery_date: string | null;
   created_at: string;
@@ -132,6 +135,7 @@ export interface POLineRow {
   qty: number;
   unit: string | null;
   unit_price: number;
+  discount_pct: number | null;
 }
 
 export interface InvoiceRow {
@@ -180,6 +184,7 @@ export interface ClaimRow {
   paid_date: string | null;
   status: string;
   description: string | null;
+  is_final: boolean | null;
   updated_at: string;
 }
 
@@ -310,7 +315,7 @@ export const fetchVOs = () => selectAll<VORow>("project_vos", "*", { column: "cr
 export const fetchMaterials = () => selectAll<MaterialRow>("materials", "*", { column: "qty_on_hand" });
 export const fetchAllocations = () => selectAll<AllocationRow>("material_allocations", "*", { column: "updated_at" });
 export const fetchPOs = () => selectAll<PORow>("purchase_orders", "*", { column: "created_date" });
-export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price");
+export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price,discount_pct");
 export const fetchInvoices = () => selectAll<InvoiceRow>("supplier_invoices", "*", { column: "invoice_date" });
 export const fetchClaims = () => selectAll<ClaimRow>("claims", "*", { column: "submitted_date" });
 export const fetchWorksOrders = () =>
@@ -416,7 +421,19 @@ export function mapMaterial(row: MaterialRow, allocations: AllocationRow[]): Inv
   };
 }
 
-export function mapPO(row: PORow, lines: POLineRow[], supplier?: SupplierRow): PurchaseOrder {
+/** Delivery block sourced from the linked works order (spec 2.1). */
+export interface PODelivery {
+  address: string;
+  contact: string;
+  contactNumber: string;
+}
+
+export function mapPO(
+  row: PORow,
+  lines: POLineRow[],
+  supplier?: SupplierRow,
+  delivery?: PODelivery,
+): PurchaseOrder {
   return {
     id: row.id,
     poNumber: row.po_number,
@@ -438,7 +455,19 @@ export function mapPO(row: PORow, lines: POLineRow[], supplier?: SupplierRow): P
     status: row.status,
     createdDate: row.created_date ?? row.created_at.slice(0, 10),
     deliveryDate: row.delivery_date ?? "—",
-    items: lines.map((l) => ({ material: l.description, qty: l.qty, unitPrice: l.unit_price })),
+    vendorQuotationRef: row.vendor_quotation_ref ?? "",
+    attnName: row.attn_name ?? "",
+    deliveryCharge: row.delivery_charge ?? 0,
+    deliveryAddress: delivery?.address ?? "",
+    deliveryContact: delivery?.contact ?? "",
+    deliveryContactNumber: delivery?.contactNumber ?? "",
+    items: lines.map((l) => ({
+      material: l.description,
+      qty: l.qty,
+      unitPrice: l.unit_price,
+      unit: l.unit ?? undefined,
+      discountPct: l.discount_pct ?? 0,
+    })),
   };
 }
 
@@ -489,6 +518,8 @@ export function mapClaim(row: ClaimRow): Claim {
     contactNumber: row.contact_number ?? "",
     amount: row.amount,
     submittedDate: row.submitted_date ?? "—",
+    claimDate: row.claim_date ?? "",
+    isFinal: row.is_final ?? false,
     certifiedDate: row.certified_date ?? undefined,
     paidDate: row.paid_date ?? undefined,
     status: row.status as Claim["status"],

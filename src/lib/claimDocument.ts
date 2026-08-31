@@ -81,6 +81,29 @@ export function computeClaimTotals(claim: Claim, ctx: ClaimDocContext): ClaimTot
   };
 }
 
+/**
+ * Spec 4.1 — append "(Final)" inside the claim number when the claim is flagged
+ * final (skip if the number already carries it).
+ */
+function claimNumberDisplay(claim: Claim): string {
+  if (claim.isFinal && !/\(final\)/i.test(claim.claimNumber)) return `${claim.claimNumber}(Final)`;
+  return claim.claimNumber;
+}
+
+/**
+ * Spec 4.3 — gaps that make a claim unfit to send. The caller surfaces these
+ * before export so an empty/incomplete claim isn't issued by accident.
+ */
+export function claimExportWarnings(claim: Claim, ctx: ClaimDocContext): string[] {
+  const t = computeClaimTotals(claim, ctx);
+  const w: string[] = [];
+  if (!claim.claimDate) w.push("Claim date is empty.");
+  if (!claim.paymentTerms) w.push("Payment terms are empty.");
+  if (!claim.lines || claim.lines.length === 0) w.push("This claim has no line items.");
+  if (t.workDone === 0) w.push("Total Value of Work Done is $0.00.");
+  return w;
+}
+
 /** Group lines by section (A / B), each section's lines ordered by seq. */
 function bySection(lines: ClaimLine[]): { A: ClaimLine[]; B: ClaimLine[] } {
   const A = lines.filter((l) => l.section === "A").sort((a, b) => a.seq - b.seq);
@@ -88,6 +111,9 @@ function bySection(lines: ClaimLine[]): { A: ClaimLine[]; B: ClaimLine[] } {
   return { A, B };
 }
 
+// Spec 4.2 — the outgoing Progress Claim shows prev / curr / cum (qty + amount).
+// Verified/certified columns are deliberately NOT shown; those are internal
+// (Spec 3 dashboard). This is what we send to the main contractor.
 function sectionRows(lines: ClaimLine[]): string {
   return lines
     .map(
@@ -99,15 +125,11 @@ function sectionRows(lines: ClaimLine[]): string {
         <td class="r">${qtyStr(l.qty)}</td>
         <td class="r">${l.rate != null ? money(l.rate) : "—"}</td>
         <td class="r">${qtyStr(l.prevQty)}</td>
+        <td class="r">${money(l.prevAmount)}</td>
         <td class="r">${qtyStr(l.currQty)}</td>
+        <td class="r">${money(l.currAmount)}</td>
         <td class="r">${qtyStr(l.cumQty)}</td>
         <td class="r">${money(l.cumAmount)}</td>
-        <td class="r verified">${money(l.verifiedAmount)}</td>
-        <td class="r diff">${
-          l.verifiedAmount != null && l.cumAmount != null
-            ? money(l.verifiedAmount - l.cumAmount)
-            : "—"
-        }</td>
       </tr>`,
     )
     .join("");
@@ -115,8 +137,9 @@ function sectionRows(lines: ClaimLine[]): string {
 
 function sectionBlock(title: string, quotationRef: string, lines: ClaimLine[]): string {
   if (lines.length === 0) return "";
-  const subtotal = lines.reduce((s, l) => s + (l.cumAmount ?? 0), 0);
-  const verifiedSub = lines.reduce((s, l) => s + (l.verifiedAmount ?? 0), 0);
+  const prevSub = lines.reduce((s, l) => s + (l.prevAmount ?? 0), 0);
+  const currSub = lines.reduce((s, l) => s + (l.currAmount ?? 0), 0);
+  const cumSub = lines.reduce((s, l) => s + (l.cumAmount ?? 0), 0);
   return `
     <div class="sec-head">${escapeHtml(title)}${
       quotationRef ? `<span class="qref">Quotation Ref: ${escapeHtml(quotationRef)}</span>` : ""
@@ -124,17 +147,19 @@ function sectionBlock(title: string, quotationRef: string, lines: ClaimLine[]): 
     <table>
       <thead>
         <tr>
-          <th>S/No</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate</th>
-          <th>Prev</th><th>Curr</th><th>Cum Qty</th><th>Claimed $</th><th>Verified $</th><th>Diff $</th>
+          <th>Pg Ref</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate</th>
+          <th>Prev Qty</th><th>Prev $</th><th>Curr Qty</th><th>Curr $</th><th>Cum Qty</th><th>Cum $</th>
         </tr>
       </thead>
       <tbody>
         ${sectionRows(lines)}
         <tr class="subtotal">
-          <td colspan="8" class="r">Subtotal</td>
-          <td class="r">${money(subtotal)}</td>
-          <td class="r verified">${money(verifiedSub)}</td>
-          <td class="r diff">${money(verifiedSub - subtotal)}</td>
+          <td colspan="6" class="r">Subtotal</td>
+          <td class="r">${money(prevSub)}</td>
+          <td></td>
+          <td class="r">${money(currSub)}</td>
+          <td></td>
+          <td class="r">${money(cumSub)}</td>
         </tr>
       </tbody>
     </table>`;
@@ -180,7 +205,6 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
   th { background: #fafafa; border: 1px solid #999; padding: 4px 3px; font-size: 8px; text-transform: uppercase; }
   td { border: 1px solid #999; padding: 4px 3px; font-size: 10px; }
   .c { text-align: center; } .r { text-align: right; }
-  .verified { background: #f3f8f3; } .diff { background: #fbf6f3; }
   tr.subtotal td { font-weight: 700; background: #f7f7f7; }
   .summary { margin-top: 8px; width: 340px; margin-left: auto; }
   .summary table { border: none; }
@@ -192,7 +216,7 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
 <body>
   <div class="head">
     <div class="co">CONPLUS RESOURCES PTE LTD<small>Protective Coatings · Flooring · Waterproofing</small></div>
-    <div class="title">PROGRESS CLAIM<small>${escapeHtml(claim.claimNumber)}${
+    <div class="title">PROGRESS CLAIM<small>${escapeHtml(claimNumberDisplay(claim))}${
       claim.claimNo != null ? ` · Claim No. ${claim.claimNo}` : ""
     }</small></div>
   </div>
@@ -217,7 +241,7 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
   <div class="meta">
     <div><span>Project</span><b>${escapeHtml(claim.projectName || "—")}</b></div>
     <div><span>Project Code</span><b>${escapeHtml(claim.projectCode || "—")}</b></div>
-    <div><span>Claim Date</span><b>${escapeHtml(claim.submittedDate || "—")}</b></div>
+    <div><span>Claim Date</span><b>${escapeHtml(claim.claimDate || "—")}</b></div>
     <div><span>Payment Terms</span><b>${escapeHtml(claim.paymentTerms || "—")}</b></div>
     <div><span>WO / PO Ref</span><b>${escapeHtml(claim.woRef || claim.poRef || "NIL")}</b></div>
     <div><span>Status</span><b style="text-transform:capitalize">${escapeHtml(claim.status)}</b></div>
@@ -265,6 +289,12 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
 }
 
 export function printClaim(claim: Claim, ctx: ClaimDocContext): void {
+  const warnings = claimExportWarnings(claim, ctx);
+  if (
+    warnings.length &&
+    !window.confirm(`This claim looks incomplete:\n\n• ${warnings.join("\n• ")}\n\nExport anyway?`)
+  )
+    return;
   const w = window.open("", "_blank", "width=900,height=1000");
   if (!w) return;
   w.document.write(buildClaimHtml(claim, ctx));
@@ -275,14 +305,21 @@ export function printClaim(claim: Claim, ctx: ClaimDocContext): void {
 
 /** The same claim as a spreadsheet, keeping the template's two-section shape. */
 export function exportClaimToExcel(claim: Claim, ctx: ClaimDocContext): void {
+  const warnings = claimExportWarnings(claim, ctx);
+  if (
+    warnings.length &&
+    !window.confirm(`This claim looks incomplete:\n\n• ${warnings.join("\n• ")}\n\nExport anyway?`)
+  )
+    return;
   const lines = claim.lines ?? [];
   const { A, B } = bySection(lines);
   const t = computeClaimTotals(claim, ctx);
 
+  // Spec 4.2 — outgoing claim shows prev / curr / cum (qty + amount), no verified.
   const lineTable = (ls: ClaimLine[]) => ({
     headers: [
-      "S/No", "Description", "Unit", "Qty", "Rate",
-      "Prev Qty", "Curr Qty", "Cum Qty", "Claimed $", "Verified $", "Diff $",
+      "Pg Ref", "Description", "Unit", "Qty", "Rate",
+      "Prev Qty", "Prev $", "Curr Qty", "Curr $", "Cum Qty", "Cum $",
     ],
     rows: ls.map((l, i) => [
       l.pgRef || i + 1,
@@ -291,22 +328,22 @@ export function exportClaimToExcel(claim: Claim, ctx: ClaimDocContext): void {
       l.qty ?? "",
       l.rate ?? "",
       l.prevQty ?? "",
+      l.prevAmount ?? "",
       l.currQty ?? "",
+      l.currAmount ?? "",
       l.cumQty ?? "",
       l.cumAmount ?? "",
-      l.verifiedAmount ?? "",
-      l.verifiedAmount != null && l.cumAmount != null ? l.verifiedAmount - l.cumAmount : "",
     ]),
   });
 
   const sections: RecordSection[] = [
     {
-      heading: `Progress Claim ${claim.claimNumber}`,
+      heading: `Progress Claim ${claimNumberDisplay(claim)}`,
       fields: [
         { label: "Project", value: claim.projectName },
         { label: "Project Code", value: claim.projectCode },
         { label: "Claim No", value: claim.claimNo ?? "" },
-        { label: "Claim Date", value: claim.submittedDate },
+        { label: "Claim Date", value: claim.claimDate },
         { label: "Client / Respondent", value: claim.clientName },
         { label: "Payment Terms", value: claim.paymentTerms },
         { label: "Status", value: claim.status },

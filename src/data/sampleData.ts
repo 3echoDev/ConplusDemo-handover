@@ -150,7 +150,14 @@ export interface PurchaseOrder {
   status: POStatus;
   createdDate: string;
   deliveryDate: string;
-  items: { material: string; qty: number; unitPrice: number }[];
+  // Spec 2 — Coway PO template alignment (all nullable/optional).
+  vendorQuotationRef?: string;
+  attnName?: string;
+  deliveryCharge?: number;
+  deliveryAddress?: string;
+  deliveryContact?: string;
+  deliveryContactNumber?: string;
+  items: { material: string; qty: number; unitPrice: number; unit?: string; discountPct?: number }[];
 }
 
 export interface SupplierInfo {
@@ -210,6 +217,8 @@ export interface Claim {
   contactPerson: string;
   contactNumber: string;
   submittedDate: string;
+  claimDate: string; // Spec 4 — the claim's own date (claims.claim_date)
+  isFinal: boolean; // Spec 4 — appends "(Final)" to the claim number
   certifiedDate?: string;
   paidDate?: string;
   status: "submitted" | "certified" | "paid" | "pending" | "rejected";
