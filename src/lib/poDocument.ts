@@ -212,11 +212,30 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** Fetch the letterhead banner and its natural dimensions for embedding. */
+async function loadHeaderImage(): Promise<{ dataUrl: string; width: number; height: number } | null> {
+  try {
+    const resp = await fetch(LOGO_SRC);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    const bmp = await createImageBitmap(blob);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result as string);
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+    return { dataUrl, width: bmp.width, height: bmp.height };
+  } catch {
+    return null;
+  }
+}
+
 /** The purchase order as a formatted .xlsx, matching the printable template. */
 export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   const t = computeTotals(po);
 
-  const COLS = 8;
+  const COLS = 12;
   const TEAL = "FF006B54";
   const YELLOW: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDF3BF" } };
   const LABEL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5F5" } };
@@ -232,15 +251,21 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
     pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1 },
     properties: { defaultRowHeight: 16 },
   });
+  // 12 columns → 3 balanced header thirds (1-4 | 5-8 | 9-12) that also carry
+  // the item table (Item Code = 2-3, Item Description = 4-7).
   ws.columns = [
-    { width: 6 },   // A: S/No.
-    { width: 16 },  // B: Item Code
-    { width: 42 },  // C: Item Description
-    { width: 8 },   // D: Unit
-    { width: 8 },   // E: QTY
-    { width: 13 },  // F: Unit Price
-    { width: 13 },  // G: Disc/Unit
-    { width: 15 },  // H: Amount
+    { width: 5 },  // 1  S/No.
+    { width: 9 },  // 2  Item Code ┐
+    { width: 10 }, // 3  Item Code ┘
+    { width: 9 },  // 4  Description ┐
+    { width: 11 }, // 5  Description │
+    { width: 10 }, // 6  Description │
+    { width: 10 }, // 7  Description ┘
+    { width: 9 },  // 8  Unit
+    { width: 8 },  // 9  QTY
+    { width: 12 }, // 10 Unit Price
+    { width: 10 }, // 11 Disc/Unit
+    { width: 12 }, // 12 Amount
   ];
 
   const box = (row: number, c1: number, c2: number) => {
@@ -249,14 +274,24 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
 
   let r = 1;
 
-  // Company name
-  ws.mergeCells(r, 1, r, COLS);
-  const co = ws.getCell(r, 1);
-  co.value = "CONPLUS RESOURCES PTE LTD";
-  co.font = { name: "Arial", size: 13, bold: true, color: { argb: TEAL } };
-  co.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 22;
-  r++;
+  // ── Letterhead banner image (falls back to text if it can't be loaded) ──
+  const header = await loadHeaderImage();
+  if (header) {
+    const targetW = 760;
+    const h = Math.round((header.height / header.width) * targetW);
+    const id = wb.addImage({ base64: header.dataUrl, extension: "png" });
+    ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: targetW, height: h } });
+    ws.getRow(1).height = h * 0.75; // px → points
+    r = 2;
+  } else {
+    ws.mergeCells(r, 1, r, COLS);
+    const co = ws.getCell(r, 1);
+    co.value = "CONPLUS RESOURCES PTE LTD";
+    co.font = { name: "Arial", size: 13, bold: true, color: { argb: TEAL } };
+    co.alignment = { horizontal: "center", vertical: "middle" };
+    ws.getRow(r).height = 22;
+    r++;
+  }
 
   // Title banner
   ws.mergeCells(r, 1, r, COLS);
@@ -269,60 +304,82 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   ws.getRow(r).height = 20;
   r += 2;
 
-  // ── Info grid: left label A:B / value C:D — right label E:F / value G:H
-  const pair = (row: number, lLabel: string, lVal: string, rLabel: string, rVal: string) => {
+  // ── 3-column header: left pairs (1-2 | 3-4), MIDDLE Vendor/Ship To (5-8),
+  //    right pairs (9-10 | 11-12). ──
+  const leftPairs: [string, string][] = [
+    ["PO No.", po.poNumber],
+    ["PO Date", po.createdDate],
+    ["Vendor Code", po.vendorCode || "—"],
+    ["Project Site", po.project || "—"],
+    ["Project Code", po.projectCode || "—"],
+    ["Works Order", po.worksOrder || "—"],
+  ];
+  const rightPairs: [string, string][] = [
+    ["Payment Terms", po.paymentTerms || "—"],
+    ["Currency", "SGD"],
+    ["Requested By", po.requestedBy || "—"],
+    ["Project PIC", po.projectPic || "—"],
+    ["Required Date", po.deliveryDate || "—"],
+    ["Vendor Ref", po.vendorQuotationRef || "—"],
+  ];
+
+  const headerTop = r;
+  for (let i = 0; i < 6; i++) {
+    const row = headerTop + i;
+    // left label / value
     ws.mergeCells(row, 1, row, 2);
-    const l = ws.getCell(row, 1);
-    l.value = lLabel; l.font = { name: "Arial", size: 9, bold: true }; l.fill = LABEL; l.alignment = { vertical: "middle" };
+    const ll = ws.getCell(row, 1);
+    ll.value = leftPairs[i][0]; ll.font = { name: "Arial", size: 9, bold: true }; ll.fill = LABEL; ll.alignment = { vertical: "middle" };
     ws.mergeCells(row, 3, row, 4);
     const lv = ws.getCell(row, 3);
-    lv.value = lVal; lv.font = { name: "Arial", size: 9 }; lv.alignment = { vertical: "middle", wrapText: true };
-    ws.mergeCells(row, 5, row, 6);
-    const rl = ws.getCell(row, 5);
-    rl.value = rLabel; rl.font = { name: "Arial", size: 9, bold: true }; rl.fill = LABEL; rl.alignment = { vertical: "middle" };
-    ws.mergeCells(row, 7, row, 8);
-    const rv = ws.getCell(row, 7);
-    rv.value = rVal; rv.font = { name: "Arial", size: 9 }; rv.alignment = { vertical: "middle", wrapText: true };
+    lv.value = leftPairs[i][1]; lv.font = { name: "Arial", size: 9 }; lv.alignment = { vertical: "middle", wrapText: true };
+    // right label / value
+    ws.mergeCells(row, 9, row, 10);
+    const rl = ws.getCell(row, 9);
+    rl.value = rightPairs[i][0]; rl.font = { name: "Arial", size: 9, bold: true }; rl.fill = LABEL; rl.alignment = { vertical: "middle" };
+    ws.mergeCells(row, 11, row, 12);
+    const rv = ws.getCell(row, 11);
+    rv.value = rightPairs[i][1]; rv.font = { name: "Arial", size: 9 }; rv.alignment = { vertical: "middle", wrapText: true };
+
+    ws.getRow(row).height = 20;
     box(row, 1, COLS);
-  };
+  }
 
-  pair(r, "PO No.", po.poNumber, "Payment Terms", po.paymentTerms || "—"); r++;
-  pair(r, "PO Date", po.createdDate, "Currency", "SGD"); r++;
-  pair(r, "Vendor Code", po.vendorCode || "—", "Requested By", po.requestedBy || "—"); r++;
-  pair(r, "Project Site", po.project || "—", "Project PIC", po.projectPic || "—"); r++;
-  pair(r, "Project Code", po.projectCode || "—", "Required Date", po.deliveryDate || "—"); r++;
-  pair(r, "Works Order", po.worksOrder || "—", "Vendor Ref", po.vendorQuotationRef || "—"); r++;
-
-  // ── Vendor / Ship To boxes side by side
-  ws.mergeCells(r, 1, r, 4);
-  const vl = ws.getCell(r, 1);
-  vl.value = "VENDOR"; vl.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF666666" } }; vl.fill = LABEL; vl.alignment = { vertical: "middle" };
-  ws.mergeCells(r, 5, r, 8);
-  const sl = ws.getCell(r, 5);
-  sl.value = "SHIP TO"; sl.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF666666" } }; sl.fill = LABEL; sl.alignment = { vertical: "middle" };
-  box(r, 1, COLS);
-  r++;
-
-  const vendorLines = [
-    po.supplier,
+  // Middle column: Vendor (rows 1-3) over Ship To (rows 4-6), cols 5-8
+  const vendorDetail = [
     po.supplierAddress,
     po.supplierPhone ? `Tel: ${po.supplierPhone}` : "",
     po.supplierContact || po.supplierEmail ? `Attn: ${[po.supplierContact, po.supplierEmail].filter(Boolean).join(" | ")}` : "",
-  ].filter(Boolean);
-  const shipLines = [
-    po.deliveryAddress || po.shipTo || po.project || "—",
+  ].filter(Boolean).join("\n");
+  const shipMain = po.deliveryAddress || po.shipTo || po.project || "—";
+  const shipDetail = [
     po.deliveryContact ? `${po.deliveryContact}${po.deliveryContactNumber ? ` · ${po.deliveryContactNumber}` : ""}` : "",
     `Delivery schedule: ${po.deliveryDate || "By next week"}`,
-  ].filter(Boolean);
-  ws.mergeCells(r, 1, r, 4);
-  const vv = ws.getCell(r, 1);
-  vv.value = vendorLines.join("\n"); vv.font = { name: "Arial", size: 9 }; vv.alignment = { vertical: "top", wrapText: true };
-  ws.mergeCells(r, 5, r, 8);
-  const sv = ws.getCell(r, 5);
-  sv.value = shipLines.join("\n"); sv.font = { name: "Arial", size: 9 }; sv.alignment = { vertical: "top", wrapText: true };
-  box(r, 1, COLS);
-  ws.getRow(r).height = 58;
-  r++;
+  ].filter(Boolean).join("\n");
+
+  ws.mergeCells(headerTop, 5, headerTop + 2, 8);
+  const vend = ws.getCell(headerTop, 5);
+  vend.value = {
+    richText: [
+      { font: { name: "Arial", size: 8, bold: true, color: { argb: "FF888888" } }, text: "VENDOR\n" },
+      { font: { name: "Arial", size: 9, bold: true }, text: `${po.supplier}\n` },
+      { font: { name: "Arial", size: 9 }, text: vendorDetail },
+    ],
+  };
+  vend.alignment = { vertical: "top", wrapText: true };
+
+  ws.mergeCells(headerTop + 3, 5, headerTop + 5, 8);
+  const ship = ws.getCell(headerTop + 3, 5);
+  ship.value = {
+    richText: [
+      { font: { name: "Arial", size: 8, bold: true, color: { argb: "FF888888" } }, text: "SHIP TO\n" },
+      { font: { name: "Arial", size: 9, bold: true }, text: `${shipMain}\n` },
+      { font: { name: "Arial", size: 9 }, text: shipDetail },
+    ],
+  };
+  ship.alignment = { vertical: "top", wrapText: true };
+
+  r = headerTop + 6;
 
   // Remarks
   if (po.remarks) {
@@ -330,56 +387,65 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
     const rm = ws.getCell(r, 1);
     rm.value = `Remarks: ${po.remarks}`; rm.font = { name: "Arial", size: 9, italic: true }; rm.alignment = { vertical: "middle", wrapText: true };
     box(r, 1, COLS);
+    ws.getRow(r).height = 28;
     r++;
   }
   r++;
 
-  // ── Item table header
-  const heads = ["S/No.", "Item Code", "Item Description", "Unit", "QTY", "Unit Price", "Disc/Unit", "Amount"];
-  heads.forEach((h, i) => {
-    const c = ws.getCell(r, i + 1);
-    c.value = h; c.font = { name: "Arial", size: 9, bold: true }; c.fill = YELLOW; c.border = THIN;
+  // ── Item table header (Item Code = 2-3, Item Description = 4-7) ──
+  const headSpans: [string, number, number][] = [
+    ["S/No.", 1, 1], ["Item Code", 2, 3], ["Item Description", 4, 7],
+    ["Unit", 8, 8], ["QTY", 9, 9], ["Unit Price", 10, 10], ["Disc/Unit", 11, 11], ["Amount", 12, 12],
+  ];
+  for (const [label, c1, c2] of headSpans) {
+    if (c2 > c1) ws.mergeCells(r, c1, r, c2);
+    const c = ws.getCell(r, c1);
+    c.value = label; c.font = { name: "Arial", size: 9, bold: true }; c.fill = YELLOW;
     c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  });
+    box(r, c1, c2);
+  }
   ws.getRow(r).height = 20;
   r++;
 
-  // Item rows (padded to MIN_ROWS like the printed sheet)
-  po.items.forEach((it, n) => {
-    ws.getCell(r, 1).value = n + 1; ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
-    ws.getCell(r, 2).value = it.itemCode || "";
-    ws.getCell(r, 3).value = it.material; ws.getCell(r, 3).alignment = { vertical: "middle", wrapText: true };
-    ws.getCell(r, 4).value = it.unit || ""; ws.getCell(r, 4).alignment = { horizontal: "center", vertical: "middle" };
-    ws.getCell(r, 5).value = it.qty; ws.getCell(r, 5).alignment = { horizontal: "right", vertical: "middle" };
-    ws.getCell(r, 6).value = it.unitPrice; ws.getCell(r, 6).numFmt = CUR; ws.getCell(r, 6).alignment = { horizontal: "right", vertical: "middle" };
-    ws.getCell(r, 7).value = it.discPerUnit ?? 0; ws.getCell(r, 7).numFmt = CUR; ws.getCell(r, 7).alignment = { horizontal: "right", vertical: "middle" };
-    ws.getCell(r, 8).value = lineAmount(it); ws.getCell(r, 8).numFmt = CUR; ws.getCell(r, 8).alignment = { horizontal: "right", vertical: "middle" };
+  // Row shape shared by data + padding rows so borders stay column-aligned.
+  const itemRow = (n: number, it: POItem | null) => {
+    ws.getCell(r, 1).value = n + 1;
+    ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
+    ws.mergeCells(r, 2, r, 3);
+    ws.mergeCells(r, 4, r, 7);
+    if (it) {
+      ws.getCell(r, 2).value = it.itemCode || "";
+      ws.getCell(r, 2).alignment = { horizontal: "center", vertical: "middle" };
+      ws.getCell(r, 4).value = it.material;
+      ws.getCell(r, 4).alignment = { vertical: "middle", wrapText: true };
+      ws.getCell(r, 8).value = it.unit || ""; ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
+      ws.getCell(r, 9).value = it.qty; ws.getCell(r, 9).alignment = { horizontal: "right", vertical: "middle" };
+      ws.getCell(r, 10).value = it.unitPrice; ws.getCell(r, 10).numFmt = CUR; ws.getCell(r, 10).alignment = { horizontal: "right", vertical: "middle" };
+      ws.getCell(r, 11).value = it.discPerUnit ?? 0; ws.getCell(r, 11).numFmt = CUR; ws.getCell(r, 11).alignment = { horizontal: "right", vertical: "middle" };
+      ws.getCell(r, 12).value = lineAmount(it); ws.getCell(r, 12).numFmt = CUR; ws.getCell(r, 12).alignment = { horizontal: "right", vertical: "middle" };
+    }
     for (let c = 1; c <= COLS; c++) {
       const cell = ws.getCell(r, c);
       if (!cell.font) cell.font = { name: "Arial", size: 9 };
       cell.border = THIN;
     }
     r++;
-  });
-  for (let n = po.items.length; n < MIN_ROWS; n++) {
-    ws.getCell(r, 1).value = n + 1;
-    ws.getCell(r, 1).font = { name: "Arial", size: 9 };
-    ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
-    box(r, 1, COLS);
-    r++;
-  }
+  };
 
-  // ── Totals (right side: label E:G / value H)
+  po.items.forEach((it, n) => itemRow(n, it));
+  for (let n = po.items.length; n < MIN_ROWS; n++) itemRow(n, null);
+
+  // ── Totals (right side: label 8-11 / value 12) ──
   const totalRow = (label: string, value: number, grand = false, neg = false) => {
-    ws.mergeCells(r, 5, r, 7);
-    const k = ws.getCell(r, 5);
+    ws.mergeCells(r, 8, r, 11);
+    const k = ws.getCell(r, 8);
     k.value = label; k.font = { name: "Arial", size: grand ? 11 : 10, bold: true }; k.fill = LABEL;
     k.alignment = { horizontal: "right", vertical: "middle" };
-    const v = ws.getCell(r, 8);
+    const v = ws.getCell(r, 12);
     v.value = neg && value > 0 ? -value : value; v.numFmt = CUR;
     v.font = { name: "Arial", size: grand ? 11 : 10, bold: grand };
     v.alignment = { horizontal: "right", vertical: "middle" };
-    box(r, 5, COLS);
+    box(r, 8, COLS);
     r++;
   };
   r++;
@@ -390,7 +456,7 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   totalRow("GST 9%", t.gst);
   totalRow("Grand Total", t.grand, true);
 
-  // ── Footer notes
+  // ── Footer notes ──
   r++;
   for (const n of [...PO_FOOTER_NOTES, ...PO_CORRESPONDENCE]) {
     ws.mergeCells(r, 1, r, COLS);
