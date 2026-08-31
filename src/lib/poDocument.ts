@@ -7,11 +7,10 @@ import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 const money = (n: number) =>
   n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
 
-// Company letterhead (from the reference PO header).
-const CO_NAME = "CONPLUS RESOURCES PTE LTD";
-const CO_ADDR = "10 Admiralty Street · #02-26 · North Link Building · Singapore 757695";
-const CO_CONTACT = "Tel: 65 6753 9939 · Fax: 65 6753 9949 · Email: conplus@singnet.com.sg";
-const CO_REG = "Reg. No.: 199404220W";
+// Company letterhead banner (logo + address + bizSAFE), served from /public.
+// Absolute URL so it still loads inside the print window (about:blank base).
+const LOGO_SRC =
+  (typeof window !== "undefined" ? window.location.origin : "") + "/conplus-header.png";
 
 // Standing correspondence notes (reference PO footer).
 const PO_FOOTER_NOTES = [
@@ -80,17 +79,17 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
 <title>${escapeHtml(po.poNumber)} — Purchase Order</title>
 <style>
   body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 34px; }
-  .co { font-size: 18px; font-weight: 800; letter-spacing: 1px; }
-  .co small { display: block; font-size: 9px; font-weight: 400; letter-spacing: .5px; color: #555; margin-top: 2px; }
-  .titlebar { background: #ffe100; border: 1px solid #111; text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 2px; padding: 4px 0; margin: 14px 0 0; }
+  .logo { display: block; width: 100%; max-width: 720px; height: auto; margin: 0 0 6px; }
+  .titlebar { background: #fdf3bf; border: 1px solid #111; text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 2px; padding: 4px 0; margin: 8px 0 0; }
   .hdr { width: 100%; border-collapse: collapse; table-layout: fixed; }
   .hdr td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: top; font-size: 10px; }
-  .hdr .lbl { background: #f5f5f5; font-weight: 700; width: 15%; }
-  .hdr .val { width: 35%; }
+  .hdr .lbl { background: #f5f5f5; font-weight: 700; width: 13%; }
+  .hdr .val { width: 18%; }
+  .hdr .mid { width: 38%; line-height: 1.5; }
+  .hdr .mid .mt { font-weight: 700; text-transform: uppercase; font-size: 9px; color: #666; letter-spacing: .5px; }
   .hdr b { font-weight: 700; }
-  .stack { line-height: 1.5; }
   table.items { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  table.items th { background: #ffe100; border: 1px solid #111; padding: 5px 6px; font-size: 10px; }
+  table.items th { background: #fdf3bf; border: 1px solid #111; padding: 5px 6px; font-size: 10px; }
   table.items td { border: 1px solid #999; padding: 4px 6px; font-size: 10px; height: 18px; }
   .c { text-align: center; } .r { text-align: right; }
   .lower { display: flex; justify-content: space-between; gap: 24px; margin-top: 10px; align-items: flex-start; }
@@ -109,12 +108,16 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
 </style>
 </head>
 <body>
-  <div class="co">${CO_NAME}<small>${escapeHtml(CO_ADDR)}</small><small>${escapeHtml(CO_CONTACT)} · ${escapeHtml(CO_REG)}</small></div>
+  <img class="logo" src="${LOGO_SRC}" alt="Conplus Resources Pte Ltd" />
   <div class="titlebar">PURCHASE ORDER</div>
   <table class="hdr">
     <tr>
       <td class="lbl">Purchase Order No.</td>
       <td class="val"><b>${escapeHtml(po.poNumber)}</b></td>
+      <td class="mid" rowspan="3">
+        <span class="mt">Vendor</span><br>
+        <b>${escapeHtml(po.supplier)}</b>${po.supplierAddress ? `<br>${escapeHtml(po.supplierAddress)}` : ""}${po.supplierPhone ? `<br>Tel: ${escapeHtml(po.supplierPhone)}` : ""}${po.supplierContact || po.supplierEmail ? `<br>Attn: ${escapeHtml([po.supplierContact, po.supplierEmail].filter(Boolean).join(" | "))}` : ""}
+      </td>
       <td class="lbl">Payment Terms</td>
       <td class="val"><b>${escapeHtml(po.paymentTerms || "—")}</b></td>
     </tr>
@@ -131,22 +134,20 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
       <td class="val"><b>${escapeHtml(po.requestedBy || "—")}</b></td>
     </tr>
     <tr>
-      <td class="lbl">Vendor</td>
-      <td class="val stack"><b>${escapeHtml(po.supplier)}</b>${po.supplierAddress ? `<br>${escapeHtml(po.supplierAddress)}` : ""}${po.supplierPhone ? `<br>Tel: ${escapeHtml(po.supplierPhone)}` : ""}${po.supplierContact || po.supplierEmail ? `<br>Attn: ${escapeHtml([po.supplierContact, po.supplierEmail].filter(Boolean).join(" | "))}` : ""}</td>
+      <td class="lbl">Project Site</td>
+      <td class="val"><b>${escapeHtml(po.project || "—")}</b></td>
+      <td class="mid" rowspan="3">
+        <span class="mt">Ship To</span><br>
+        <b>${escapeHtml(po.deliveryAddress || po.shipTo || po.project || "—")}</b>${po.deliveryContact ? `<br>${escapeHtml(po.deliveryContact)}${po.deliveryContactNumber ? ` · ${escapeHtml(po.deliveryContactNumber)}` : ""}` : ""}<br>Delivery schedule: ${escapeHtml(po.deliveryDate || "By next week")}<br>Date: (TBC)
+      </td>
       <td class="lbl">Project PIC</td>
       <td class="val"><b>${escapeHtml(po.projectPic || "—")}</b></td>
     </tr>
     <tr>
-      <td class="lbl">Project Site</td>
-      <td class="val"><b>${escapeHtml(po.project || "—")}</b></td>
-      <td class="lbl">Required Date</td>
-      <td class="val"><b>${escapeHtml(po.deliveryDate || "—")}</b></td>
-    </tr>
-    <tr>
       <td class="lbl">Project Code</td>
       <td class="val"><b>${escapeHtml(po.projectCode || "—")}</b></td>
-      <td class="lbl">Ship To</td>
-      <td class="val stack"><b>${escapeHtml(po.deliveryAddress || po.shipTo || po.project || "—")}</b>${po.deliveryContact ? `<br>${escapeHtml(po.deliveryContact)}${po.deliveryContactNumber ? ` · ${escapeHtml(po.deliveryContactNumber)}` : ""}` : ""}<br>Date: (TBC)</td>
+      <td class="lbl">Required Date</td>
+      <td class="val"><b>${escapeHtml(po.deliveryDate || "—")}</b></td>
     </tr>
     <tr>
       <td class="lbl">Works Order</td>
