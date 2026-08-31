@@ -1,8 +1,8 @@
 // Printable PO form, modelled on the client's "Purchase Order" reference
 // (PO_Template.pdf): header grid + Item Code / Disc-per-unit table + totals.
 // Print-to-PDF via the browser.
+import ExcelJS from "exceljs";
 import type { PurchaseOrder } from "@/data/sampleData";
-import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 
 const money = (n: number) =>
   n.toLocaleString("en-SG", { style: "currency", currency: "SGD", minimumFractionDigits: 2 });
@@ -212,63 +212,214 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** The same purchase order as a spreadsheet, keeping the template's shape. */
-export function exportPOToExcel(po: PurchaseOrder): void {
+/** The purchase order as a formatted .xlsx, matching the printable template. */
+export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   const t = computeTotals(po);
 
-  const totalsFields = [
-    { label: "Subtotal", value: t.subtotal },
-    { label: "Discount", value: -t.discount },
-    ...(t.delivery > 0 ? [{ label: "Delivery Charge", value: t.delivery }] : []),
-    { label: "Total", value: t.total },
-    { label: "GST 9%", value: t.gst },
-    { label: "Grand Total", value: t.grand },
+  const COLS = 8;
+  const TEAL = "FF006B54";
+  const YELLOW: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDF3BF" } };
+  const LABEL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5F5" } };
+  const THIN: Partial<ExcelJS.Borders> = {
+    top: { style: "thin" }, bottom: { style: "thin" },
+    left: { style: "thin" }, right: { style: "thin" },
+  };
+  const CUR = '"$"#,##0.00';
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Conplus Resources Pte Ltd";
+  const ws = wb.addWorksheet("Purchase Order", {
+    pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1 },
+    properties: { defaultRowHeight: 16 },
+  });
+  ws.columns = [
+    { width: 6 },   // A: S/No.
+    { width: 16 },  // B: Item Code
+    { width: 42 },  // C: Item Description
+    { width: 8 },   // D: Unit
+    { width: 8 },   // E: QTY
+    { width: 13 },  // F: Unit Price
+    { width: 13 },  // G: Disc/Unit
+    { width: 15 },  // H: Amount
   ];
 
-  const sections: RecordSection[] = [
-    {
-      heading: `Purchase Order ${po.poNumber}`,
-      fields: [
-        { label: "Purchase Order Date", value: po.createdDate },
-        { label: "Vendor Code", value: po.vendorCode },
-        { label: "Vendor", value: po.supplier },
-        { label: "Vendor Address", value: po.supplierAddress },
-        { label: "Vendor Contact", value: po.supplierContact },
-        { label: "Vendor Phone", value: po.supplierPhone },
-        { label: "Vendor Email", value: po.supplierEmail },
-        { label: "Vendor Ref / Quotation", value: po.vendorQuotationRef },
-        { label: "Payment Terms", value: po.paymentTerms },
-        { label: "Currency", value: "SGD" },
-        { label: "Requested By", value: po.requestedBy },
-        { label: "Project Site", value: po.project },
-        { label: "Project Code", value: po.projectCode },
-        { label: "Project PIC", value: po.projectPic },
-        { label: "Works Order", value: po.worksOrder },
-        { label: "Ship To", value: po.deliveryAddress || po.shipTo || po.project },
-        { label: "Required Date", value: po.deliveryDate },
-        { label: "Remarks", value: po.remarks },
-      ],
-    },
-    {
-      heading: "Items",
-      table: {
-        headers: ["S/No.", "Item Code", "Item Description", "Unit", "QTY", "Unit Price", "Disc/Unit", "Amount"],
-        rows: po.items.map((i, n) => [
-          n + 1,
-          i.itemCode ?? "",
-          i.material,
-          i.unit ?? "",
-          i.qty,
-          i.unitPrice,
-          i.discPerUnit ?? 0,
-          lineAmount(i),
-        ]),
-      },
-    },
-    {
-      heading: "Totals",
-      fields: totalsFields,
-    },
-  ];
-  exportRecordToExcel(sections, `purchase_order_${po.poNumber}`);
+  const box = (row: number, c1: number, c2: number) => {
+    for (let c = c1; c <= c2; c++) ws.getCell(row, c).border = THIN;
+  };
+
+  let r = 1;
+
+  // Company name
+  ws.mergeCells(r, 1, r, COLS);
+  const co = ws.getCell(r, 1);
+  co.value = "CONPLUS RESOURCES PTE LTD";
+  co.font = { name: "Arial", size: 13, bold: true, color: { argb: TEAL } };
+  co.alignment = { horizontal: "center", vertical: "middle" };
+  ws.getRow(r).height = 22;
+  r++;
+
+  // Title banner
+  ws.mergeCells(r, 1, r, COLS);
+  const tb = ws.getCell(r, 1);
+  tb.value = "PURCHASE ORDER";
+  tb.font = { name: "Arial", size: 12, bold: true };
+  tb.fill = YELLOW;
+  tb.alignment = { horizontal: "center", vertical: "middle" };
+  box(r, 1, COLS);
+  ws.getRow(r).height = 20;
+  r += 2;
+
+  // ── Info grid: left label A:B / value C:D — right label E:F / value G:H
+  const pair = (row: number, lLabel: string, lVal: string, rLabel: string, rVal: string) => {
+    ws.mergeCells(row, 1, row, 2);
+    const l = ws.getCell(row, 1);
+    l.value = lLabel; l.font = { name: "Arial", size: 9, bold: true }; l.fill = LABEL; l.alignment = { vertical: "middle" };
+    ws.mergeCells(row, 3, row, 4);
+    const lv = ws.getCell(row, 3);
+    lv.value = lVal; lv.font = { name: "Arial", size: 9 }; lv.alignment = { vertical: "middle", wrapText: true };
+    ws.mergeCells(row, 5, row, 6);
+    const rl = ws.getCell(row, 5);
+    rl.value = rLabel; rl.font = { name: "Arial", size: 9, bold: true }; rl.fill = LABEL; rl.alignment = { vertical: "middle" };
+    ws.mergeCells(row, 7, row, 8);
+    const rv = ws.getCell(row, 7);
+    rv.value = rVal; rv.font = { name: "Arial", size: 9 }; rv.alignment = { vertical: "middle", wrapText: true };
+    box(row, 1, COLS);
+  };
+
+  pair(r, "PO No.", po.poNumber, "Payment Terms", po.paymentTerms || "—"); r++;
+  pair(r, "PO Date", po.createdDate, "Currency", "SGD"); r++;
+  pair(r, "Vendor Code", po.vendorCode || "—", "Requested By", po.requestedBy || "—"); r++;
+  pair(r, "Project Site", po.project || "—", "Project PIC", po.projectPic || "—"); r++;
+  pair(r, "Project Code", po.projectCode || "—", "Required Date", po.deliveryDate || "—"); r++;
+  pair(r, "Works Order", po.worksOrder || "—", "Vendor Ref", po.vendorQuotationRef || "—"); r++;
+
+  // ── Vendor / Ship To boxes side by side
+  ws.mergeCells(r, 1, r, 4);
+  const vl = ws.getCell(r, 1);
+  vl.value = "VENDOR"; vl.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF666666" } }; vl.fill = LABEL; vl.alignment = { vertical: "middle" };
+  ws.mergeCells(r, 5, r, 8);
+  const sl = ws.getCell(r, 5);
+  sl.value = "SHIP TO"; sl.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF666666" } }; sl.fill = LABEL; sl.alignment = { vertical: "middle" };
+  box(r, 1, COLS);
+  r++;
+
+  const vendorLines = [
+    po.supplier,
+    po.supplierAddress,
+    po.supplierPhone ? `Tel: ${po.supplierPhone}` : "",
+    po.supplierContact || po.supplierEmail ? `Attn: ${[po.supplierContact, po.supplierEmail].filter(Boolean).join(" | ")}` : "",
+  ].filter(Boolean);
+  const shipLines = [
+    po.deliveryAddress || po.shipTo || po.project || "—",
+    po.deliveryContact ? `${po.deliveryContact}${po.deliveryContactNumber ? ` · ${po.deliveryContactNumber}` : ""}` : "",
+    `Delivery schedule: ${po.deliveryDate || "By next week"}`,
+  ].filter(Boolean);
+  ws.mergeCells(r, 1, r, 4);
+  const vv = ws.getCell(r, 1);
+  vv.value = vendorLines.join("\n"); vv.font = { name: "Arial", size: 9 }; vv.alignment = { vertical: "top", wrapText: true };
+  ws.mergeCells(r, 5, r, 8);
+  const sv = ws.getCell(r, 5);
+  sv.value = shipLines.join("\n"); sv.font = { name: "Arial", size: 9 }; sv.alignment = { vertical: "top", wrapText: true };
+  box(r, 1, COLS);
+  ws.getRow(r).height = 58;
+  r++;
+
+  // Remarks
+  if (po.remarks) {
+    ws.mergeCells(r, 1, r, COLS);
+    const rm = ws.getCell(r, 1);
+    rm.value = `Remarks: ${po.remarks}`; rm.font = { name: "Arial", size: 9, italic: true }; rm.alignment = { vertical: "middle", wrapText: true };
+    box(r, 1, COLS);
+    r++;
+  }
+  r++;
+
+  // ── Item table header
+  const heads = ["S/No.", "Item Code", "Item Description", "Unit", "QTY", "Unit Price", "Disc/Unit", "Amount"];
+  heads.forEach((h, i) => {
+    const c = ws.getCell(r, i + 1);
+    c.value = h; c.font = { name: "Arial", size: 9, bold: true }; c.fill = YELLOW; c.border = THIN;
+    c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  });
+  ws.getRow(r).height = 20;
+  r++;
+
+  // Item rows (padded to MIN_ROWS like the printed sheet)
+  po.items.forEach((it, n) => {
+    ws.getCell(r, 1).value = n + 1; ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
+    ws.getCell(r, 2).value = it.itemCode || "";
+    ws.getCell(r, 3).value = it.material; ws.getCell(r, 3).alignment = { vertical: "middle", wrapText: true };
+    ws.getCell(r, 4).value = it.unit || ""; ws.getCell(r, 4).alignment = { horizontal: "center", vertical: "middle" };
+    ws.getCell(r, 5).value = it.qty; ws.getCell(r, 5).alignment = { horizontal: "right", vertical: "middle" };
+    ws.getCell(r, 6).value = it.unitPrice; ws.getCell(r, 6).numFmt = CUR; ws.getCell(r, 6).alignment = { horizontal: "right", vertical: "middle" };
+    ws.getCell(r, 7).value = it.discPerUnit ?? 0; ws.getCell(r, 7).numFmt = CUR; ws.getCell(r, 7).alignment = { horizontal: "right", vertical: "middle" };
+    ws.getCell(r, 8).value = lineAmount(it); ws.getCell(r, 8).numFmt = CUR; ws.getCell(r, 8).alignment = { horizontal: "right", vertical: "middle" };
+    for (let c = 1; c <= COLS; c++) {
+      const cell = ws.getCell(r, c);
+      if (!cell.font) cell.font = { name: "Arial", size: 9 };
+      cell.border = THIN;
+    }
+    r++;
+  });
+  for (let n = po.items.length; n < MIN_ROWS; n++) {
+    ws.getCell(r, 1).value = n + 1;
+    ws.getCell(r, 1).font = { name: "Arial", size: 9 };
+    ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
+    box(r, 1, COLS);
+    r++;
+  }
+
+  // ── Totals (right side: label E:G / value H)
+  const totalRow = (label: string, value: number, grand = false, neg = false) => {
+    ws.mergeCells(r, 5, r, 7);
+    const k = ws.getCell(r, 5);
+    k.value = label; k.font = { name: "Arial", size: grand ? 11 : 10, bold: true }; k.fill = LABEL;
+    k.alignment = { horizontal: "right", vertical: "middle" };
+    const v = ws.getCell(r, 8);
+    v.value = neg && value > 0 ? -value : value; v.numFmt = CUR;
+    v.font = { name: "Arial", size: grand ? 11 : 10, bold: grand };
+    v.alignment = { horizontal: "right", vertical: "middle" };
+    box(r, 5, COLS);
+    r++;
+  };
+  r++;
+  totalRow("Subtotal", t.subtotal);
+  totalRow("Discount", t.discount, false, true);
+  if (t.delivery > 0) totalRow("Delivery Charge", t.delivery);
+  totalRow("Total", t.total);
+  totalRow("GST 9%", t.gst);
+  totalRow("Grand Total", t.grand, true);
+
+  // ── Footer notes
+  r++;
+  for (const n of [...PO_FOOTER_NOTES, ...PO_CORRESPONDENCE]) {
+    ws.mergeCells(r, 1, r, COLS);
+    ws.getCell(r, 1).value = n;
+    ws.getCell(r, 1).font = { name: "Arial", size: 8, color: { argb: "FF444444" } };
+    ws.getCell(r, 1).alignment = { vertical: "middle" };
+    r++;
+  }
+  r++;
+  ws.mergeCells(r, 1, r, COLS);
+  ws.getCell(r, 1).value = PO_COMPUTER_NOTE;
+  ws.getCell(r, 1).font = { name: "Arial", size: 8, bold: true };
+  ws.getCell(r, 1).alignment = { horizontal: "right" };
+  r++;
+  ws.mergeCells(r, 1, r, COLS);
+  ws.getCell(r, 1).value = PO_GOVERNING_NOTE;
+  ws.getCell(r, 1).font = { name: "Arial", size: 9, bold: true };
+  ws.getCell(r, 1).alignment = { horizontal: "center" };
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Purchase Order ${po.poNumber}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
