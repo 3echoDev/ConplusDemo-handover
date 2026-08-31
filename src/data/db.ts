@@ -286,6 +286,7 @@ export interface WOLineRow {
   packing_unit: string | null;
   required_qty: number | null;
   order_qty: number | null;
+  unit_price: number | null;
   parent_line_id: string | null;
   qty_unit: string | null;
   is_mix_component: boolean;
@@ -593,6 +594,7 @@ export function mapWorksOrder(row: WORow, areas: WOAreaRow[], lines: WOLineRow[]
             packingUnit: l.packing_unit ?? "kg/set",
             requiredQty: l.required_qty,
             orderQty: l.order_qty,
+            unitPrice: l.unit_price,
             parentLineId: l.parent_line_id,
             qtyUnit: l.qty_unit ?? "sets",
             isMixComponent: l.is_mix_component,
@@ -1220,6 +1222,28 @@ export async function dbUpdateWOStatus(woId: string, status: WOStatus): Promise<
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", woId);
   if (error) throw new Error(error.message);
+}
+
+export interface WOLineEdit {
+  id: string;
+  orderQty: number | null;
+  unitPrice: number | null;
+}
+
+/**
+ * Writes back only the two editable columns (order_qty, unit_price) for a set
+ * of works-order lines and stamps updated_at. If any row fails, the error is
+ * surfaced so the caller can highlight the failing line.
+ */
+export async function dbUpdateWOLines(edits: WOLineEdit[]): Promise<void> {
+  const stamp = new Date().toISOString();
+  for (const e of edits) {
+    const { error } = await supabase
+      .from("works_order_lines")
+      .update({ order_qty: e.orderQty, unit_price: e.unitPrice, updated_at: stamp })
+      .eq("id", e.id);
+    if (error) throw new Error(`Line ${e.id}: ${error.message}`);
+  }
 }
 
 /** Next WO number, continuing the client's existing numbering. */

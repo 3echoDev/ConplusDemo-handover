@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, Download } from "lucide-react";
+import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, Download, Pencil } from "lucide-react";
 import { printWO } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import ActivityLog from "@/components/ActivityLog";
+import WOPricingEditor from "@/components/WOPricingEditor";
 import { useAppData } from "@/data/AppDataContext";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import CreateWODialog from "@/components/CreateWODialog";
@@ -26,6 +27,7 @@ export default function WorksOrdersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<WOStatus | "all">("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
@@ -133,7 +135,11 @@ export default function WorksOrdersPage() {
                   </div>
                 </button>
 
-                {isOpen && (
+                {isOpen && editId === wo.id && (
+                  <WOPricingEditor wo={wo} onClose={() => setEditId(null)} />
+                )}
+
+                {isOpen && editId !== wo.id && (
                   <div className="border-t border-border bg-muted/20 px-4 py-4">
                     <div className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                       <Detail label="Client" value={wo.clientName} />
@@ -214,6 +220,12 @@ export default function WorksOrdersPage() {
                         <span className="font-semibold">{total} sets</span>
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditId(wo.id)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Edit qty &amp; pricing
+                        </button>
                         <button
                           onClick={() => exportWOTemplateExcel(wo)}
                           className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"

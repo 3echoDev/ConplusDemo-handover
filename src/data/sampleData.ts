@@ -61,6 +61,7 @@ export interface WorksOrderLine {
   packingUnit: string;
   requiredQty: number | null;
   orderQty: number | null;
+  unitPrice: number | null;
   parentLineId: string | null;
   qtyUnit: string;
   isMixComponent: boolean;
