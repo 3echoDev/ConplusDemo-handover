@@ -44,6 +44,156 @@ function Field({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+// Small label/value pair used in the PO header grid — mirrors the two-column
+// key/value cells of the Excel / printed PO.
+function KV({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex gap-2 text-xs">
+      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 font-medium text-card-foreground break-words">{value || "—"}</span>
+    </div>
+  );
+}
+
+// PO popup rebuilt to match the structured Excel / printed layout: a bordered
+// header block (PO meta · vendor · order meta), a ship-to band, the full line
+// table with Item Code / Unit / Disc-per-unit columns, then the totals ladder.
+function PODetailBody({ po }: { po: PurchaseOrder }) {
+  const lineAmount = (i: PurchaseOrder["items"][number]) => i.qty * (i.unitPrice - (i.discPerUnit ?? 0));
+  const hasItems = po.items.length > 0;
+  const subtotal = hasItems ? po.items.reduce((s, i) => s + lineAmount(i), 0) : po.amount;
+  const discount = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
+  const delivery = po.deliveryCharge ?? 0;
+  const total = subtotal + delivery;
+  const gst = hasItems ? Math.round(total * 0.09 * 100) / 100 : po.gst;
+  const grand = total + gst;
+
+  return (
+    <>
+      {/* Header block — three columns like the Excel template */}
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="space-y-1.5 p-3">
+            <KV label="PO No." value={po.poNumber} />
+            <KV label="PO Date" value={po.createdDate} />
+            <KV label="Vendor Code" value={po.vendorCode || "—"} />
+            <KV label="Project Site" value={po.project} />
+            <KV label="Project Code" value={po.projectCode || "—"} />
+            <KV label="Works Order" value={po.worksOrder || "—"} />
+          </div>
+          <div className="space-y-1 p-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Vendor</p>
+            <p className="text-sm font-medium text-card-foreground">{po.supplier}</p>
+            {po.supplierAddress && <p className="text-xs text-muted-foreground">{po.supplierAddress}</p>}
+            {po.supplierPhone && <p className="text-xs text-muted-foreground">Tel: {po.supplierPhone}</p>}
+            {(po.attnName || po.supplierContact) && (
+              <p className="text-xs text-muted-foreground">Attn: {po.attnName || po.supplierContact}</p>
+            )}
+          </div>
+          <div className="space-y-1.5 p-3">
+            <KV label="Payment Terms" value={po.paymentTerms || "—"} />
+            <KV label="Currency" value="SGD" />
+            <KV label="Requested By" value={po.requestedBy || "—"} />
+            <KV label="Project PIC" value={po.projectPic || "—"} />
+            <KV label="Required Date" value={po.deliveryDate || "—"} />
+            <KV label="Vendor Ref" value={po.vendorQuotationRef || "—"} />
+          </div>
+        </div>
+        {/* Ship-to band */}
+        <div className="space-y-1 border-t border-border bg-secondary/30 p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Ship To</p>
+          <p className="text-sm text-card-foreground">{po.deliveryAddress || po.shipTo || po.project}</p>
+          {(po.deliveryContact || po.deliveryContactNumber) && (
+            <p className="text-xs text-muted-foreground">
+              Contact: {po.deliveryContact || "—"}
+              {po.deliveryContactNumber ? ` · ${po.deliveryContactNumber}` : ""}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Line items — full column set matching the Excel sheet */}
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-secondary/50 text-muted-foreground">
+              <th className="p-2 text-left font-medium">S/No</th>
+              <th className="p-2 text-left font-medium">Item Code</th>
+              <th className="p-2 text-left font-medium">Description</th>
+              <th className="p-2 text-center font-medium">Unit</th>
+              <th className="p-2 text-right font-medium">Qty</th>
+              <th className="p-2 text-right font-medium">Unit Price</th>
+              <th className="p-2 text-right font-medium">Disc/Unit</th>
+              <th className="p-2 text-right font-medium">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((li, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="p-2 text-muted-foreground tabular-nums">{i + 1}</td>
+                <td className="p-2 text-muted-foreground">{li.itemCode || "—"}</td>
+                <td className="p-2 text-card-foreground">{li.material}</td>
+                <td className="p-2 text-center text-muted-foreground">{li.unit || "—"}</td>
+                <td className="p-2 text-right tabular-nums text-muted-foreground">{li.qty}</td>
+                <td className="p-2 text-right tabular-nums text-muted-foreground">{formatCurrency(li.unitPrice)}</td>
+                <td className="p-2 text-right tabular-nums text-muted-foreground">
+                  {li.discPerUnit ? formatCurrency(li.discPerUnit) : "—"}
+                </td>
+                <td className="p-2 text-right font-medium tabular-nums text-card-foreground">{formatCurrency(lineAmount(li))}</td>
+              </tr>
+            ))}
+            {!hasItems && (
+              <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">No line items recorded</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Totals ladder */}
+      <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
+        <div className="flex justify-between text-muted-foreground">
+          <span>Subtotal</span><span className="tabular-nums">{formatCurrency(subtotal)}</span>
+        </div>
+        {discount > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Discount</span><span className="tabular-nums">−{formatCurrency(discount)}</span>
+          </div>
+        )}
+        {delivery > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Delivery</span><span className="tabular-nums">{formatCurrency(delivery)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-muted-foreground">
+          <span>Total</span><span className="tabular-nums">{formatCurrency(total)}</span>
+        </div>
+        <div className="flex justify-between text-muted-foreground">
+          <span>GST (9%)</span><span className="tabular-nums">{formatCurrency(gst)}</span>
+        </div>
+        <div className="flex justify-between border-t border-border pt-1 font-heading text-base font-bold text-card-foreground">
+          <span>Grand Total</span><span className="tabular-nums">{formatCurrency(grand)}</span>
+        </div>
+      </div>
+
+      {po.remarks && (
+        <div className="rounded-lg border border-border bg-secondary/20 p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Remarks</p>
+          <p className="text-xs text-card-foreground">{po.remarks}</p>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <button onClick={() => exportPOToExcel(po)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
+        </button>
+        <button onClick={() => printPO(po)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <Printer className="h-4 w-4" /> Print / PDF
+        </button>
+      </div>
+    </>
+  );
+}
+
 // Project popup: contract value expands into main + VO breakdown; cum progress
 // claims expand into the claim-by-claim list (client amendment items 7–9).
 function ProjectDetailBody({ project }: { project: Project }) {
@@ -240,7 +390,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className={cn("w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl", detail.type === "po" ? "max-w-3xl" : "max-w-xl")} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{titles[detail.type]}</p>
@@ -261,57 +411,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
         </div>
 
         <div className="p-5 space-y-4">
-          {detail.type === "po" && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Supplier" value={detail.item.supplier} />
-                <Field label="Project" value={`${detail.item.project}${detail.item.projectCode ? ` (${detail.item.projectCode})` : ""}`} />
-                <Field label="Created" value={detail.item.createdDate} />
-                <Field label="Delivery Date" value={detail.item.deliveryDate} />
-                <Field label="Ship To" value={detail.item.shipTo || detail.item.project} />
-                <Field label="Payment Terms" value={detail.item.paymentTerms || "—"} />
-                <Field label="Requested By" value={detail.item.requestedBy || "—"} />
-                <Field label="Remarks" value={detail.item.remarks || "—"} />
-              </div>
-              <div className="rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-secondary/50 text-muted-foreground">
-                      <th className="text-left p-2 font-medium">Item</th>
-                      <th className="text-right p-2 font-medium">Qty</th>
-                      <th className="text-right p-2 font-medium">Unit Price</th>
-                      <th className="text-right p-2 font-medium">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.item.items.map((li, i) => (
-                      <tr key={i} className="border-t border-border">
-                        <td className="p-2 text-card-foreground">{li.material}</td>
-                        <td className="p-2 text-right text-muted-foreground">{li.qty}</td>
-                        <td className="p-2 text-right text-muted-foreground">{formatCurrency(li.unitPrice)}</td>
-                        <td className="p-2 text-right font-medium text-card-foreground">{formatCurrency(li.qty * li.unitPrice)}</td>
-                      </tr>
-                    ))}
-                    {detail.item.items.length === 0 && (
-                      <tr><td colSpan={4} className="p-4 text-center text-muted-foreground">No line items recorded</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-border text-sm">
-                <span className="text-muted-foreground">Subtotal {formatCurrency(detail.item.amount)} · GST {formatCurrency(detail.item.gst)}</span>
-                <span className="text-lg font-heading font-bold text-card-foreground">{formatCurrency(detail.item.amount + detail.item.gst)}</span>
-              </div>
-              <div className="flex justify-end">
-                <button onClick={() => exportPOToExcel(detail.item)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
-                  <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
-                </button>
-                <button onClick={() => printPO(detail.item)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
-                  <Printer className="h-4 w-4" /> Print / PDF
-                </button>
-              </div>
-            </>
-          )}
+          {detail.type === "po" && <PODetailBody po={detail.item} />}
 
           {detail.type === "project" && <ProjectDetailBody project={detail.item} />}
 

@@ -62,6 +62,7 @@ export default function StockWatchlist({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -126,6 +127,23 @@ export default function StockWatchlist({
   }, [attention]);
 
   const hasOut = attention.some((r) => r.stock_status === "out");
+
+  // Collapse the watchlist to the first few items so the page isn't a wall of
+  // stock. "View all" expands to the full grouped list.
+  const COLLAPSED_LIMIT = 6;
+  const visibleGroups = useMemo(() => {
+    if (expanded) return grouped;
+    let left = COLLAPSED_LIMIT;
+    const out: { supplier: string; items: WatchRow[] }[] = [];
+    for (const g of grouped) {
+      if (left <= 0) break;
+      const items = g.items.slice(0, left);
+      left -= items.length;
+      out.push({ supplier: g.supplier, items });
+    }
+    return out;
+  }, [grouped, expanded]);
+  const hiddenCount = attention.length - visibleGroups.reduce((s, g) => s + g.items.length, 0);
 
   const startEdit = (r: WatchRow) => {
     setEditingId(r.id);
@@ -245,7 +263,7 @@ export default function StockWatchlist({
               Some "Out" items are delivered straight to site and never stocked — set their reorder point to 0 to drop them from the watchlist.
             </p>
           )}
-          {grouped.map(({ supplier, items }) => (
+          {visibleGroups.map(({ supplier, items }) => (
             <div key={supplier}>
               <div className="flex items-center justify-between gap-2 bg-secondary/40 px-4 py-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{supplier}</span>
@@ -267,6 +285,14 @@ export default function StockWatchlist({
               </div>
             </div>
           ))}
+          {attention.length > 0 && (hiddenCount > 0 || expanded) && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="w-full border-t border-border px-4 py-2.5 text-xs font-medium text-primary hover:bg-secondary/40"
+            >
+              {expanded ? "Show less" : `View all ${attention.length} items`}
+            </button>
+          )}
         </div>
       )}
     </div>
