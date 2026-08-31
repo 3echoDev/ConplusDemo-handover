@@ -701,10 +701,14 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
 // ============================================================================
 // CHASE PANEL (two-clock engine — Step 16 aligned)
 // ============================================================================
+const SEND_CHASE_URL = import.meta.env.VITE_SEND_CHASE_URL || "https://threeecho.app.n8n.cloud/webhook/conplus-send-chase";
+const SEND_CHASE_TOKEN = import.meta.env.VITE_CHASE_TOKEN || "cnp_chase_8b21f4a9e6c3";
+
 function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [emailModal, setEmailModal] = useState(null);
   const [holdModal, setHoldModal] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [sendingId, setSendingId] = useState(null);
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
   const rows = chaseTab === "certificate" ? certRows : payRows;
@@ -740,6 +744,24 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
       else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); }
     } catch (e) { showFeedback("Error: " + e.message); }
     setEmailModal(null);
+    await onRefresh();
+  };
+
+  // Send the reminder email now via the n8n webhook (server re-checks the claim
+  // is still actionable, sends, and logs the reminder). Recipient is currently
+  // a fixed test inbox until per-claim email routing is wired.
+  const handleSend = async (row) => {
+    setSendingId(row.claim_id);
+    try {
+      const res = await fetch(`${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}`, {
+        method: "POST",
+        headers: { "X-Chase-Token": SEND_CHASE_TOKEN },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`);
+      else showFeedback("Send failed: " + (data.reason || `HTTP ${res.status}`));
+    } catch (e) { showFeedback("Send failed: " + e.message); }
+    setSendingId(null);
     await onRefresh();
   };
 
@@ -928,6 +950,16 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
           {email && !held && (
             <button className="cp-btn cp-btn-draft" onClick={() => openDraft(row, false)}>
               Draft
+            </button>
+          )}
+          {row.needs_action_today && !held && (
+            <button
+              className="cp-btn cp-btn-send"
+              onClick={() => handleSend(row)}
+              disabled={sendingId === row.claim_id}
+              title="Send the reminder email now"
+            >
+              {sendingId === row.claim_id ? "Sending\u2026" : "Send"}
             </button>
           )}
           {/* Manual reminder — available on ANY row */}
@@ -1809,6 +1841,9 @@ const CSS = `
 
 .cp-btn-draft { background: var(--navy); color: #fff; border-color: var(--navy); }
 .cp-btn-draft:hover { background: #252D4A; }
+.cp-btn-send { background: #157347; color: #fff; border-color: #157347; }
+.cp-btn-send:hover { background: #11633c; }
+.cp-btn-send:disabled { opacity: 0.6; cursor: default; }
 
 .cp-btn-hold { color: var(--fg4); }
 .cp-btn-manual { color: var(--fg4); font-size: 11px; }
