@@ -731,9 +731,26 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [chip, setChip] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
   const [detailMap, setDetailMap] = useState({}); // claim_id -> { history, hold }
+  const [emailSet, setEmailSet] = useState(() => new Set()); // claim_ids with a saved email_to for this clock
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
   const rows = chaseTab === "certificate" ? certRows : payRows;
+
+  // Which claims already have a recipient email saved on a prior reminder for
+  // this clock — lets the collapsed card show an "email on file" chip without
+  // opening the claim. No schema change: read chase_reminders.email_to.
+  useEffect(() => {
+    let alive = true;
+    supabase
+      .from("chase_reminders")
+      .select("claim_id")
+      .eq("clock", clock)
+      .not("email_to", "is", null)
+      .then(({ data }) => {
+        if (alive) setEmailSet(new Set((data || []).map((r) => r.claim_id)));
+      });
+    return () => { alive = false; };
+  }, [clock, rows]);
 
   const isCertOverdue = (row) => row.stage === "overdue";
   const isPayOverdue = (row) => ["final", "2nd", "soa_overdue"].includes(row.stage);
@@ -972,6 +989,17 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               {cleanClient(row.client_name)}
               {row.contact_person ? ` \u00B7 ${row.contact_person}` : ""}
             </div>
+            {(() => {
+              const onFile = emailSet.has(row.claim_id);
+              const hasContact = !!cleanName(row.contact_person);
+              const cls = onFile ? "on" : hasContact ? "ready" : "none";
+              const label = onFile ? "Email on file" : hasContact ? "Recipient ready" : "No email";
+              return (
+                <div className={`cpc-mailchip ${cls}`} title={onFile ? "A recipient email is saved for this chase" : hasContact ? "Contact available — no email saved yet" : "No recipient — add before sending"}>
+                  <span className="cpc-mailglyph">{"\u2709"}</span> {label}
+                </div>
+              );
+            })()}
             {row.notify_salesperson && row.sales_manager && (
               <div className="cpc-sales">Notify {row.sales_manager}</div>
             )}
@@ -2375,6 +2403,12 @@ const CSS = `
 .cpc-client { font-size:13px; color:var(--c-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cpc-sales { font-size:12px; margin-top:3px; color:var(--c-paused); font-weight:500; }
 .cpc-sales::before { content:"@"; font-weight:700; }
+
+.cpc-mailchip { display:inline-flex; align-items:center; gap:5px; margin-top:4px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; width:fit-content; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:1px solid transparent; }
+.cpc-mailchip .cpc-mailglyph { font-size:11px; line-height:1; }
+.cpc-mailchip.on { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+.cpc-mailchip.ready { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.cpc-mailchip.none { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
 
 .cpc-strip { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .cpc-strip-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
