@@ -63,15 +63,23 @@ function cellTitle(c) {
 
 // ---- email templates -------------------------------------------------------
 // Certificate-clock: drafted defaults (client hasn't provided their wording yet).
-// Payment-clock: VERBATIM from client's "Account – Payment-Chase Setup".
-// All emails use "Dear Sir/Madam" per client standard — no personalisation.
+// Payment-clock: VERBATIM from client's "Account – Payment-Chase Setup" workbook.
+// Payment templates personalise "Dear {contact}" and append the signature block.
 
 const fmtNum = (n) =>
   n == null ? "[amount]" : Number(n).toLocaleString("en-SG", { minimumFractionDigits: 2 });
 
-const deadlineIn7 = () => {
-  const d = new Date(Date.now() + 7 * 86400000);
-  return fmtDate(d.toISOString().slice(0, 10));
+// deadline_date: last payment reminder sent + 7 days, else today + 7 days.
+const payDeadline = (row) => {
+  const base = row?.last_sent_at ? new Date(row.last_sent_at) : new Date();
+  return fmtDate(new Date(base.getTime() + 7 * 86400000).toISOString().slice(0, 10));
+};
+
+// Signature block. No sender field in the data model — fall back to the
+// project's sales manager, else the company name only.
+const paySig = (row) => {
+  const name = cleanName(row?.sales_manager) || "";
+  return `\n\nBest regards,\n${name ? name + "\n" : ""}Conplus Resources Pte Ltd`;
 };
 
 function getCertEmail(row) {
@@ -100,43 +108,52 @@ function getCertEmail(row) {
 }
 
 function getPayEmail(row) {
-  const deadline = deadlineIn7();
-  const amt = fmtNum(row.invoice_amount);
+  const proj = row.project_name;
+  const code = row.project_code || "";
+  const contact = cleanName(row.contact_person) || "Sir/Madam";
+  const daysOverdue = Math.max(0, -(row.days_to_due || 0));
+  const deadline = payDeadline(row);
+  // outstanding_amount: no tax_invoices table in this build, so fall back to
+  // this claim's invoice amount. Rendered as "SGD 60,527.01".
+  const outstanding = `SGD ${fmtNum(row.invoice_amount)}`;
+  const sig = paySig(row);
   switch (row.stage) {
-    case "soa":
+    case "soa": // payment.day0 — Statement of Account with invoice
       return {
-        subject: `Statement of Account \u2014 ${row.project_name}`,
-        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nThank you.`,
+        subject: `Statement of Account \u2014 ${proj} (${code})`,
+        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nThank you.${sig}`,
       };
-    case "soa_overdue":
+    case "soa_overdue": // payment.overdue — 14 / 21 / 28 days overdue
       return {
-        subject: `Statement of Account (Outstanding) \u2014 ${row.project_name}`,
-        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nMay I seek your kind assistance to check the payment status for the outstanding invoice please.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+        subject: `OVERDUE \u2014 Statement of Account for ${proj} (${daysOverdue} days overdue)`,
+        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nMay I seek your kind assistance to check the payment status for the outstanding invoice please.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
       };
-    case "1st":
+    case "1st": // payment.reminder1 — 35 days overdue
       return {
-        subject: `1st Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
-        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+        subject: `1st REMINDER \u2014 Payment overdue for ${proj} (${daysOverdue} days)`,
+        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
       };
-    case "2nd":
+    case "2nd": // payment.reminder2 — 42 days overdue
       return {
-        subject: `2nd Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
-        body: `Dear Sir/Madam,\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+        subject: `2nd REMINDER \u2014 Payment overdue for ${proj} (${daysOverdue} days)`,
+        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
       };
-    case "final":
+    case "final": // payment.legal | payment.termination — 49 days overdue, QS picks
       return {
-        subject: `Final Reminder \u2014 Overdue Payment \u2014 ${row.project_name}`,
+        subject: `FINAL REMINDER \u2014 ${proj} (${outstanding} outstanding)`,
         body: null,
         variants: [
           {
             id: "legal",
             label: "Legal Action",
-            body: `Dear Sir/Madam,\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment SGD ${amt} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of SGD ${amt} is not received in full by ${deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+            subject: `FINAL REMINDER \u2014 Legal proceedings pending for ${proj} (${outstanding} outstanding)`,
+            body: `Dear ${contact},\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment ${outstanding} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of ${outstanding} is not received in full by ${deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
           },
           {
             id: "termination",
             label: "Work Termination",
-            body: `Dear Sir/Madam,\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment SGD ${amt} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of SGD ${amt} is not received in full by ${deadline}, we will be unable to mobilize our manpower to provide further services. Also, we will not be responsible for all the charges due to the outstanding work.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.`,
+            subject: `FINAL REMINDER \u2014 Work suspension pending for ${proj} (${outstanding} outstanding)`,
+            body: `Dear ${contact},\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment ${outstanding} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of ${outstanding} is not received in full by ${deadline}, we will be unable to mobilize our manpower to provide further services. Also, we will not be responsible for all the charges due to the outstanding work.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
           },
         ],
       };
@@ -1290,10 +1307,10 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
   const [variant, setVariant] = useState(null); // for final reminder variant selection
   const hasVariants = email.variants && email.variants.length > 0;
 
-  // Resolve the active body — either single body or selected variant
-  const activeBody = hasVariants
-    ? (variant ? email.variants.find((v) => v.id === variant)?.body : null)
-    : email.body;
+  // Resolve the active body/subject — either single value or selected variant
+  const activeVariant = hasVariants && variant ? email.variants.find((v) => v.id === variant) : null;
+  const activeBody = hasVariants ? (activeVariant?.body ?? null) : email.body;
+  const activeSubject = activeVariant?.subject || email.subject;
   const canProceed = activeBody != null;
 
   const copyText = async (text, what) => {
@@ -1333,11 +1350,11 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
           <div className="cp-modal-field">
             <div className="cp-modal-flabel">
               <span>Subject</span>
-              <button className="cp-btn-copy" onClick={() => copyText(email.subject, "subject")}>
+              <button className="cp-btn-copy" onClick={() => copyText(activeSubject, "subject")}>
                 {copied === "subject" ? "Copied!" : "Copy"}
               </button>
             </div>
-            <div className="cp-modal-fvalue">{email.subject}</div>
+            <div className="cp-modal-fvalue">{activeSubject}</div>
           </div>
 
           {/* Variant picker (Final Reminder only) */}
@@ -1385,11 +1402,11 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
           <button
             className="cp-btn cp-btn-proceed"
             disabled={!canProceed}
-            onClick={() => canProceed && onProceed(email.subject, activeBody)}
+            onClick={() => canProceed && onProceed(activeSubject, activeBody)}
           >
             Log as Sent
           </button>
-          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(email.subject, activeBody || "")}>
+          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(activeSubject, activeBody || "")}>
             Skip This Cycle
           </button>
           <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
