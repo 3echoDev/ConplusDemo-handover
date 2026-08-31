@@ -40,6 +40,8 @@ const App = () => (
               <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
               <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />
               <Route path="/loa-review" element={<LOAReviewPage />} />
+              <Route path="/works-orders" element={<WorksOrdersPage />} />
+              <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
               <Route path="/store" element={<StorePage />} />
               <Route path="/store/health" element={<StoreHealthPage />} />
               <Route path="/store/deliveries" element={<DeliveriesPage />} />
