@@ -3,6 +3,7 @@
 // F=Packing, G=Packing unit, H=Order Qty, I=Qty unit, J=Remarks, K=Calculation.
 import ExcelJS from "exceljs";
 import type { WorksOrder } from "@/data/sampleData";
+import { qtyUnitLabel, cleanRemark } from "@/lib/woDocument";
 
 /* ── Colors matching the template ────────────────────────────────── */
 
@@ -152,7 +153,7 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
   r++;
   r++;
 
-  headerRow(ws, r, "Contact Person", wo.siteContact || "", wo.siteContactNumber || "", "Quotation", wo.quotationRef || "");
+  headerRow(ws, r, "Contact Person", wo.contactPerson || "", wo.contactNumber || "", "Quotation", wo.quotationRef || "");
   r++;
   r++;
 
@@ -310,7 +311,7 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
         } else {
           const qty = l.orderQty != null ? l.orderQty : l.requiredQty;
           ws.getCell(r, 8).value = qty ?? "";
-          ws.getCell(r, 9).value = l.qtyUnit || "";
+          ws.getCell(r, 9).value = qty != null ? qtyUnitLabel(l, qty) : "";
         }
         ws.getCell(r, 8).font = F_CELL;
         ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
@@ -320,7 +321,7 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
         ws.getCell(r, 9).border = THIN;
 
         // Remarks in J
-        ws.getCell(r, 10).value = l.remarks || "";
+        ws.getCell(r, 10).value = cleanRemark(l.remarks || "");
         ws.getCell(r, 10).font = F_CELL;
         ws.getCell(r, 10).alignment = { vertical: "middle", wrapText: true };
         ws.getCell(r, 10).border = THIN;

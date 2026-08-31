@@ -180,7 +180,7 @@ export default function ClaimsPivot() {
           supabase
             .from("claims")
             .select(
-              "claim_no, claim_date, amount, certified_amount, status, contact_person, contact_number, " +
+              "claim_no, claim_date, amount, certified_amount, retention_amount, status, contact_person, contact_number, " +
                 "projects!inner(id, project_code, name, client_name, contract_value, total_contract_value, vo_value, sales_manager, status, work_type_code)"
             )
             .order("claim_date", { ascending: true }),
@@ -196,6 +196,7 @@ export default function ClaimsPivot() {
           claim_date: c.claim_date,
           amount: c.amount == null ? null : Number(c.amount),
           certified: c.certified_amount == null ? null : Number(c.certified_amount),
+          retention: c.retention_amount == null ? 0 : Number(c.retention_amount),
           status: c.status,
           contact: c.projects?.contact_person || c.contact_person,
           phone: c.projects?.contact_number || c.contact_number,
@@ -248,7 +249,7 @@ export default function ClaimsPivot() {
           code: r.code, projectId: r.projectId, name: r.name, client: r.client,
           contract: r.contract, voValue: r.voValue, contractBase: r.contractBase,
           manager: r.manager,
-          cells: {}, claims: [], totalClaimed: 0, totalCertified: 0,
+          cells: {}, claims: [], totalClaimed: 0, totalCertified: 0, totalRetention: 0,
         });
       }
       const p = map.get(r.code);
@@ -257,6 +258,7 @@ export default function ClaimsPivot() {
       p.claims.push(r);
       p.totalClaimed += r.amount || 0;
       p.totalCertified += r.certified || 0;
+      p.totalRetention += r.retention || 0;
     }
     let arr = [...map.values()];
     // Enrich with summary view data
@@ -499,23 +501,33 @@ function ClaimDetail({ project }) {
           <tr>
             <th>Claim</th>
             <th>Date</th>
-            <th className="r">Claimed</th>
+            <th className="r">Claim Amount</th>
+            <th className="r">Retention</th>
             <th className="r">Certified</th>
-            <th className="r">Variance</th>
+            <th className="r">Bal (+Ret)</th>
+            <th className="r">Balance</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {project.claims.map((c, i) => {
-            const variance = c.certified != null && c.amount != null ? c.certified - c.amount : null;
+            // Balance = Claim Amount − Certified; Bal (+Ret) = Claim Amount + Retention − Certified
+            const cert = c.certified ?? 0;
+            const amt = c.amount ?? 0;
+            const balance = c.amount != null && c.certified != null ? amt - cert : null;
+            const balanceRet = c.amount != null && c.certified != null ? amt + c.retention - cert : null;
             return (
               <tr key={i}>
                 <td>#{c.claim_no ?? "\u2014"}</td>
                 <td>{monthLabel(monthKey(c.claim_date))}</td>
                 <td className="r">{fmtFull(c.amount)}</td>
+                <td className="r">{c.retention ? fmtFull(c.retention) : <span className="cp-muted">&mdash;</span>}</td>
                 <td className="r">{c.certified == null ? <em className="cp-pending">pending</em> : fmtFull(c.certified)}</td>
-                <td className={`r ${variance != null && variance < 0 ? "cp-neg" : ""} ${variance != null && variance > 0 ? "cp-pos" : ""}`}>
-                  {variance == null ? "\u2014" : (variance >= 0 ? "+" : "") + fmtFull(variance)}
+                <td className={`r ${balanceRet != null && balanceRet > 0 ? "cp-pos" : ""}`}>
+                  {balanceRet == null ? "\u2014" : fmtFull(balanceRet)}
+                </td>
+                <td className={`r ${balance != null && balance > 0 ? "cp-pos" : ""}`}>
+                  {balance == null ? "\u2014" : fmtFull(balance)}
                 </td>
                 <td><span className={`cp-pill cp-pill-${c.status}`}>{c.status}</span></td>
               </tr>
@@ -523,21 +535,58 @@ function ClaimDetail({ project }) {
           })}
         </tbody>
       </table>
-      {/* Reconciliation footer */}
-      <div className="cp-recon">
-        <div className="cp-recon-item">
-          <span className="cp-recon-label">Contract</span>
-          <span className="cp-recon-val">{fmtFull(project.billable)}</span>
-        </div>
-        <div className="cp-recon-item">
-          <span className="cp-recon-label">Claimed</span>
-          <span className="cp-recon-val">{fmtFull(project.totalClaimed)}</span>
-        </div>
-        <div className={`cp-recon-item cp-recon-toclaim${project.toClaim != null && project.toClaim > 10000 ? " cp-recon-high" : ""}${project.toClaim != null && Math.abs(project.toClaim) < 1 ? " cp-recon-zero" : ""}`}>
-          <span className="cp-recon-label">To claim</span>
-          <span className="cp-recon-val">{project.toClaim == null ? "\u2014" : fmtFull(project.toClaim)}</span>
-        </div>
-      </div>
+      {/* Financial breakdown (Claim Summary List row — F23012 pattern) */}
+      {(() => {
+        const contractVal = project.contractBase != null ? project.contractBase : Number(project.contract) || 0;
+        const voVal = project.voValue != null ? project.voValue : 0;
+        const totalContract = project.contract != null ? Number(project.contract) : contractVal + voVal;
+        const A = project.totalClaimed;            // (A) 95% Amount Claims (net of retention)
+        const B = project.totalRetention;          // (B) 5% Cumm. Retention
+        const C = project.totalCertified;          // (C) Certified to-date
+        const balanceWork = totalContract - A - B; // Total Contract − Amount Claimed − Retention Claimed
+        const totalOutstanding = A + B - C;        // Incl. retention
+        const balOutstanding = A - C;              // Excl. retention
+        return (
+          <div className="cp-recon cp-recon-fin">
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">Contract Value</span>
+              <span className="cp-recon-val">{fmtFull(contractVal)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">(VO) Value</span>
+              <span className="cp-recon-val">{fmtFull(voVal)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">Total Contract</span>
+              <span className="cp-recon-val">{fmtFull(totalContract)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">Value of Balance Work</span>
+              <span className="cp-recon-val">{fmtFull(balanceWork)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">(A) 95% Amount Claims</span>
+              <span className="cp-recon-val">{fmtFull(A)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">(B) 5% Cumm. Retention</span>
+              <span className="cp-recon-val">{fmtFull(B)}</span>
+            </div>
+            <div className="cp-recon-item">
+              <span className="cp-recon-label">(C) Certified to-date</span>
+              <span className="cp-recon-val">{fmtFull(C)}</span>
+            </div>
+            <div className={`cp-recon-item cp-recon-toclaim${totalOutstanding > 10000 ? " cp-recon-high" : ""}${Math.abs(totalOutstanding) < 1 ? " cp-recon-zero" : ""}`}>
+              <span className="cp-recon-label">Total Outstanding (+Ret)</span>
+              <span className="cp-recon-val">{fmtFull(totalOutstanding)}</span>
+            </div>
+            <div className={`cp-recon-item${Math.abs(balOutstanding) < 1 ? " cp-recon-zero" : ""}`}>
+              <span className="cp-recon-label">Bal Outstanding</span>
+              <span className="cp-recon-val">{fmtFull(balOutstanding)}</span>
+            </div>
+          </div>
+        );
+      })()}
       <VOSection
         projectId={project.projectId}
         voValue={project.voValue}
@@ -1493,6 +1542,9 @@ const CSS = `
 }
 .cp-pill-certified { background: var(--green-50); color: var(--green-ink); }
 .cp-pill-submitted { background: var(--orange-50); color: var(--orange-ink); }
+.cp-pill-pending { background: var(--border-lt); color: var(--fg3); }
+.cp-pill-rejected { background: var(--red-50, #fde8e8); color: var(--red, #c0392b); }
+.cp-pill-paid { background: var(--green-50); color: var(--green-ink); }
 
 /* Reconciliation footer */
 .cp-recon {
@@ -1530,6 +1582,9 @@ const CSS = `
 .cp-recon-high { background: var(--orange-50); }
 .cp-recon-high .cp-recon-val { color: var(--orange-ink); font-weight: 800; }
 .cp-recon-zero .cp-recon-val { color: var(--fg4); font-weight: 500; }
+.cp-recon-fin { flex-wrap: wrap; }
+.cp-recon-fin .cp-recon-item { flex: 1 1 160px; min-width: 160px; }
+.cp-recon-fin .cp-recon-val { font-size: 14px; }
 
 /* ======================================================================= */
 /* VO SECTION                                                                */

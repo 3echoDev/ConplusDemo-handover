@@ -92,6 +92,10 @@ export interface WorksOrder {
   issueDate?: string;
   siteContact: string;
   siteContactNumber: string;
+  // Client-side contact, sourced from the linked project (distinct from the
+  // site delivery contact above).
+  contactPerson: string;
+  contactNumber: string;
   status: WOStatus;
   remarks: string;
   areas: WorksOrderArea[];

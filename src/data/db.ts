@@ -259,6 +259,8 @@ export interface WORow {
   status: WOStatus;
   remarks: string | null;
   updated_at: string;
+  // Embedded from the linked project (see fetchWorksOrders select).
+  projects?: { contact_person: string | null; contact_number: string | null } | null;
 }
 
 export interface WOAreaRow {
@@ -310,7 +312,8 @@ export const fetchPOs = () => selectAll<PORow>("purchase_orders", "*", { column:
 export const fetchPOLines = () => selectAll<POLineRow>("po_line_items", "id,po_id,description,qty,unit,unit_price");
 export const fetchInvoices = () => selectAll<InvoiceRow>("supplier_invoices", "*", { column: "invoice_date" });
 export const fetchClaims = () => selectAll<ClaimRow>("claims", "*", { column: "submitted_date" });
-export const fetchWorksOrders = () => selectAll<WORow>("works_orders", "*", { column: "created_at" });
+export const fetchWorksOrders = () =>
+  selectAll<WORow>("works_orders", "*, projects(contact_person,contact_number)", { column: "created_at" });
 export const fetchWOAreas = () => selectAll<WOAreaRow>("works_order_areas", "*", { column: "seq", ascending: true });
 export const fetchWOLines = () => selectAll<WOLineRow>("works_order_lines", "*", { column: "seq", ascending: true });
 export const fetchTasks = () => selectAll<TaskRow>("project_tasks", "*", { column: "due_date", ascending: true });
@@ -613,6 +616,8 @@ export function mapWorksOrder(row: WORow, areas: WOAreaRow[], lines: WOLineRow[]
     issueDate: row.issue_date ?? undefined,
     siteContact: row.site_contact ?? "",
     siteContactNumber: row.site_contact_number ?? "",
+    contactPerson: row.projects?.contact_person ?? "",
+    contactNumber: row.projects?.contact_number ?? "",
     status: row.status,
     remarks: row.remarks ?? "",
     areas: woAreas,

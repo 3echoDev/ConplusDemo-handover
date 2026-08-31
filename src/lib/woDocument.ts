@@ -7,6 +7,25 @@ const escapeHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 /**
+ * Unit label for the Order Qty column. The WO is ordered in whole packs, so the
+ * label is "set(s)" — or "bag(s)" for bag-packed additives (e.g. G80 AO, 25 kg/bag).
+ * Singular when the qty is exactly 1. The stored qty_unit is deliberately ignored:
+ * the data carries "kg" there, but the printed order is counted in packs, not kg.
+ */
+export function qtyUnitLabel(l: { packingUnit: string; qtyUnit: string }, qty: number | null): string {
+  const base = /bag/i.test(l.packingUnit) || /bag/i.test(l.qtyUnit) ? "bag" : "set";
+  return qty === 1 ? base : `${base}s`;
+}
+
+/**
+ * Strip the "Level N - " prefix the data stores on each line's remark. The level
+ * is already the area/section header, so repeating it on every row is noise.
+ */
+export function cleanRemark(s: string): string {
+  return s.replace(/^\s*level\s*\d+\s*[-–—]\s*/i, "");
+}
+
+/**
  * Base acknowledge names per the WO template. The WO's own Sales and Project I/C
  * are appended if not already present, so the signatory list reflects the people
  * on that order (e.g. Derrick on WO 25068) rather than a fixed roster.
@@ -48,10 +67,9 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
       // e.g. the KU 601 "order 15, use rest ex-stock" case on WO 25068.
       const qtyCell = (l: (typeof area.lines)[number]) => {
         if (l.isMixComponent) return "—";
-        if (l.orderQty != null && l.orderQty !== l.requiredQty) {
-          return `${l.orderQty} ${escapeHtml(l.qtyUnit)} <small class="req">(req ${l.requiredQty ?? "—"})</small>`;
-        }
-        return `${l.requiredQty ?? "—"} ${escapeHtml(l.qtyUnit)}`;
+        const qty = l.orderQty != null ? l.orderQty : l.requiredQty;
+        if (qty == null) return "—";
+        return `${qty} ${qtyUnitLabel(l, qty)}`;
       };
 
       // Top-level order lines carry an S/No; mix components / variants nest
@@ -67,7 +85,7 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
           <td class="r">${l.dosage != null ? `${l.dosage} ${escapeHtml(l.dosageUnit)}` : "—"}</td>
           <td class="r">${l.packingSize != null ? `${l.packingSize} ${escapeHtml(l.packingUnit)}` : "—"}</td>
           <td class="r"><b>${qtyCell(l)}</b></td>
-          <td>${escapeHtml(l.remarks || "")}</td>
+          <td>${escapeHtml(cleanRemark(l.remarks || ""))}</td>
         </tr>`;
 
       const rows = parents
@@ -92,7 +110,7 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
               <th style="width:78px">Colour</th>
               <th style="width:82px">Dosage</th>
               <th style="width:82px">Packing</th>
-              <th style="width:82px">Order Qty</th>
+              <th style="width:82px">Order Qty (Set)</th>
               <th style="width:150px">Remarks</th>
             </tr>
           </thead>
@@ -156,6 +174,7 @@ export function buildWOHtml(wo: WorksOrder, opts: { autoPrint: boolean }) {
     <div><span>Project I/C</span><b>${escapeHtml(wo.projectIc || "—")}</b></div>
     <div><span>Start Date</span><b>${escapeHtml(wo.startDate || "—")}</b></div>
     <div><span>Issue Date</span><b>${escapeHtml(wo.issueDate || "—")}</b></div>
+    <div><span>Contact Person</span><b>${escapeHtml(wo.contactPerson || "—")}${wo.contactNumber ? ` (${escapeHtml(wo.contactNumber)})` : ""}</b></div>
     <div><span>Site Contact</span><b>${escapeHtml(wo.siteContact || "—")}${wo.siteContactNumber ? ` (${escapeHtml(wo.siteContactNumber)})` : ""}</b></div>
     <div><span>Status</span><b style="text-transform:capitalize">${escapeHtml(wo.status.replace(/_/g, " "))}</b></div>
   </div>
@@ -206,20 +225,19 @@ export function exportWOToExcel(wo: WorksOrder): void {
       heading: `${a.areaName}${a.ralColour ? ` (${a.ralColour})` : ""}${a.areaSqm != null ? ` — ${a.areaSqm} m2` : ""}`,
       fields: a.prepNote ? [{ label: "Preparation", value: a.prepNote }] : undefined,
       table: {
-        headers: ["S/No", "Description", "Colour", "Dosage", "Packing", "Order Qty", "Remarks"],
-        rows: a.lines.map((l, i) => [
-          i + 1,
-          l.description,
-          l.colour,
-          l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : "",
-          l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : "",
-          l.isMixComponent
-            ? "mix component"
-            : l.orderQty != null && l.orderQty !== l.requiredQty
-              ? `${l.orderQty} (req ${l.requiredQty ?? "—"})`
-              : l.requiredQty ?? "",
-          l.remarks,
-        ]),
+        headers: ["S/No", "Description", "Colour", "Dosage", "Packing", "Order Qty (Set)", "Remarks"],
+        rows: a.lines.map((l, i) => {
+          const qty = l.orderQty != null ? l.orderQty : l.requiredQty;
+          return [
+            i + 1,
+            l.description,
+            l.colour,
+            l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : "",
+            l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : "",
+            l.isMixComponent ? "mix component" : qty != null ? `${qty} ${qtyUnitLabel(l, qty)}` : "",
+            cleanRemark(l.remarks || ""),
+          ];
+        }),
       },
     })),
     {
