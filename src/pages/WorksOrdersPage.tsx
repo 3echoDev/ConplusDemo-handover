@@ -110,7 +110,7 @@ export default function WorksOrdersPage() {
             const isOpen = openId === wo.id;
             const total = totalFor(wo.id);
             return (
-              <div key={wo.id} className="overflow-hidden rounded-lg border border-border bg-card">
+              <div key={wo.id} className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
                 <button
                   onClick={() => setOpenId(isOpen ? null : wo.id)}
                   className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-muted/40"
@@ -152,62 +152,89 @@ export default function WorksOrdersPage() {
                     </div>
 
                     {wo.areas.map((area) => (
-                      <div key={area.id} className="mb-3 overflow-hidden rounded-md border border-border bg-card">
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-sm font-medium">{area.areaName}</span>
+                      <div key={area.id} className="mb-4 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+                        {/* Area band */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-primary/5 px-4 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10">
+                              <Layers className="h-3.5 w-3.5 text-primary" />
+                            </span>
+                            <span className="text-sm font-semibold text-card-foreground">{area.areaName}</span>
                             {area.ralColour && (
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                              <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                                 {area.ralColour}
                               </span>
                             )}
                           </div>
                           {area.areaSqm != null && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="rounded-md bg-card px-2 py-0.5 text-xs font-medium text-muted-foreground">
                               {area.areaSqm.toLocaleString()} m²
                             </span>
                           )}
                         </div>
 
                         {area.prepNote && (
-                          <p className="border-b border-border px-3 py-1.5 text-xs italic text-muted-foreground">
+                          <p className="border-b border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
                             {area.prepNote}
                           </p>
                         )}
 
                         <table className="w-full text-sm">
                           <thead>
-                            <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                              <th className="px-3 py-1.5 text-left font-medium">Description</th>
-                              <th className="px-2 py-1.5 text-left font-medium">Colour</th>
-                              <th className="px-2 py-1.5 text-right font-medium">Dosage</th>
-                              <th className="px-2 py-1.5 text-right font-medium">Pack</th>
-                              <th className="px-2 py-1.5 text-right font-medium">Qty</th>
-                              <th className="px-3 py-1.5 text-left font-medium">Remarks</th>
+                            <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                              <th className="px-4 py-2 text-left font-medium">Description</th>
+                              <th className="px-2 py-2 text-left font-medium">Colour</th>
+                              <th className="px-2 py-2 text-right font-medium">Dosage</th>
+                              <th className="px-2 py-2 text-right font-medium">Pack</th>
+                              <th className="px-2 py-2 text-right font-medium">Qty</th>
+                              <th className="px-4 py-2 text-left font-medium">Remarks</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {area.lines.map((l) => (
-                              <tr key={l.id} className="border-t border-border/60">
-                                <td className="px-3 py-1.5">{l.description}</td>
-                                <td className="px-2 py-1.5 text-muted-foreground">{l.colour || "—"}</td>
-                                <td className="px-2 py-1.5 text-right text-muted-foreground">
+                            {area.lines.map((l) => {
+                              const child = l.isMixComponent;
+                              return (
+                              <tr
+                                key={l.id}
+                                className={cn(
+                                  "border-t border-border/50 align-top transition-colors hover:bg-muted/40",
+                                  child && "bg-muted/20",
+                                )}
+                              >
+                                <td
+                                  className={cn(
+                                    "px-4 py-2.5",
+                                    child
+                                      ? "pl-9 text-xs italic text-muted-foreground"
+                                      : "font-medium text-card-foreground",
+                                  )}
+                                >
+                                  {child ? "↳ " : ""}
+                                  {l.description}
+                                </td>
+                                <td className="px-2 py-2.5 text-xs text-muted-foreground">{l.colour || "—"}</td>
+                                <td className="whitespace-nowrap px-2 py-2.5 text-right text-xs tabular-nums text-muted-foreground">
                                   {l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : "—"}
                                 </td>
-                                <td className="px-2 py-1.5 text-right text-muted-foreground">
+                                <td className="whitespace-nowrap px-2 py-2.5 text-right text-xs tabular-nums text-muted-foreground">
                                   {l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : "—"}
                                 </td>
-                                <td className="px-2 py-1.5 text-right font-semibold">
+                                <td className="whitespace-nowrap px-2 py-2.5 text-right">
                                   {l.isMixComponent ? (
                                     <span className="text-xs font-normal text-muted-foreground">mix</span>
                                   ) : (
-                                    `${l.requiredQty ?? "—"} ${l.qtyUnit}`
+                                    <span className="font-semibold tabular-nums text-card-foreground">
+                                      {l.requiredQty ?? "—"}{" "}
+                                      <span className="text-xs font-normal text-muted-foreground">{l.qtyUnit}</span>
+                                    </span>
                                   )}
                                 </td>
-                                <td className="px-3 py-1.5 text-xs text-muted-foreground">{l.remarks || "—"}</td>
+                                <td className="px-4 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                                  {l.remarks || "—"}
+                                </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
