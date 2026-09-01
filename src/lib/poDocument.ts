@@ -275,14 +275,32 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   let r = 1;
 
   // ── Letterhead banner image (falls back to text if it can't be loaded) ──
+  //
+  // Use a two-cell anchor (tl + br) so Excel constrains the image to the
+  // allocated rows.  A floating one-anchor image overflows its row when
+  // printed / saved as PDF and eats into the "PURCHASE ORDER" title.
   const header = await loadHeaderImage();
   if (header) {
-    const targetW = 760;
-    const h = Math.round((header.height / header.width) * targetW);
+    // Scale to the worksheet column width (~115 Excel char-units ≈ 700px at
+    // 96 dpi).  Keep it a touch narrower so it never bleeds outside margins.
+    const targetW = 700;
+    const hPx = Math.round((header.height / header.width) * targetW);
+    const hPt = hPx * 0.75; // px → points
+
+    // Spread across enough rows so each row stays ≤ 60pt (avoids a single
+    // monster row that confuses print engines).
+    const ROW_PT = 56;
+    const rows = Math.max(1, Math.ceil(hPt / ROW_PT));
+    for (let i = 0; i < rows; i++) {
+      ws.getRow(r + i).height = hPt / rows;
+    }
+
     const id = wb.addImage({ base64: header.dataUrl, extension: "png" });
-    ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: targetW, height: h } });
-    ws.getRow(1).height = h * 0.75; // px → points
-    r = 2;
+    ws.addImage(id, {
+      tl: { col: 0, row: r - 1 } as any,            // top-left of first image row (0-indexed)
+      br: { col: COLS - 1, row: r - 1 + rows } as any, // bottom-right = first row after image
+    });
+    r += rows;
   } else {
     ws.mergeCells(r, 1, r, COLS);
     const co = ws.getCell(r, 1);
