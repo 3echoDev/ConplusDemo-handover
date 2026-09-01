@@ -33,13 +33,29 @@ type Detail =
   | { type: "wo"; item: WorksOrder }
   | { type: "project"; item: Project }
   | { type: "material"; item: InventoryItem }
-  | { type: "claim"; item: Claim }
+  | { type: "claim"; item: Claim; editing?: boolean }
   | { type: "invoice"; item: Invoice };
 
 // Safety-orange CTA (Swiss-minimal palette) — scoped to the Live home page via
 // Tailwind arbitrary values so the global blue theme is left untouched.
 const CTA = "#F97316";
 const CTA_HOVER = "#EA6A0C";
+
+// Compact currency for KPI cards: $21.7M instead of $21,668,600.52.
+function compactCurrency(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `$${(n / 1_000).toFixed(0)}K`;
+  return formatCurrency(n);
+}
+
+// Current month bounds (YYYY-MM-DD) for auto-populating claim date filters.
+const NOW = new Date();
+const MONTH_FROM = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}-01`;
+const MONTH_TO = (() => {
+  const end = new Date(NOW.getFullYear(), NOW.getMonth() + 1, 0);
+  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+})();
 
 // Deep-link a prompt into a fresh claude.ai chat (uses the user's subscription,
 // no Anthropic API). Operations are driven by talking to Claude.
@@ -612,7 +628,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
             </>
           )}
 
-          {detail.type === "claim" && <ClaimDetailBody claim={detail.item} />}
+          {detail.type === "claim" && <ClaimDetailBody claim={detail.item} startEditing={detail.editing} />}
 
           {detail.type === "invoice" && (
             <div className="grid grid-cols-2 gap-3">
@@ -746,9 +762,9 @@ const woTotalOf = (wo: WorksOrder) => woOrderTotal(wo);
 
 const woTotal = (wo: WorksOrder) => woOrderTotal(wo);
 
-function ClaimDetailBody({ claim }: { claim: Claim }) {
+function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startEditing?: boolean }) {
   const { updateClaimFields } = useAppData();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [saving, setSaving] = useState(false);
 
   const { projects } = useAppData();
@@ -1047,10 +1063,12 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
 function ClaimRows({
   rows,
   onOpen,
+  onEdit,
   empty,
 }: {
   rows: Claim[];
   onOpen: (c: Claim) => void;
+  onEdit?: (c: Claim) => void;
   empty: string;
 }) {
   return (
@@ -1074,6 +1092,14 @@ function ClaimRows({
           <div className="flex items-center gap-3 shrink-0">
             <span className="font-semibold text-card-foreground">{formatCurrency(c.amount)}</span>
             <StatusBadge status={c.status} />
+            {onEdit && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(c); }}
+                className="rounded-md border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                Edit
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -1235,8 +1261,8 @@ export default function LiveViewPage() {
   const [stockCounts, setStockCounts] = useState({ out: 0, critical: 0, low: 0 });
   const [poFrom, setPoFrom] = useState("");
   const [poTo, setPoTo] = useState("");
-  const [claimFrom, setClaimFrom] = useState("");
-  const [claimTo, setClaimTo] = useState("");
+  const [claimFrom, setClaimFrom] = useState(MONTH_FROM);
+  const [claimTo, setClaimTo] = useState(MONTH_TO);
   const [projSearch, setProjSearch] = useState("");
   const [invSearch, setInvSearch] = useState("");
   const [claimSearch, setClaimSearch] = useState("");
@@ -1459,10 +1485,10 @@ export default function LiveViewPage() {
         {/* KPI strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <Kpi tone="slate" label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
-          <Kpi tone="blue" label="Contract Value" value={formatCurrency(contractValue)} />
+          <Kpi tone="blue" label="Contract Value" value={compactCurrency(contractValue)} />
           <Kpi tone="orange" label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
           <Kpi tone="red" label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
-          <Kpi tone="amber" label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
+          <Kpi tone="amber" label="Outstanding Claims" value={compactCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
           <Kpi tone="green" label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
         </div>
 
@@ -1610,7 +1636,7 @@ export default function LiveViewPage() {
             icon={<DollarSign className="h-4 w-4" />}
             action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={progressClaims} columns={COLS.claims} title="Progress Claims" /></div>}
           >
-            <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No progress claims on record yet." />
+            <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No progress claims on record yet." />
           </Section>
 
           {/* Conplus Invoices — small jobs billed once, no retention */}
@@ -1619,7 +1645,7 @@ export default function LiveViewPage() {
             icon={<FileText className="h-4 w-4" />}
             action={<ExportMenu rows={conplusInvoices} columns={COLS.claims} title="Conplus Invoices" />}
           >
-            <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} empty="No Conplus invoices on record yet." />
+            <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No Conplus invoices on record yet." />
           </Section>
 
           {/* Alerts */}
