@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck,
+  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck, Send,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import ExportMenu from "@/components/ExportMenu";
@@ -30,10 +30,24 @@ import { cn } from "@/lib/utils";
 
 type Detail =
   | { type: "po"; item: PurchaseOrder }
+  | { type: "wo"; item: WorksOrder }
   | { type: "project"; item: Project }
   | { type: "material"; item: InventoryItem }
   | { type: "claim"; item: Claim }
   | { type: "invoice"; item: Invoice };
+
+// Safety-orange CTA (Swiss-minimal palette) — scoped to the Live home page via
+// Tailwind arbitrary values so the global blue theme is left untouched.
+const CTA = "#F97316";
+const CTA_HOVER = "#EA6A0C";
+
+// Deep-link a prompt into a fresh claude.ai chat (uses the user's subscription,
+// no Anthropic API). Operations are driven by talking to Claude.
+function askClaude(text: string) {
+  const q = text.trim();
+  if (!q) return;
+  window.open(`https://claude.ai/new?q=${encodeURIComponent(q)}`, "_blank", "noopener");
+}
 
 function Field({ label, value }: { label: string; value: string | number }) {
   return (
@@ -187,6 +201,97 @@ function PODetailBody({ po }: { po: PurchaseOrder }) {
           <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
         </button>
         <button onClick={() => printPO(po)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <Printer className="h-4 w-4" /> Print / PDF
+        </button>
+      </div>
+    </>
+  );
+}
+
+// WO popup — same structured header/areas layout the inline accordion used,
+// now in the shared modal for consistency with the PO pop-up. Export buttons
+// call the existing live functions unchanged (exportWOTemplateExcel / printWO).
+function WODetailBody({ wo }: { wo: WorksOrder }) {
+  const sets = woOrderTotal(wo);
+  return (
+    <>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="space-y-1.5 p-3">
+            <KV label="WO No." value={wo.woNumber} />
+            <KV label="Job No." value={wo.jobNo || "—"} />
+            <KV label="Project Code" value={wo.projectCode} />
+            <KV label="Quotation" value={wo.quotationRef || "—"} />
+          </div>
+          <div className="space-y-1.5 p-3">
+            <KV label="Client" value={wo.clientName} />
+            <KV label="Sales" value={wo.sales || "—"} />
+            <KV label="Project I/C" value={wo.projectIc || "—"} />
+            <KV label="Contact" value={wo.contactPerson || "—"} />
+          </div>
+          <div className="space-y-1.5 p-3">
+            <KV label="Start Date" value={wo.startDate || "—"} />
+            <KV label="Issue Date" value={wo.issueDate || "—"} />
+            <KV label="Site Contact" value={wo.siteContact ? `${wo.siteContact}${wo.siteContactNumber ? ` (${wo.siteContactNumber})` : ""}` : "—"} />
+            <KV label="Total" value={`${sets} sets`} />
+          </div>
+        </div>
+        {(wo.siteAddress || wo.remarks) && (
+          <div className="space-y-1.5 border-t border-border bg-secondary/30 p-3">
+            {wo.siteAddress && <KV label="Site Address" value={wo.siteAddress} />}
+            {wo.remarks && <KV label="Remarks" value={wo.remarks} />}
+          </div>
+        )}
+      </div>
+
+      {wo.areas.map((area) => (
+        <div key={area.id} className="rounded-lg border border-border overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border bg-secondary/40">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-card-foreground">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              {area.areaName}
+              {area.ralColour && (
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{area.ralColour}</span>
+              )}
+            </span>
+            {area.areaSqm != null && (
+              <span className="text-xs text-muted-foreground">{area.areaSqm.toLocaleString()} m²</span>
+            )}
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-border">
+              {area.lines.map((l) => {
+                const child = !!l.parentLineId;
+                const qty = l.isMixComponent
+                  ? null
+                  : l.orderQty != null && l.orderQty !== l.requiredQty
+                    ? `${l.orderQty} ${l.qtyUnit} (req ${l.requiredQty ?? "—"})`
+                    : `${l.requiredQty ?? "—"} ${l.qtyUnit}`;
+                return (
+                  <tr key={l.id} className={child ? "bg-secondary/20" : undefined}>
+                    <td className={`py-1.5 text-card-foreground ${child ? "pl-6 pr-3 text-xs text-muted-foreground" : "px-3"}`}>{child ? "↳ " : ""}{l.description}</td>
+                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
+                      {l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : ""}
+                    </td>
+                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
+                      {l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : ""}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-card-foreground whitespace-nowrap">
+                      {l.isMixComponent ? <span className="text-xs font-normal text-muted-foreground">mix</span> : qty}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <div className="flex justify-end gap-2">
+        <button onClick={() => exportWOTemplateExcel(wo)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
+          <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
+        </button>
+        <button onClick={() => printWO(wo)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors">
           <Printer className="h-4 w-4" /> Print / PDF
         </button>
       </div>
@@ -395,20 +500,67 @@ function ProjectDetailBody({ project }: { project: Project }) {
 function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void }) {
   const titles: Record<Detail["type"], string> = {
     po: "Purchase Order",
+    wo: "Works Order",
     project: "Project",
     material: "Material",
     claim: "Claim",
     invoice: "Supplier Invoice",
   };
 
+  // Craft: centered scale-in (modals keep transform-origin: center), Escape +
+  // backdrop close, focus save/restore, body scroll lock, reduced-motion aware.
+  const [shown, setShown] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    prevFocus.current = document.activeElement as HTMLElement | null;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const raf = requestAnimationFrame(() => setShown(true));
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      prevFocus.current?.focus?.();
+    };
+  }, [onClose]);
+
+  const wide = detail.type === "po" || detail.type === "project" || detail.type === "wo";
+  const headStatus =
+    detail.type === "wo" ? detail.item.status.replace(/_/g, "-") : detail.item.status;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className={cn("w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl", detail.type === "po" || detail.type === "project" ? "max-w-3xl" : "max-w-xl")} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-border">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 transition-opacity duration-200 ease-out motion-reduce:transition-none"
+      style={{ opacity: shown ? 1 : 0, backdropFilter: shown ? "blur(4px)" : "blur(0px)" }}
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        className={cn(
+          "w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl outline-none transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none",
+          wide ? "max-w-3xl" : "max-w-xl"
+        )}
+        style={{
+          transformOrigin: "center",
+          transform: shown ? "scale(1) translateY(0)" : "scale(0.96) translateY(6px)",
+          opacity: shown ? 1 : 0,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-border bg-card/95 backdrop-blur-sm">
           <div>
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{titles[detail.type]}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: CTA }}>{titles[detail.type]}</p>
             <h2 className="text-lg font-heading font-semibold text-card-foreground">
               {detail.type === "po" && detail.item.poNumber}
+              {detail.type === "wo" && `WO ${detail.item.woNumber}`}
               {detail.type === "project" && detail.item.name}
               {detail.type === "material" && detail.item.name}
               {detail.type === "claim" && detail.item.claimNumber}
@@ -416,8 +568,12 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
             </h2>
           </div>
           <div className="flex items-center gap-3">
-            <StatusBadge status={detail.item.status} />
-            <button onClick={onClose} className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+            <StatusBadge status={headStatus} />
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors active:scale-95"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -425,6 +581,8 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
 
         <div className="p-5 space-y-4">
           {detail.type === "po" && <PODetailBody po={detail.item} />}
+
+          {detail.type === "wo" && <WODetailBody wo={detail.item} />}
 
           {detail.type === "project" && <ProjectDetailBody project={detail.item} />}
 
@@ -1001,20 +1159,35 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   );
 }
 
-function Kpi({ label, value, sub, onClick, active }: {
-  label: string; value: string | number; sub?: string; onClick?: () => void; active?: boolean;
+const KPI_TONES: Record<string, string> = {
+  slate: "#64748B",
+  orange: CTA,
+  green: "#16A34A",
+  amber: "#D97706",
+  red: "#DC2626",
+  blue: "#2563EB",
+};
+
+function Kpi({ label, value, sub, onClick, active, tone = "slate" }: {
+  label: string; value: string | number; sub?: string; onClick?: () => void; active?: boolean; tone?: keyof typeof KPI_TONES;
 }) {
   const Tag = (onClick ? "button" : "div") as "button";
+  const bar = KPI_TONES[tone] ?? KPI_TONES.slate;
   return (
     <Tag
       onClick={onClick}
       title={onClick ? `View ${label.toLowerCase()}` : undefined}
-      className={`rounded-xl border bg-card p-4 shadow-sm w-full text-left transition-colors ${
-        active ? "border-primary/50 bg-primary/5" : "border-border"
-      } ${onClick ? "hover:border-primary/40 hover:bg-secondary/40 cursor-pointer" : ""}`}
+      className={`group relative overflow-hidden rounded-xl border bg-card p-4 pl-5 shadow-sm w-full text-left transition-colors ${
+        active ? "bg-secondary/50" : "border-border"
+      } ${onClick ? "hover:border-primary/40 hover:bg-secondary/40 cursor-pointer active:scale-[0.99]" : ""}`}
+      style={active ? { borderColor: CTA } : undefined}
     >
+      <span
+        className="absolute left-0 top-0 h-full w-1 transition-[width] duration-200 ease-out group-hover:w-1.5"
+        style={{ backgroundColor: bar, opacity: active ? 1 : 0.7 }}
+      />
       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-      <p className="text-2xl font-heading font-bold text-card-foreground mt-1">{value}</p>
+      <p className="text-2xl font-heading font-bold text-card-foreground mt-1 tabular-nums">{value}</p>
       {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
     </Tag>
   );
@@ -1034,12 +1207,12 @@ export default function LiveViewPage() {
   const [poTo, setPoTo] = useState("");
   const [claimFrom, setClaimFrom] = useState("");
   const [claimTo, setClaimTo] = useState("");
-  const [openWO, setOpenWO] = useState<string | null>(null);
   const [projSearch, setProjSearch] = useState("");
   const [invSearch, setInvSearch] = useState("");
   const [claimSearch, setClaimSearch] = useState("");
   const [yearFrom, setYearFrom] = useState("");
   const [yearTo, setYearTo] = useState("");
+  const [claudePrompt, setClaudePrompt] = useState("");
 
   useEffect(() => {
     document.title = "ConPlus — Live View";
@@ -1128,16 +1301,17 @@ export default function LiveViewPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-md">
+        <span className="absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: CTA }} />
         <div className="mx-auto max-w-7xl px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg text-white" style={{ backgroundColor: CTA }}>
               <Building2 className="h-5 w-5" />
             </div>
             <div>
               <h1 className="font-heading text-base font-bold text-foreground tracking-tight">CONPLUS Resources — Live Operations</h1>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3 w-3 text-primary" />
+                <Sparkles className="h-3 w-3" style={{ color: CTA }} />
                 Operations run by talking to Claude · this view updates automatically
               </p>
             </div>
@@ -1203,14 +1377,63 @@ export default function LiveViewPage() {
           </div>
         )}
 
+        {/* Claude command strip — operations are driven by talking to Claude.
+            Deep-links the prompt into claude.ai (subscription, not the API). */}
+        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: CTA }}>Claude-driven operations</p>
+          <h2 className="mt-1 font-heading text-lg font-semibold text-foreground">What do you need done today?</h2>
+          <form
+            className="mt-3 flex items-center gap-2"
+            onSubmit={(e) => { e.preventDefault(); askClaude(claudePrompt); }}
+          >
+            <div className="relative flex-1">
+              <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={claudePrompt}
+                onChange={(e) => setClaudePrompt(e.target.value)}
+                placeholder="e.g. Draft a PO for the outstanding EP-100 primer on WO 24054.1R1"
+                aria-label="Ask Claude"
+                className="w-full rounded-lg border border-input bg-background py-2.5 pl-10 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2"
+                style={{ ["--tw-ring-color" as string]: CTA }}
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors active:scale-[0.98]"
+              style={{ backgroundColor: CTA }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = CTA_HOVER)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = CTA)}
+            >
+              <Send className="h-4 w-4" /> Send
+            </button>
+          </form>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              "Show POs awaiting my approval",
+              "Which claims are outstanding and overdue?",
+              "List stock items that are out or critical",
+              "Draft this month's progress claim reminders",
+            ].map((chip) => (
+              <button
+                key={chip}
+                onClick={() => askClaude(chip)}
+                className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-primary/40"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* KPI strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <Kpi label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
-          <Kpi label="Contract Value" value={formatCurrency(contractValue)} />
-          <Kpi label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
-          <Kpi label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
-          <Kpi label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
-          <Kpi label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
+          <Kpi tone="slate" label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
+          <Kpi tone="blue" label="Contract Value" value={formatCurrency(contractValue)} />
+          <Kpi tone="orange" label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
+          <Kpi tone="red" label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
+          <Kpi tone="amber" label="Outstanding Claims" value={formatCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
+          <Kpi tone="green" label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
         </div>
 
         {/* Works Orders — what each job needs, before anything is ordered */}
@@ -1243,114 +1466,25 @@ export default function LiveViewPage() {
           ) : (
             <div className="divide-y divide-border">
               {woFiltered.map((wo) => {
-                const isOpen = openWO === wo.id;
                 const sets = woTotal(wo);
                 return (
-                  <div key={wo.id}>
-                    <div
-                      onClick={() => setOpenWO(isOpen ? null : wo.id)}
-                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-medium text-primary shrink-0">WO {wo.woNumber}</span>
-                        <span className="text-muted-foreground truncate">{wo.projectCode}</span>
-                        <span className="text-xs text-muted-foreground/70 truncate hidden md:inline">{wo.siteAddress || wo.clientName}</span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="font-medium text-card-foreground">{sets} sets</span>
-                        <StatusBadge status={wo.status.replace(/_/g, "-")} />
-                      </div>
+                  <div
+                    key={wo.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDetail({ type: "wo", item: wo })}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDetail({ type: "wo", item: wo }); } }}
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm cursor-pointer hover:bg-secondary/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="font-medium text-primary shrink-0">WO {wo.woNumber}</span>
+                      <span className="text-muted-foreground truncate">{wo.projectCode}</span>
+                      <span className="text-xs text-muted-foreground/70 truncate hidden md:inline">{wo.siteAddress || wo.clientName}</span>
                     </div>
-
-                    {isOpen && (
-                      <div className="bg-secondary/20 px-4 py-3 space-y-3">
-                        {/* Header block — structured columns matching the WO template */}
-                        <div className="overflow-hidden rounded-lg border border-border bg-card">
-                          <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-                            <div className="space-y-1.5 p-3">
-                              <KV label="WO No." value={wo.woNumber} />
-                              <KV label="Job No." value={wo.jobNo || "—"} />
-                              <KV label="Project Code" value={wo.projectCode} />
-                              <KV label="Quotation" value={wo.quotationRef || "—"} />
-                            </div>
-                            <div className="space-y-1.5 p-3">
-                              <KV label="Client" value={wo.clientName} />
-                              <KV label="Sales" value={wo.sales || "—"} />
-                              <KV label="Project I/C" value={wo.projectIc || "—"} />
-                              <KV label="Contact" value={wo.contactPerson || "—"} />
-                            </div>
-                            <div className="space-y-1.5 p-3">
-                              <KV label="Start Date" value={wo.startDate || "—"} />
-                              <KV label="Issue Date" value={wo.issueDate || "—"} />
-                              <KV label="Site Contact" value={wo.siteContact ? `${wo.siteContact}${wo.siteContactNumber ? ` (${wo.siteContactNumber})` : ""}` : "—"} />
-                              <KV label="Total" value={`${sets} sets`} />
-                            </div>
-                          </div>
-                          {(wo.siteAddress || wo.remarks) && (
-                            <div className="space-y-1.5 border-t border-border bg-secondary/30 p-3">
-                              {wo.siteAddress && <KV label="Site Address" value={wo.siteAddress} />}
-                              {wo.remarks && <KV label="Remarks" value={wo.remarks} />}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex justify-end gap-1.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); exportWOTemplateExcel(wo); }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
-                          >
-                            <FileSpreadsheet className="h-3.5 w-3.5 text-success" /> Download WO
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); printWO(wo); }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
-                          >
-                            <Printer className="h-3.5 w-3.5" /> Print works order
-                          </button>
-                        </div>
-                        {wo.areas.map((area) => (
-                          <div key={area.id} className="rounded-lg border border-border bg-card overflow-hidden">
-                            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border">
-                              <span className="flex items-center gap-1.5 text-sm font-medium text-card-foreground">
-                                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                                {area.areaName}
-                                {area.ralColour && (
-                                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{area.ralColour}</span>
-                                )}
-                              </span>
-                              {area.areaSqm != null && (
-                                <span className="text-xs text-muted-foreground">{area.areaSqm.toLocaleString()} m²</span>
-                              )}
-                            </div>
-                            <table className="w-full text-sm">
-                              <tbody className="divide-y divide-border">
-                                {area.lines.map((l) => {
-                                  const child = !!l.parentLineId;
-                                  const qty = l.isMixComponent
-                                    ? null
-                                    : l.orderQty != null && l.orderQty !== l.requiredQty
-                                      ? `${l.orderQty} ${l.qtyUnit} (req ${l.requiredQty ?? "—"})`
-                                      : `${l.requiredQty ?? "—"} ${l.qtyUnit}`;
-                                  return (
-                                  <tr key={l.id} className={child ? "bg-secondary/20" : undefined}>
-                                    <td className={`py-1.5 text-card-foreground ${child ? "pl-6 pr-3 text-xs text-muted-foreground" : "px-3"}`}>{child ? "↳ " : ""}{l.description}</td>
-                                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
-                                      {l.dosage != null ? `${l.dosage} ${l.dosageUnit}` : ""}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-xs text-muted-foreground text-right whitespace-nowrap">
-                                      {l.packingSize != null ? `${l.packingSize} ${l.packingUnit}` : ""}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right font-semibold text-card-foreground whitespace-nowrap">
-                                      {l.isMixComponent ? <span className="text-xs font-normal text-muted-foreground">mix</span> : qty}
-                                    </td>
-                                  </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-medium text-card-foreground">{sets} sets</span>
+                      <StatusBadge status={wo.status.replace(/_/g, "-")} />
+                    </div>
                   </div>
                 );
               })}
