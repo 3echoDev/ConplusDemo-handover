@@ -529,7 +529,7 @@ function DetailModal({ detail, onClose }: { detail: Detail; onClose: () => void 
     };
   }, [onClose]);
 
-  const wide = detail.type === "po" || detail.type === "project" || detail.type === "wo";
+  const wide = detail.type === "po" || detail.type === "project" || detail.type === "wo" || detail.type === "claim";
   const headStatus =
     detail.type === "wo" ? detail.item.status.replace(/_/g, "-") : detail.item.status;
 
@@ -819,54 +819,75 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
   const shortfall = certified != null ? claim.amount - certified : null;
 
   if (!editing) {
+    const totalAmt = claim.totalAmount != null ? claim.totalAmount : claim.amount + (claim.gst ?? 0);
     return (
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {isInvoice ? "Conplus Invoice" : "Progress Claim"}
-            </span>
+      <div className="space-y-4">
+        {/* Header block — 3 columns matching PO/WO style */}
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="space-y-1.5 p-3">
+              <KV label="Claim No" value={claim.claimNo != null ? String(claim.claimNo) : claim.claimNumber} />
+              <KV label="Project" value={claim.projectName} />
+              <KV label="Project Code" value={claim.projectCode || "—"} />
+              <KV label="Description" value={claim.description || "—"} />
+            </div>
+            <div className="space-y-1.5 p-3">
+              <KV label="Client" value={clientName} />
+              <KV label="Contact" value={contact} />
+              <KV label="Contact No" value={claim.contactNumber || "—"} />
+              <KV label="Payment Terms" value={claim.paymentTerms || "—"} />
+            </div>
+            <div className="space-y-1.5 p-3">
+              <KV label="Submitted" value={claim.submittedDate} />
+              <KV label="Certified Date" value={claim.certifiedDate ?? "—"} />
+              <KV label="Paid Date" value={claim.paidDate ?? "—"} />
+              <KV label="PO / WO / DO" value={[claim.poRef, claim.woRef, claim.doRef].filter(Boolean).join(" · ") || "—"} />
+            </div>
           </div>
-          <Field label="Client Name" value={clientName} />
-          <Field label="Project Code" value={claim.projectCode || "—"} />
-          <div className="col-span-2"><Field label="Client Address" value={clientAddress} /></div>
-          <Field label="Contact" value={contact} />
-          <Field label="Contact No" value={claim.contactNumber || project?.contactPerson ? claim.contactNumber || "—" : "—"} />
-          <Field label="Project" value={claim.projectName} />
-          <Field label="Claim No" value={claim.claimNo != null ? String(claim.claimNo) : "—"} />
-          <Field label="Total Claim" value={claim.totalClaim != null ? formatCurrency(claim.totalClaim) : "—"} />
-          <Field label="Claim Amount" value={formatCurrency(claim.amount)} />
-          <Field label="Certified Amount" value={certified != null ? formatCurrency(certified) : "—"} />
-          <Field label="Submitted" value={claim.submittedDate} />
-          <Field label="Certified" value={claim.certifiedDate ?? "—"} />
-          <Field label="Paid" value={claim.paidDate ?? "—"} />
-          <Field label="Amount before GST" value={formatCurrency(claim.amount)} />
-          <Field label="GST (9%)" value={claim.gst != null ? formatCurrency(claim.gst) : "—"} />
-          <Field label="Total Amount" value={claim.totalAmount != null ? formatCurrency(claim.totalAmount) : formatCurrency(claim.amount + (claim.gst ?? 0))} />
-          <Field label="Payment Terms" value={claim.paymentTerms || "—"} />
-          <Field label="PO No" value={claim.poRef || "—"} />
-          <Field label="WO No" value={claim.woRef || "—"} />
-          <Field label="DO No" value={claim.doRef || "—"} />
-          <div className="col-span-2">
-            <Field label="Description" value={claim.description || "—"} />
-          </div>
-          {claim.remarks && (
-            <div className="col-span-2">
-              <Field label="Remarks" value={claim.remarks} />
+          {clientAddress !== "—" && (
+            <div className="border-t border-border bg-secondary/30 p-3">
+              <KV label="Client Address" value={clientAddress} />
             </div>
           )}
         </div>
+
+        {/* Financial totals ladder */}
+        <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
+          {claim.totalClaim != null && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Total Claim</span><span className="tabular-nums">{formatCurrency(claim.totalClaim)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-muted-foreground">
+            <span>Claim Amount</span><span className="tabular-nums">{formatCurrency(claim.amount)}</span>
+          </div>
+          {certified != null && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Certified</span><span className="tabular-nums">{formatCurrency(certified)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-muted-foreground">
+            <span>GST (9%)</span><span className="tabular-nums">{claim.gst != null ? formatCurrency(claim.gst) : "—"}</span>
+          </div>
+          <div className="flex justify-between border-t border-border pt-1 font-heading text-base font-bold text-card-foreground">
+            <span>Total Amount</span><span className="tabular-nums">{formatCurrency(totalAmt)}</span>
+          </div>
+        </div>
+
+        {/* Shortfall warning */}
         {shortfall != null && shortfall > 0 && (
           <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-card-foreground">
             Certified {formatCurrency(certified!)} against {formatCurrency(claim.amount)} claimed —
             <b> {formatCurrency(shortfall)} short.</b>
           </div>
         )}
+
+        {/* Line items table */}
         {lines.length > 0 && (
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-secondary/40 text-muted-foreground">
+                <tr className="bg-secondary/50 text-muted-foreground">
                   <th className="px-2 py-1.5 text-left font-medium">Description</th>
                   <th className="px-2 py-1.5 text-right font-medium">Prev</th>
                   <th className="px-2 py-1.5 text-right font-medium">Curr</th>
@@ -888,10 +909,10 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
                       {secLines.map((l) => (
                         <tr key={l.id} className="border-t border-border/60">
                           <td className="px-2 py-1.5 text-card-foreground">{l.description}</td>
-                          <td className="px-2 py-1.5 text-right text-muted-foreground">{l.prevAmount != null ? formatCurrency(l.prevAmount) : "—"}</td>
-                          <td className="px-2 py-1.5 text-right text-muted-foreground">{l.currAmount != null ? formatCurrency(l.currAmount) : "—"}</td>
-                          <td className="px-2 py-1.5 text-right font-medium text-card-foreground">{l.cumAmount != null ? formatCurrency(l.cumAmount) : "—"}</td>
-                          <td className="px-2 py-1.5 text-right text-card-foreground">{l.verifiedAmount != null ? formatCurrency(l.verifiedAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-muted-foreground tabular-nums">{l.prevAmount != null ? formatCurrency(l.prevAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-muted-foreground tabular-nums">{l.currAmount != null ? formatCurrency(l.currAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right font-medium text-card-foreground tabular-nums">{l.cumAmount != null ? formatCurrency(l.cumAmount) : "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-card-foreground tabular-nums">{l.verifiedAmount != null ? formatCurrency(l.verifiedAmount) : "—"}</td>
                         </tr>
                       ))}
                     </Fragment>
@@ -901,26 +922,35 @@ function ClaimDetailBody({ claim }: { claim: Claim }) {
             </table>
           </div>
         )}
-        <div className="flex gap-1.5">
+
+        {claim.remarks && (
+          <div className="rounded-lg border border-border bg-secondary/20 p-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Remarks</p>
+            <p className="text-xs text-card-foreground">{claim.remarks}</p>
+          </div>
+        )}
+
+        {/* Action buttons — same style as PO/WO */}
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
+          >
+            Edit
+          </button>
           <button
             onClick={() => exportClaimToExcel(claimWithLines, docCtx)}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
           >
-            Excel
+            <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
           </button>
           <button
             onClick={() => printClaim(claimWithLines, docCtx)}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
           >
-            Print claim
+            <Printer className="h-4 w-4" /> Print / PDF
           </button>
         </div>
-        <button
-          onClick={() => setEditing(true)}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
-        >
-          Edit
-        </button>
         <ActivityLog recordId={claim.id} />
       </div>
     );
