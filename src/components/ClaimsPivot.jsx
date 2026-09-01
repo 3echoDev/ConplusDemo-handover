@@ -197,7 +197,7 @@ export default function ClaimsPivot() {
           supabase
             .from("claims")
             .select(
-              "claim_no, claim_date, amount, certified_amount, retention_amount, status, contact_person, contact_number, " +
+              "id, claim_no, claim_date, amount, certified_amount, retention_amount, status, contact_person, contact_number, " +
                 "projects!inner(id, project_code, name, client_name, contract_value, total_contract_value, vo_value, sales_manager, status, work_type_code)"
             )
             .order("claim_date", { ascending: true }),
@@ -209,6 +209,7 @@ export default function ClaimsPivot() {
         if (summaryRes.error) throw summaryRes.error;
 
         const flat = (claimsRes.data || []).map((c) => ({
+          id: c.id,
           claim_no: c.claim_no,
           claim_date: c.claim_date,
           amount: c.amount == null ? null : Number(c.amount),
@@ -445,7 +446,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
           <tr>
             <th className="cp-th-proj">Project</th>
             <th>Contract</th>
-            {months.map((m) => <th key={m} className="cp-th-month">{monthLabel(m)}</th>)}
+            {months.map((m) => <th key={m} className={`cp-th-month${m === CURRENT_MONTH ? " cp-th-current" : ""}`}>{monthLabel(m)}</th>)}
             <th className="cp-th-total">Claimed</th>
             <th className="cp-th-total">Certified</th>
             <th className="cp-th-total">To Claim</th>
@@ -503,7 +504,52 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
 // ============================================================================
 // EXPANDED DETAIL
 // ============================================================================
+// Current month key for highlighting
+const CURRENT_MONTH = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+})();
+
 function ClaimDetail({ project }) {
+  const [editIdx, setEditIdx] = useState(null);
+  const [editDraft, setEditDraft] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (i, c) => {
+    setEditIdx(i);
+    setEditDraft({
+      certified_amount: c.certified ?? "",
+      retention_amount: c.retention ?? "",
+      claim_date: c.claim_date ?? "",
+      status: c.status ?? "submitted",
+    });
+  };
+
+  const saveEdit = async (c) => {
+    if (!c.id) return;
+    setSaving(true);
+    try {
+      const updates = {
+        certified_amount: editDraft.certified_amount === "" ? null : Number(editDraft.certified_amount),
+        retention_amount: editDraft.retention_amount === "" ? null : Number(editDraft.retention_amount),
+        claim_date: editDraft.claim_date || null,
+        status: editDraft.status,
+      };
+      const { error } = await supabase.from("claims").update(updates).eq("id", c.id);
+      if (error) { alert("Save failed: " + error.message); return; }
+      // Reflect locally
+      Object.assign(c, {
+        certified: updates.certified_amount,
+        retention: updates.retention_amount ?? 0,
+        claim_date: updates.claim_date,
+        status: updates.status,
+      });
+      setEditIdx(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="cp-detail">
       <div className="cp-detail-head">
@@ -569,17 +615,47 @@ function ClaimDetail({ project }) {
             <th className="r">Bal (+Ret)</th>
             <th className="r">Balance</th>
             <th>Status</th>
+            <th style={{ width: 60 }}></th>
           </tr>
         </thead>
         <tbody>
           {project.claims.map((c, i) => {
-            // Balance = Claim Amount − Certified; Bal (+Ret) = Claim Amount + Retention − Certified
             const cert = c.certified ?? 0;
             const amt = c.amount ?? 0;
             const balance = c.amount != null && c.certified != null ? amt - cert : null;
             const balanceRet = c.amount != null && c.certified != null ? amt + c.retention - cert : null;
+            const isCurrentMonth = monthKey(c.claim_date) === CURRENT_MONTH;
+            const isEditing = editIdx === i;
+
+            if (isEditing) {
+              const inp = { border: "1px solid var(--border-lt)", borderRadius: 4, padding: "3px 6px", fontSize: 12, width: "100%" };
+              return (
+                <tr key={i} style={{ background: "var(--bg-accent, #FFFBEB)" }}>
+                  <td>#{c.claim_no ?? "\u2014"}</td>
+                  <td><input type="date" style={inp} value={editDraft.claim_date} onChange={(e) => setEditDraft({ ...editDraft, claim_date: e.target.value })} /></td>
+                  <td className="r">{fmtFull(c.amount)}</td>
+                  <td className="r"><input type="number" step="0.01" style={{ ...inp, textAlign: "right" }} value={editDraft.retention_amount} onChange={(e) => setEditDraft({ ...editDraft, retention_amount: e.target.value })} /></td>
+                  <td className="r"><input type="number" step="0.01" style={{ ...inp, textAlign: "right" }} value={editDraft.certified_amount} onChange={(e) => setEditDraft({ ...editDraft, certified_amount: e.target.value })} /></td>
+                  <td colSpan={2}></td>
+                  <td>
+                    <select style={inp} value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
+                      <option value="submitted">submitted</option>
+                      <option value="certified">certified</option>
+                      <option value="paid">paid</option>
+                      <option value="pending">pending</option>
+                      <option value="rejected">rejected</option>
+                    </select>
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="cp-edit-btn" disabled={saving} onClick={() => saveEdit(c)}>{saving ? "…" : "Save"}</button>
+                    <button className="cp-edit-btn cp-edit-cancel" onClick={() => setEditIdx(null)}>✕</button>
+                  </td>
+                </tr>
+              );
+            }
+
             return (
-              <tr key={i}>
+              <tr key={i} className={isCurrentMonth ? "cp-row-current" : ""}>
                 <td>#{c.claim_no ?? "\u2014"}</td>
                 <td>{monthLabel(monthKey(c.claim_date))}</td>
                 <td className="r">{fmtFull(c.amount)}</td>
@@ -592,6 +668,7 @@ function ClaimDetail({ project }) {
                   {balance == null ? "\u2014" : fmtFull(balance)}
                 </td>
                 <td><span className={`cp-pill cp-pill-${c.status}`}>{c.status}</span></td>
+                <td><button className="cp-edit-btn" onClick={() => startEdit(i, c)}>Edit</button></td>
               </tr>
             );
           })}
@@ -1876,6 +1953,20 @@ const CSS = `
 .cp-pill-pending { background: var(--border-lt); color: var(--fg3); }
 .cp-pill-rejected { background: var(--red-50, #fde8e8); color: var(--red, #c0392b); }
 .cp-pill-paid { background: var(--green-50); color: var(--green-ink); }
+
+/* Current month highlight */
+.cp-th-current { background: #FFF7ED !important; color: #EA580C; font-weight: 700; border-bottom: 2px solid #F97316; }
+.cp-row-current { background: #FFFBF5; }
+
+/* Inline edit buttons */
+.cp-edit-btn {
+  display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border-lt); border-radius: 4px; background: var(--surface);
+  cursor: pointer; transition: background 0.15s; color: var(--ink-2, #475569);
+}
+.cp-edit-btn:hover { background: var(--bg-hover, #F1F5F9); }
+.cp-edit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-edit-cancel { margin-left: 4px; border: none; background: transparent; color: var(--ink-muted, #94A3B8); }
 
 /* Reconciliation footer */
 .cp-recon {

@@ -1177,12 +1177,13 @@ function PipelineCell({
     <button
       onClick={onClick}
       title={active ? "Showing this status — click to clear" : `Show only ${label}`}
-      className={`p-4 text-center transition-colors ${
-        active ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "hover:bg-secondary/50"
+      className={`relative p-4 text-center transition-colors duration-150 ${
+        active ? "bg-primary/[0.06]" : "hover:bg-secondary/50"
       }`}
     >
-      <p className={`text-2xl font-heading font-bold ${active ? "text-primary" : "text-card-foreground"}`}>{count}</p>
-      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-1">{label}</p>
+      {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />}
+      <p className={`text-2xl font-heading font-bold tabular-nums tracking-tight ${active ? "text-primary" : "text-card-foreground"}`}>{count}</p>
+      <p className={`text-[10px] font-medium uppercase tracking-wider mt-1 ${active ? "text-primary" : "text-muted-foreground"}`}>{label}</p>
     </button>
   );
 }
@@ -1190,9 +1191,9 @@ function PipelineCell({
 function Section({ title, icon, children, className, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card shadow-sm", className)}>
-      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border">
-        <span className="text-primary">{icon}</span>
-        <h2 className="text-sm font-heading font-semibold text-card-foreground flex-1">{title}</h2>
+      <div className="flex flex-wrap items-center gap-2.5 p-4 border-b border-border">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+        <h2 className="text-sm font-heading font-semibold tracking-tight text-card-foreground flex-1">{title}</h2>
         {action}
       </div>
       {children}
@@ -1224,8 +1225,8 @@ const KPI_TONES: Record<string, string> = {
   blue: "#2563EB",
 };
 
-function Kpi({ label, value, sub, onClick, active, tone = "slate" }: {
-  label: string; value: string | number; sub?: string; onClick?: () => void; active?: boolean; tone?: keyof typeof KPI_TONES;
+function Kpi({ label, value, sub, onClick, active, tone = "slate", delay = 0 }: {
+  label: string; value: string | number; sub?: string; onClick?: () => void; active?: boolean; tone?: keyof typeof KPI_TONES; delay?: number;
 }) {
   const Tag = (onClick ? "button" : "div") as "button";
   const bar = KPI_TONES[tone] ?? KPI_TONES.slate;
@@ -1233,17 +1234,14 @@ function Kpi({ label, value, sub, onClick, active, tone = "slate" }: {
     <Tag
       onClick={onClick}
       title={onClick ? `View ${label.toLowerCase()}` : undefined}
-      className={`group relative overflow-hidden rounded-xl border bg-card p-4 pl-5 shadow-sm w-full text-left transition-colors ${
+      className={`lv-rise group relative overflow-hidden rounded-xl border bg-card p-4 pl-5 shadow-sm w-full text-left transition-[border-color,box-shadow,transform] duration-150 ease-out ${
         active ? "bg-secondary/50" : "border-border"
-      } ${onClick ? "hover:border-primary/40 hover:bg-secondary/40 cursor-pointer active:scale-[0.99]" : ""}`}
-      style={active ? { borderColor: CTA } : undefined}
+      } ${onClick ? "hover:border-primary/40 hover:shadow-md cursor-pointer active:scale-[0.98]" : ""}`}
+      style={{ animationDelay: `${delay}ms`, ...(active ? { borderColor: CTA } : {}) }}
     >
-      <span
-        className="absolute left-0 top-0 h-full w-1 transition-[width] duration-200 ease-out group-hover:w-1.5"
-        style={{ backgroundColor: bar, opacity: active ? 1 : 0.7 }}
-      />
+      <span className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: bar }} />
       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-      <p className="text-2xl font-heading font-bold text-card-foreground mt-1 tabular-nums">{value}</p>
+      <p className="text-2xl font-heading font-bold text-card-foreground mt-1 tabular-nums tracking-tight">{value}</p>
       {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
     </Tag>
   );
@@ -1357,69 +1355,40 @@ export default function LiveViewPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
         <span className="absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: CTA }} />
-        <div className="mx-auto max-w-7xl px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mx-auto max-w-7xl px-6 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg text-white" style={{ backgroundColor: CTA }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white shadow-sm" style={{ backgroundColor: CTA }}>
               <Building2 className="h-5 w-5" />
             </div>
-            <div>
-              <h1 className="font-heading text-base font-bold text-foreground tracking-tight">CONPLUS Resources — Live Operations</h1>
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3 w-3" style={{ color: CTA }} />
-                Operations run by talking to Claude · this view updates automatically
-              </p>
+            <div className="leading-tight">
+              <h1 className="font-heading text-[15px] font-bold text-foreground tracking-tight">CONPLUS Resources</h1>
+              <p className="text-[11px] text-muted-foreground">Live Operations · run by talking to Claude</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <a
-              href="/pivot-summary"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Briefcase className="h-3.5 w-3.5 text-primary" />
-              Summary
-            </a>
-            <a
-              href="/claims"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
-              Claims sheet
-            </a>
-            <a
-              href="/loa-review"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <FileCheck2 className="h-3.5 w-3.5 text-primary" />
-              LOA Review
-            </a>
-            <a
-              href="/store"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Package className="h-3.5 w-3.5 text-primary" />
-              Store
-            </a>
-            <a
-              href="/store/health"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Activity className="h-3.5 w-3.5 text-primary" />
-              Store Health
-            </a>
-            <a
-              href="/store/deliveries"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Truck className="h-3.5 w-3.5 text-primary" />
-              Deliveries
-            </a>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success" />
-              </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <nav className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-secondary/60 p-0.5">
+              {[
+                { href: "/pivot-summary", label: "Summary", Icon: Briefcase },
+                { href: "/claims", label: "Claims", Icon: FileSpreadsheet },
+                { href: "/loa-review", label: "LOA Review", Icon: FileCheck2 },
+                { href: "/store", label: "Store", Icon: Package },
+                { href: "/store/health", label: "Store Health", Icon: Activity },
+                { href: "/store/deliveries", label: "Deliveries", Icon: Truck },
+              ].map(({ href, label, Icon }) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground hover:shadow-sm"
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </a>
+              ))}
+            </nav>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2.5 py-1 text-[11px] font-medium text-success">
+              <span className="lv-pulse h-1.5 w-1.5 rounded-full bg-success" />
               LIVE · synced {lastSyncedAt > 0 ? timeAgo(new Date(lastSyncedAt).toISOString()) : "..."}
             </div>
           </div>
@@ -1435,28 +1404,40 @@ export default function LiveViewPage() {
 
         {/* Claude command strip — operations are driven by talking to Claude.
             Deep-links the prompt into claude.ai (subscription, not the API). */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-          <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: CTA }}>Claude-driven operations</p>
-          <h2 className="mt-1 font-heading text-lg font-semibold text-foreground">What do you need done today?</h2>
+        <div className="lv-rise relative overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 shadow-lg">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-28 right-8 h-72 w-72 rounded-full opacity-[0.16] blur-3xl"
+            style={{ backgroundColor: CTA }}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -bottom-32 -left-16 h-64 w-64 rounded-full bg-blue-500 opacity-[0.08] blur-3xl"
+          />
+          <p className="relative flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            Claude-driven operations
+          </p>
+          <h2 className="relative mt-1.5 font-heading text-2xl font-bold tracking-tight text-white">What do you need done today?</h2>
           <form
-            className="mt-3 flex items-center gap-2"
+            className="relative mt-4 flex items-center gap-2"
             onSubmit={(e) => { e.preventDefault(); askClaude(claudePrompt); }}
           >
             <div className="relative flex-1">
-              <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Sparkles className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
                 value={claudePrompt}
                 onChange={(e) => setClaudePrompt(e.target.value)}
                 placeholder="e.g. Draft a PO for the outstanding EP-100 primer on WO 24054.1R1"
                 aria-label="Ask Claude"
-                className="w-full rounded-lg border border-input bg-background py-2.5 pl-10 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.06] py-3 pl-10 pr-3 text-sm text-white placeholder:text-slate-500 transition-colors duration-150 focus:border-transparent focus:outline-none focus:ring-2"
                 style={{ ["--tw-ring-color" as string]: CTA }}
               />
             </div>
             <button
               type="submit"
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors active:scale-[0.98]"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-md transition-[background-color,transform] duration-150 ease-out active:scale-[0.97]"
               style={{ backgroundColor: CTA }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = CTA_HOVER)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = CTA)}
@@ -1464,7 +1445,7 @@ export default function LiveViewPage() {
               <Send className="h-4 w-4" /> Send
             </button>
           </form>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="relative mt-4 flex flex-wrap gap-2">
             {[
               "Show POs awaiting my approval",
               "Which claims are outstanding and overdue?",
@@ -1474,7 +1455,7 @@ export default function LiveViewPage() {
               <button
                 key={chip}
                 onClick={() => askClaude(chip)}
-                className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-primary/40"
+                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors duration-150 hover:border-white/25 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
               >
                 {chip}
               </button>
