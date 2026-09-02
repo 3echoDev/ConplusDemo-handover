@@ -878,26 +878,11 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [chip, setChip] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
   const [detailMap, setDetailMap] = useState({}); // claim_id -> { history, hold }
-  const [emailSet, setEmailSet] = useState(() => new Set()); // claim_ids with a saved email_to for this clock
+  const [emailDraft, setEmailDraft] = useState({}); // project_id -> in-progress email input (before save)
+  const [savingEmail, setSavingEmail] = useState(null); // project_id currently saving
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
   const rows = chaseTab === "certificate" ? certRows : payRows;
-
-  // Which claims already have a recipient email saved on a prior reminder for
-  // this clock — lets the collapsed card show an "email on file" chip without
-  // opening the claim. No schema change: read chase_reminders.email_to.
-  useEffect(() => {
-    let alive = true;
-    supabase
-      .from("chase_reminders")
-      .select("claim_id")
-      .eq("clock", clock)
-      .not("email_to", "is", null)
-      .then(({ data }) => {
-        if (alive) setEmailSet(new Set((data || []).map((r) => r.claim_id)));
-      });
-    return () => { alive = false; };
-  }, [clock, rows]);
 
   const isCertOverdue = (row) => row.stage === "overdue";
   const isPayOverdue = (row) => ["final", "2nd", "soa_overdue"].includes(row.stage);
@@ -915,7 +900,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
         p_clock: clock,
         p_decision: "proceed",
         p_stage: row.stage,
-        p_email_to: row.contact_person || null,
+        p_email_to: row.contact_email || null,
         p_email_subject: subject,
         p_email_body: body,
         p_created_by: null,
@@ -930,15 +915,19 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   };
 
   // Send the reminder email now via the n8n webhook (server re-checks the claim
-  // is still actionable, sends, and logs the reminder). Recipient is currently
-  // a fixed test inbox until per-claim email routing is wired.
+  // is still actionable, sends, and logs the reminder). The recipient comes from
+  // the project's contact_email and is passed to the webhook as `to`.
   const handleSend = async (row) => {
+    if (!row.contact_email) { showFeedback("Add a recipient email first."); return; }
     setSendingId(row.claim_id);
     try {
-      const res = await fetch(`${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}`, {
-        method: "POST",
-        headers: { "X-Chase-Token": SEND_CHASE_TOKEN },
-      });
+      const res = await fetch(
+        `${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}&to=${encodeURIComponent(row.contact_email)}`,
+        {
+          method: "POST",
+          headers: { "X-Chase-Token": SEND_CHASE_TOKEN },
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (data.ok) showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`);
       else showFeedback("Send failed: " + (data.reason || `HTTP ${res.status}`));
@@ -954,7 +943,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
         p_clock: clock,
         p_decision: "ignore",
         p_stage: row.stage,
-        p_email_to: row.contact_person || null,
+        p_email_to: row.contact_email || null,
         p_email_subject: subject,
         p_email_body: body,
         p_created_by: null,
@@ -997,6 +986,25 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
       if (error) { showFeedback("Error: " + error.message); }
       else { showFeedback(`${field.replace("_", " ")} recorded.`); }
     } catch (e) { showFeedback("Error: " + e.message); }
+    await onRefresh();
+  };
+
+  // Save a recipient email onto the project (email lives on projects, not claims).
+  // Once saved it locks in — the card shows it read-only and the input disappears.
+  const handleSaveEmail = async (row) => {
+    const email = (emailDraft[row.project_id] || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showFeedback("Enter a valid email address."); return; }
+    if (!row.project_id) { showFeedback("No project linked to this claim."); return; }
+    setSavingEmail(row.project_id);
+    try {
+      const { error } = await supabase.from("projects").update({ contact_email: email }).eq("id", row.project_id);
+      if (error) { showFeedback("Error: " + error.message); }
+      else {
+        showFeedback("Recipient email saved.");
+        setEmailDraft((m) => { const n = { ...m }; delete n[row.project_id]; return n; });
+      }
+    } catch (e) { showFeedback("Error: " + e.message); }
+    setSavingEmail(null);
     await onRefresh();
   };
 
@@ -1136,17 +1144,30 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               {cleanClient(row.client_name)}
               {row.contact_person ? ` \u00B7 ${row.contact_person}` : ""}
             </div>
-            {(() => {
-              const onFile = emailSet.has(row.claim_id);
-              const hasContact = !!cleanName(row.contact_person);
-              const cls = onFile ? "on" : hasContact ? "ready" : "none";
-              const label = onFile ? "Email on file" : hasContact ? "Recipient ready" : "No email";
-              return (
-                <div className={`cpc-mailchip ${cls}`} title={onFile ? "A recipient email is saved for this chase" : hasContact ? "Contact available — no email saved yet" : "No recipient — add before sending"}>
-                  <span className="cpc-mailglyph">{"\u2709"}</span> {label}
-                </div>
-              );
-            })()}
+            {row.contact_email ? (
+              <div className="cpc-mailchip on" title="Recipient email saved on the project">
+                <span className="cpc-mailglyph">{"\u2709"}</span> {row.contact_email}
+              </div>
+            ) : (
+              <div className="cpc-mailedit">
+                <span className="cpc-mailedit-label">EMAIL:</span>
+                <input
+                  className="cpc-mailedit-input"
+                  type="email"
+                  placeholder="recipient@company.com"
+                  value={emailDraft[row.project_id] || ""}
+                  onChange={(e) => setEmailDraft((m) => ({ ...m, [row.project_id]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveEmail(row); }}
+                />
+                <button
+                  className="cpc-btn small"
+                  onClick={() => handleSaveEmail(row)}
+                  disabled={savingEmail === row.project_id}
+                >
+                  {savingEmail === row.project_id ? "Saving\u2026" : "Save"}
+                </button>
+              </div>
+            )}
             {row.notify_salesperson && row.sales_manager && (
               <div className="cpc-sales">Notify {row.sales_manager}</div>
             )}
@@ -1186,8 +1207,8 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                 <button
                   className="cpc-btn primary"
                   onClick={() => handleSend(row)}
-                  disabled={sendingId === row.claim_id}
-                  title="Send the reminder email now via n8n"
+                  disabled={sendingId === row.claim_id || !row.contact_email}
+                  title={row.contact_email ? "Send the reminder email now via n8n" : "Add a recipient email first"}
                 >
                   {sendingId === row.claim_id ? "Sending\u2026" : "Proceed & send"}
                 </button>
@@ -1310,7 +1331,8 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                 {email ? (
                   <div className="cpc-email">
                     <div className="cpc-email-head">
-                      <div><strong>To:</strong> {row.contact_person || "\u2014"}</div>
+                      <div><strong>To:</strong> {row.contact_email || <span className="cp-muted">no recipient email &mdash; add one above</span>}</div>
+                      {row.contact_person ? <div><strong>Attn:</strong> {row.contact_person}</div> : null}
                     </div>
                     <div className="cpc-email-body">
                       <div className="cpc-email-subj">{email.subject}</div>
@@ -1960,13 +1982,15 @@ const CSS = `
 
 /* Inline edit buttons */
 .cp-edit-btn {
-  display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600;
-  border: 1px solid var(--border-lt); border-radius: 4px; background: var(--surface);
-  cursor: pointer; transition: background 0.15s; color: var(--ink-2, #475569);
+  display: inline-block; padding: 4px 12px; font-size: 12px; font-weight: 700;
+  border: 1px solid #F97316; border-radius: 6px; background: #FFF7ED;
+  cursor: pointer; transition: background 0.15s, transform 0.1s; color: #EA580C;
+  letter-spacing: 0.02em;
 }
-.cp-edit-btn:hover { background: var(--bg-hover, #F1F5F9); }
+.cp-edit-btn:hover { background: #FFEDD5; transform: translateY(-1px); }
+.cp-edit-btn:active { transform: scale(0.97); }
 .cp-edit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.cp-edit-cancel { margin-left: 4px; border: none; background: transparent; color: var(--ink-muted, #94A3B8); }
+.cp-edit-cancel { margin-left: 6px; border: 1px solid var(--border-lt); background: var(--surface); color: var(--ink-muted, #94A3B8); }
 
 /* Reconciliation footer */
 .cp-recon {
@@ -2626,6 +2650,11 @@ const CSS = `
 .cpc-mailchip.on { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
 .cpc-mailchip.ready { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
 .cpc-mailchip.none { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+.cpc-mailedit { display:inline-flex; align-items:center; gap:6px; margin-top:6px; flex-wrap:wrap; padding:6px 10px; background:#FFF7ED; border:1px dashed #F97316; border-radius:8px; }
+.cpc-mailedit-label { font-size:11px; font-weight:700; letter-spacing:0.03em; color:#EA580C; }
+.cpc-mailedit-input { font-size:12px; padding:4px 10px; border:1px solid #FDBA74; border-radius:6px; min-width:200px; background:#fff; color:#111827; }
+.cpc-mailedit-input:focus { outline:none; border-color:#F97316; box-shadow:0 0 0 2px rgba(249,115,22,0.2); }
+.cpc-mailedit-input::placeholder { color:#9CA3AF; }
 
 .cpc-strip { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .cpc-strip-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
