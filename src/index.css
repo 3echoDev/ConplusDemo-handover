@@ -122,6 +122,55 @@
   }
 }
 
+/* Live View entrance + status motion (scoped, respects reduced motion) */
+@layer utilities {
+  .lv-rise {
+    animation: lv-rise 0.45s cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  .lv-pulse {
+    animation: lv-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@keyframes lv-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lv-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes lv-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv-rise {
+    animation: lv-fade 0.2s ease both;
+  }
+  .lv-pulse {
+    animation: none;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

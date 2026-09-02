@@ -1465,12 +1465,12 @@ export default function LiveViewPage() {
 
         {/* KPI strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <Kpi tone="slate" label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
-          <Kpi tone="blue" label="Contract Value" value={compactCurrency(contractValue)} />
-          <Kpi tone="orange" label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
-          <Kpi tone="red" label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
-          <Kpi tone="amber" label="Outstanding Claims" value={compactCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
-          <Kpi tone="green" label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
+          <Kpi tone="slate" delay={0} label="Active Projects" value={activeProjects.length} sub={`${projects.length} total`} />
+          <Kpi tone="blue" delay={40} label="Contract Value" value={compactCurrency(contractValue)} />
+          <Kpi tone="orange" delay={80} label="POs Awaiting Action" value={pendingPOs.length} sub={`${purchaseOrders.length} total`} active={poStatus === "pending"} onClick={() => { setPoStatus("pending"); }} />
+          <Kpi tone="red" delay={120} label="Stock Issues" value={stockIssues} sub={`${stockCounts.out} out · ${stockCounts.critical} critical · ${stockCounts.low} low`} />
+          <Kpi tone="amber" delay={160} label="Outstanding Claims" value={compactCurrency(outstandingClaims)} sub={`${claims.length} claims`} active={claimFilter === "outstanding"} onClick={() => { setClaimFilter(claimFilter === "outstanding" ? "all" : "outstanding"); }} />
+          <Kpi tone="green" delay={200} label="Open Invoices" value={unpaidInvoices} sub={`${invoices.length} on record`} active={invFilter === "open"} onClick={() => { setInvFilter(invFilter === "open" ? "all" : "open"); }} />
         </div>
 
         {/* Works Orders — what each job needs, before anything is ordered */}
