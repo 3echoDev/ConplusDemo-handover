@@ -101,6 +101,7 @@ export interface PORow {
   vendor_quotation_ref?: string | null;
   attn_name?: string | null;
   delivery_charge?: number | null;
+  discount_amount?: number | null;
   vendor_code?: string | null;
   project_pic?: string | null;
   created_date: string | null;
@@ -462,6 +463,7 @@ export function mapPO(
     vendorQuotationRef: row.vendor_quotation_ref ?? "",
     attnName: row.attn_name ?? "",
     deliveryCharge: row.delivery_charge ?? 0,
+    discountAmount: row.discount_amount ?? 0,
     vendorCode: row.vendor_code ?? "",
     projectPic: row.project_pic ?? "",
     deliveryAddress: delivery?.address ?? "",

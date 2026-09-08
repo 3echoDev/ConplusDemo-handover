@@ -92,9 +92,10 @@ function PODetailBody({ po }: { po: PurchaseOrder }) {
   const lineAmount = (i: PurchaseOrder["items"][number]) => i.qty * (i.unitPrice - (i.discPerUnit ?? 0));
   const hasItems = po.items.length > 0;
   const subtotal = hasItems ? po.items.reduce((s, i) => s + lineAmount(i), 0) : po.amount;
-  const discount = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
+  const lineDisc = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
   const delivery = po.deliveryCharge ?? 0;
-  const total = subtotal + delivery;
+  const discountAmount = po.discountAmount ?? 0;
+  const total = subtotal + delivery - discountAmount;
   const gst = hasItems ? Math.round(total * 0.09 * 100) / 100 : po.gst;
   const grand = total + gst;
 
@@ -184,9 +185,9 @@ function PODetailBody({ po }: { po: PurchaseOrder }) {
         <div className="flex justify-between text-muted-foreground">
           <span>Subtotal</span><span className="tabular-nums">{formatCurrency(subtotal)}</span>
         </div>
-        {discount > 0 && (
+        {lineDisc > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Discount</span><span className="tabular-nums">−{formatCurrency(discount)}</span>
+            <span>Line Disc.</span><span className="tabular-nums">−{formatCurrency(lineDisc)}</span>
           </div>
         )}
         {delivery > 0 && (
@@ -194,6 +195,10 @@ function PODetailBody({ po }: { po: PurchaseOrder }) {
             <span>Delivery</span><span className="tabular-nums">{formatCurrency(delivery)}</span>
           </div>
         )}
+        <div className="flex justify-between text-muted-foreground">
+          <span>Discount</span>
+          <span className="tabular-nums">{discountAmount > 0 ? `−${formatCurrency(discountAmount)}` : "$ -"}</span>
+        </div>
         <div className="flex justify-between text-muted-foreground">
           <span>Total</span><span className="tabular-nums">{formatCurrency(total)}</span>
         </div>

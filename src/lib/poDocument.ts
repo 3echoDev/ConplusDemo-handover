@@ -41,12 +41,15 @@ const lineAmount = (i: POItem) => i.qty * (i.unitPrice - (i.discPerUnit ?? 0));
 function computeTotals(po: PurchaseOrder) {
   const hasItems = po.items.length > 0;
   const subtotal = hasItems ? po.items.reduce((s, i) => s + lineAmount(i), 0) : po.amount;
-  const discount = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
+  // Per-unit discount aggregate — display-only (already netted into subtotal).
+  const lineDisc = po.items.reduce((s, i) => s + i.qty * (i.discPerUnit ?? 0), 0);
   const delivery = po.deliveryCharge ?? 0;
-  const total = subtotal + delivery;
+  // Lump-sum discount applied to the order total (separate from per-unit).
+  const discountAmount = po.discountAmount ?? 0;
+  const total = subtotal + delivery - discountAmount;
   const gst = hasItems ? Math.round(total * 0.09 * 100) / 100 : po.gst;
   const grand = total + gst;
-  return { subtotal, discount, delivery, total, gst, grand };
+  return { subtotal, lineDisc, delivery, discountAmount, total, gst, grand };
 }
 
 export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
@@ -182,8 +185,9 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
     </div>
     <table class="totals">
       <tr><td class="k">Subtotal</td><td class="v">${money(t.subtotal)}</td></tr>
-      <tr><td class="k">Discount</td><td class="v">${t.discount > 0 ? `−${money(t.discount)}` : "$ -"}</td></tr>
+      ${t.lineDisc > 0 ? `<tr><td class="k">Line Disc.</td><td class="v">−${money(t.lineDisc)}</td></tr>` : ""}
       ${t.delivery > 0 ? `<tr><td class="k">Delivery Charge</td><td class="v">${money(t.delivery)}</td></tr>` : ""}
+      <tr><td class="k">Discount</td><td class="v">${t.discountAmount > 0 ? `−${money(t.discountAmount)}` : "$ -"}</td></tr>
       <tr><td class="k">Total</td><td class="v">${money(t.total)}</td></tr>
       <tr><td class="k">GST 9%</td><td class="v">${money(t.gst)}</td></tr>
       <tr class="grand"><td class="k">Grand Total</td><td class="v">${money(t.grand)}</td></tr>
@@ -468,8 +472,9 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   };
   r++;
   totalRow("Subtotal", t.subtotal);
-  totalRow("Discount", t.discount, false, true);
+  if (t.lineDisc > 0) totalRow("Line Disc.", t.lineDisc, false, true);
   if (t.delivery > 0) totalRow("Delivery Charge", t.delivery);
+  totalRow("Discount", t.discountAmount, false, true);
   totalRow("Total", t.total);
   totalRow("GST 9%", t.gst);
   totalRow("Grand Total", t.grand, true);

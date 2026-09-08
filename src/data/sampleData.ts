@@ -154,6 +154,7 @@ export interface PurchaseOrder {
   vendorQuotationRef?: string;
   attnName?: string;
   deliveryCharge?: number;
+  discountAmount?: number;
   vendorCode?: string;
   projectPic?: string;
   deliveryAddress?: string;
