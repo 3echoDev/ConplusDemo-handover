@@ -3,6 +3,11 @@
 
 begin;
 
+-- claim_lines.unit CHECK lacked 'm' (metre), which the client's schedule uses for upturns.
+alter table public.claim_lines drop constraint if exists claim_lines_unit_check;
+alter table public.claim_lines add constraint claim_lines_unit_check
+  check (unit = any (array['m2','m','mr','lot','pc','LS','set','kg','item','no','hr']));
+
 -- CP07: canonicalise stored sales managers (trigger handles future writes).
 update projects
    set sales_manager = public.match_salesperson(sales_manager)
