@@ -1,42 +1,57 @@
 [
   {
-    "id": "CP01", "timestamp": "2026-09-11 16:05 SGT", "prev": "Open", "new": "Ready for verification",
+    "id": "CP01",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Open",
+    "new": "Closed",
     "finding": "WO line descriptions were free text with no link to the materials table, so stock checking could not resolve pasted names. Built a shared name resolver (exact → space-insensitive → separator-insensitive → candidate list) and a material picker on the Create Works Order line; a picked or exactly-matching name links works_order_lines.material_id. All 171 distinct names in Material_Inventory_Record resolve to exactly one active material (0 exceptions).",
     "change_ref": "src/lib/materialMatch.ts, src/components/MaterialPicker.tsx, src/components/CreateWODialog.tsx, src/data/db.ts (material_id on WO lines)",
     "evidence": "GATES.md CP01A/CP01B; .unlazy-checks/cp01_resolve_names.mjs (names=171 resolved=171); src/test/materialPicker.test.tsx (8 passed)",
     "test": "Resolver run against the live materials table: 171/171 resolved. Picker test: typing BBOS-1001 and picking links the material id; unknown text stays unlinked.",
-    "dependency": "Deploy to Vercel (push to main).",
-    "next": "Client to try a real WO with pasted names after deploy; report any name that does not link."
+    "dependency": "None (deployed 2026-09-11, bundle index-* after commit 716a3c9).",
+    "next": "Client to try a real WO with pasted names; reopen if any name fails to link."
   },
   {
-    "id": "CP02", "timestamp": "2026-09-11 16:05 SGT", "prev": "Open", "new": "Blocked",
-    "finding": "Approval routing today is in-app only (Store Health page, po_submit_for_approval → po_approve/po_reject RPCs; any active salesperson may approve, self-approval blocked). No email or WhatsApp notification exists. Decision 2026-09-11: WhatsApp channel deferred by Conplus/3echo; build the email leg on the 3echo n8n cloud instance with a safe-sink recipient until go-live to conplus@singnet.com.sg.",
-    "change_ref": "n8n workflow (3echo cloud) — not yet created",
-    "evidence": "GATES.md CP02A (unmet)",
-    "test": "Not run.",
-    "dependency": "n8n API key for threeecho.app.n8n.cloud was lost in the 2026-09-02 PC reset — new key needed in Desktop/Claude/.env (N8N_CONPLUS_API_KEY).",
-    "next": "Create 'Conplus — PO Approval Request' workflow (webhook from app on submit → Gmail 'Info 3echo' → recipient flag); test to muhsinsbasha@gmail.com; then flip recipient to conplus@singnet.com.sg with client go-ahead."
+    "id": "CP02",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Open",
+    "new": "Ready for verification",
+    "finding": "Approval routing was in-app only (Store Health page; po_submit_for_approval / po_approve / po_reject RPCs; self-approval blocked). No email/WhatsApp existed. WhatsApp deferred by Conplus/3echo on 2026-09-11. Built n8n workflow 'Conplus — PO Approval Request (email)' (id 1lZC1m6pufwFMXBd, active) on the 3echo cloud: app posts {po_id} when a PO is created pending → token check → PO + lines fetched → email with supplier/site/total/items and approve/reject instructions (Store Health link) → sent from 'Info 3echo'. Recipient is the handover mailbox until GO_LIVE is flipped to conplus@singnet.com.sg.",
+    "change_ref": "docs/n8n/build_po_approval.mjs; src/data/db.ts notifyPoApproval(); n8n workflow 1lZC1m6pufwFMXBd",
+    "evidence": "GATES.md CP02A (met); .unlazy-checks/cp02_n8n_po_approval.mjs",
+    "test": "Test fire 2026-09-11 17:00 SGT for pending PO 2607-0017 (Sto SEA $6,296.67) → {ok:true, sent_to: muhsinsbasha@gmail.com, go_live:false}; wrong token → HTTP 401.",
+    "dependency": "Client go-ahead to flip GO_LIVE (recipient conplus@singnet.com.sg).",
+    "next": "Conplus confirms the email wording; flip GO_LIVE; WhatsApp leg remains deferred."
   },
   {
-    "id": "CP03", "timestamp": "2026-09-11 16:05 SGT", "prev": "Open", "new": "Blocked",
-    "finding": "Chase reminders are sent by the 3echo n8n cloud workflows 'Conplus — Send Chase (front-end trigger)' and 'Conplus — TEST Send' from the 'Info 3echo' Gmail credential. claims@conplus.com.sg can be applied as Reply-To immediately; using it as the sending mailbox needs that mailbox's SMTP or Google OAuth credential from Conplus.",
-    "change_ref": "n8n Gmail nodes options.replyTo — pending",
-    "evidence": "GATES.md CP03A (unmet)",
-    "test": "Not run.",
-    "dependency": "n8n API key (as CP02); Conplus to supply claims@ mailbox credentials for send-as.",
-    "next": "Set Reply-To on both send workflows once the key is available; log the sending-mailbox dependency with the client."
+    "id": "CP03",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Open",
+    "new": "Ready for verification",
+    "finding": "Both chase send workflows ('Conplus — Send Chase (front-end trigger)' PzNbj5Syi2OYAo2j and 'Conplus — TEST Send' Wco7JZgmawSgkkMU) now carry Reply-To claims@conplus.com.sg; they still SEND from the 'Info 3echo' Gmail credential. Using claims@ as the sending mailbox needs that mailbox's SMTP or Google OAuth credential from Conplus.",
+    "change_ref": "n8n Gmail nodes options.replyTo (set via API 2026-09-11)",
+    "evidence": "GATES.md CP03A (met); .unlazy-checks/cp03_replyto.mjs",
+    "test": "API read-back: both Gmail nodes replyTo = claims@conplus.com.sg.",
+    "dependency": "Conplus to supply claims@ mailbox credentials for send-as (optional).",
+    "next": "If send-as is wanted, add the credential in n8n and re-point the two send nodes."
   },
   {
-    "id": "CP04", "timestamp": "2026-09-11 16:05 SGT", "prev": "Awaiting attachment", "new": "In progress",
-    "finding": "ConPlus_System_Requirements.xlsx received and mapped line by line: 137 requirements — 46 existing, 31 planned this round, 55 gaps, 5 clarifications. Per-line partial receipts built: RPC log_delivery_lines updates po_line_items.qty_balance, sets PO status 'partial' or closes it when all balances reach zero; view po_delivery_status; Deliveries page captures received qty per line and shows Pending / Partially Delivered / Fully Delivered. purchase_orders.status had two CHECK constraints that excluded 'partial' — migration replaces them. Reservations (Available/Reserved), scan-DO, site returns and direct-to-site movement types remain gaps.",
+    "id": "CP04",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Awaiting attachment",
+    "new": "In progress",
+    "finding": "ConPlus_System_Requirements.xlsx received and mapped line by line: 137 requirements — 46 existing, 31 planned this round, 55 gaps, 5 clarifications. Per-line partial receipts built: RPC log_delivery_lines updates po_line_items.qty_balance, sets PO status 'partial' or closes it when all balances reach zero; view po_delivery_status; Deliveries page captures received qty per line and shows Pending / Partially Delivered / Fully Delivered. purchase_orders.status had two CHECK constraints that excluded 'partial' — migration replaces them. Reservations (Available/Reserved), scan-DO, site returns and direct-to-site movement types remain gaps. Migration applied 2026-09-11; smoke test passed (60/100 → Partially Delivered, outstanding 50; +40/+10 → closed; over-receipt rejected). Applying it exposed a second defect: po_line_items.qty_balance defaulted to 0, so never-received lines read as fully delivered — default removed, init trigger added, 15 open-PO lines reset to their ordered qty.",
     "change_ref": "docs/cp04_requirements_map.json + published page https://claude.ai/code/artifact/498c394f-c19c-4a7c-b41c-5e2c708434aa; supabase/migrations/20260911_cp04_partial_receipts.sql; src/pages/DeliveriesPage.tsx",
-    "evidence": "GATES.md CP04A (met: derived=137 mapped=137), CP04B/CP04C pending migration + deploy",
+    "evidence": "GATES.md CP04A/CP04B/CP04C (all met); Desktop/Changes/evidence_2026-09-11/CP04_*.png",
     "test": "Map completeness check passes; negative control (one entry removed) fails as expected. Partial-receipt SQL smoke test (60/100 → partial, +40 → closed) documented in the migration file, to run after DDL is applied.",
-    "dependency": "Run 20260911_cp04_partial_receipts.sql in Supabase; deploy.",
-    "next": "Client to answer the 5 clarify items (PO-22, PR-30, MM-36, MM-70, MM-77); schedule reservations model as next cycle."
+    "dependency": "None for partial receipts. Reservations / scan-DO / site returns remain gaps.",
+    "next": "Client to answer the 5 clarify items (PO-22, PR-30, MM-36, MM-70, MM-77); schedule the reservations model as the next cycle."
   },
   {
-    "id": "CP05", "timestamp": "2026-09-11 16:05 SGT", "prev": "Awaiting client", "new": "Awaiting client",
+    "id": "CP05",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Awaiting client",
+    "new": "Awaiting client",
     "finding": "Dependency recorded. Target column exists: projects.payment_terms_days (integer, default 35) drives the payment chase clock via payment_chase (due = invoice_date + terms). Mapping procedure when the list arrives: match each customer to projects.client_name (case-insensitive, trimmed), UPDATE projects SET payment_terms_days = <days> per client, list unmatched names back to the client, then spot-check 5 customers in the Payment chase tab.",
     "change_ref": "—",
     "evidence": "GATES.md CP05A",
@@ -45,7 +60,10 @@
     "next": "Run the mapping on receipt; no values assumed in advance."
   },
   {
-    "id": "CP06", "timestamp": "2026-09-11 16:05 SGT", "prev": "Awaiting files", "new": "Awaiting client",
+    "id": "CP06",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Awaiting files",
+    "new": "Awaiting client",
     "finding": "One file received: Sto SEA tax invoice 7220038808 + DO 80067779 (24/07/26, PO stated as 2607-0006, $4,275.36 + GST = $4,660.14, project Leadbuild Constn – The Hill @ One North). In the system, PO 2607-0006 is a Mansor $975 draft for 810C Sengkang LRT Depot — the client's PO numbering does not match the system sequence. Files for 2608-0009 and 2609-0003 did not arrive and neither PO exists in the system. Catalogued as unmatched; no supplier_invoices row created.",
     "change_ref": "docs/cp06_evidence_register.json",
     "evidence": "GATES.md CP06A; .unlazy-checks/cp06_evidence.mjs",
@@ -54,57 +72,75 @@
     "next": "On confirmation, register the invoice against the right PO and run the delivery workflow check."
   },
   {
-    "id": "CP07", "timestamp": "2026-09-11 16:05 SGT", "prev": "Reported issue", "new": "Ready for verification",
+    "id": "CP07",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Reported issue",
+    "new": "Closed",
     "finding": "Root cause: E25077 was saved with sales manager 'Ng Wan Fern' (free text) while the canonical value is 'WAN FERN'; the management summary groups by the exact string, so E25077 formed its own group and was missing from WAN FERN's total (17 projects, $3,348,356). Its billing_status was also null, so the default WIP filter hid it. Fix: alias 'ng wan fern' added; BEFORE INSERT/UPDATE trigger normalises projects.sales_manager through match_salesperson; stored aliases canonicalised (Ng Wan Fern, Jensen, Arthur Ng); E25077 billing_status set to WIP; New Project form now offers only canonical salespeople.",
     "change_ref": "supabase/migrations/20260911_cp_audit_claims_write_path.sql, 20260911_cp_audit_data_fixes.sql; src/pages/ProjectsPage.tsx",
     "evidence": "GATES.md CP07A/CP07B; .unlazy-checks/cp07_summary.mjs, cp07_normalise.mjs",
-    "test": "After migration: E25077 under WAN FERN with contract $111,696 inside the WIP total, counted once; round-trip writing 'Ng Wan Fern' on ZZTEST reads back 'WAN FERN'.",
-    "dependency": "Run both migration files in Supabase.",
-    "next": "Re-run CP07 checks; client to refresh the management summary."
+    "test": "Live after migration: E25077 under WAN FERN, billing WIP, $111,696 inside the WAN FERN WIP total, counted once; writing \"Ng Wan Fern\" on ZZTEST reads back \"WAN FERN\"; no project stores a resolvable alias.",
+    "dependency": "None.",
+    "next": "Client to refresh the management summary and confirm."
   },
   {
-    "id": "CP08", "timestamp": "2026-09-11 16:05 SGT", "prev": "Reported issue", "new": "Ready for verification",
+    "id": "CP08",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Reported issue",
+    "new": "Closed",
     "finding": "Confirmed and reproduced: the live app runs with the anon key, and row-level security on claims allows anon SELECT only. Every direct claims.update() (PRC date, invoice date, certified $350, the inline claim editor) affected zero rows while showing a success toast — the missing invoice upload was not the cause. E25057 claim 1 still has prc_date/invoice_date/certified_amount = null. Fix: all claim writes now go through the SECURITY DEFINER update_claim RPC (allowed-field list extended); chase inputs show the persisted values; entering a PRC date shows a message explaining the claim moves to the Payment chase once an invoice date is set (by design the certificate view lists only claims without a PRC).",
     "change_ref": "src/data/db.ts, src/components/ClaimsPivot.jsx, src/pages/LiveViewPage.tsx; migration 20260911_cp_audit_claims_write_path.sql",
     "evidence": "GATES.md CP08A (met), CP08B/CP08C (after migration); .unlazy-checks/cp08_*.mjs",
-    "test": "CP08A: 97 source files scanned, 0 direct claim writes, 5 RPC call sites. CP08B round trip on the ZZTEST mock claim (prc_date, invoice_date, 350.00) to run after migration; includes a control proving a direct anon PATCH still persists nothing.",
-    "dependency": "Run migration; deploy. Client to re-enter the E25057 values once live.",
-    "next": "Re-run CP08B/CP08C; confirm with client after re-entry."
+    "test": "CP08A: 97 files scanned, 0 direct claim writes, 5 RPC call sites. CP08B live: prc_date 2026-09-11 / invoice_date 2026-09-12 / certified 350.00 persisted and read back on the mock claim, restored to null; control: a direct anon PATCH still persists nothing. CP08C: views expose prc_date/invoice_date; 4 chase inputs bound.",
+    "dependency": "None. E25057 claim 1 values must be re-entered by the client (they were never saved).",
+    "next": "Client re-enters PRC / invoice / $350 on E25057 claim 1 and confirms they stick after refresh."
   },
   {
-    "id": "CP09", "timestamp": "2026-09-11 16:05 SGT", "prev": "Clarification needed", "new": "Ready for verification",
+    "id": "CP09",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Clarification needed",
+    "new": "Closed",
     "finding": "Verified behaviour: 'Edit draft' and 'Manual' opened the same read-only preview; the only difference was the manual flag on the logged reminder. Neither allowed editing — the report was correct. Now the subject and body are editable in the modal. Definitions: Edit draft = this cycle's scheduled reminder; Manual reminder = an extra reminder outside the schedule (logged as manual, does not advance the cadence); Log as Sent = record the (edited) text as sent for this claim — use after copying into your mail client (or use 'Proceed & send' on the card to send via n8n); Skip This Cycle = record that no reminder was sent this cycle, schedule unchanged.",
     "change_ref": "src/components/ClaimsPivot.jsx (EmailPreviewModal)",
     "evidence": "GATES.md CP09A/CP09B; src/test/emailModal.test.tsx (4 passed)",
     "test": "Edited subject/body reach Log as Sent; Skip This Cycle records the unedited draft; Log as Sent disabled on empty body.",
-    "dependency": "Deploy.",
+    "dependency": "None (deployed).",
     "next": "Client to confirm the wording in the modal hint reads clearly."
   },
   {
-    "id": "CP10", "timestamp": "2026-09-11 16:05 SGT", "prev": "Awaiting master file", "new": "Ready for verification",
+    "id": "CP10",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Awaiting master file",
+    "new": "Closed",
     "finding": "Corrected master received and compared with the first AI version: differences are the merged project-site/description cells (D33:G33, D34:J35), the multi-line item descriptions (coating system per item), the work-done sub-row under each item with the yellow current-quantity input, the reference period, and the authorised signatory. The Excel export now generates the master's layout: Instructions + Cover Page & Claim Summary + Claim Details, live formulas (=E*F, SUBTOTAL, SUMIF, retention =-ROUND((F47+F48-F49)*E50,2)), yellow input cells, grey headers, shaded totals, zone header rows.",
     "change_ref": "src/lib/claimExcel.ts; src/test/fixtures/claim_master_e25077.json (generated from the corrected xlsx)",
     "evidence": "GATES.md CP10A; src/test/claimExcel.test.ts (7 passed)",
     "test": "Regenerated E25077 claim 01: sheets, 47 cover labels, 24 yellow input cells, 11 items with descriptions/qty/rate/current qty, 4 zone rows, F47=5,382.00, F50=−538.20, F55=4,843.80, F57=5,279.74 all equal the master.",
-    "dependency": "Deploy; claim lines loaded (CP11).",
+    "dependency": "None (deployed; lines loaded).",
     "next": "Client to download the regenerated claim from Live View → Claim → Excel and confirm row settings/highlighting."
   },
   {
-    "id": "CP11", "timestamp": "2026-09-11 16:05 SGT", "prev": "Reported issue", "new": "Ready for verification",
+    "id": "CP11",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Reported issue",
+    "new": "Closed",
     "finding": "Root cause: the lines were never persisted — claim_lines had zero rows for CLM-E25077-1 and the app had no write path for claim lines (and anon RLS would have blocked one). The claim itself was created with amount only. Fix: save_claim_lines RPC (atomic replace) + a line editor in the Live View claim detail; E25077 claim 01's 11 items loaded from the corrected master; submitted claims keep all lines visible.",
     "change_ref": "src/components/ClaimLinesEditor.tsx, src/pages/LiveViewPage.tsx, src/data/db.ts; migration + data-fix SQL",
     "evidence": "GATES.md CP11A/CP11B/CP11C; .unlazy-checks/cp11_lines_roundtrip.mjs, cp11_e25077_lines.mjs",
-    "test": "After migration: round trip 2 lines → 1 line → 0 on the mock claim; E25077 lines equal the master (qty, rate, current qty, zones), work done $5,382.00.",
-    "dependency": "Run both migration files; deploy; screenshot for CP11C.",
-    "next": "Re-run checks; client to open Progress Claim 01 and confirm the lines."
+    "test": "Live: save_claim_lines round trip 2 → 1 → 0 on the mock claim; E25077 lines equal the master (11 items, qty/rate/current qty/zones), work done $5,382.00; screenshot of the submitted claim showing all lines and the line editor.",
+    "dependency": "None.",
+    "next": "Client to open Progress Claim 01 and confirm the lines."
   },
   {
-    "id": "CP12", "timestamp": "2026-09-11 16:05 SGT", "prev": "Reported issue", "new": "Ready for verification",
+    "id": "CP12",
+    "timestamp": "2026-09-11 17:15 SGT",
+    "prev": "Reported issue",
+    "new": "Closed",
     "finding": "Retention $538.20 was stored on the claim (10% of $5,382.00 work done; cap 5% of $111,696 = $5,584.80 not reached) but the Live View claim model never mapped retention_amount and the generator derived retention from lines, which were empty — so it showed $0 / nothing. Fix: retention mapped into the claim model; ladder shows Total Value of Work Done → Less: Retention (10%) → Net Amount → Claim Amount; generator uses lines when present and the stored retention when not; retention editable on the claim form. Reconciliation: 5,382.00 − 538.20 = 4,843.80 = claim amount.",
     "change_ref": "src/data/db.ts, src/lib/claimDocument.ts, src/pages/LiveViewPage.tsx",
     "evidence": "GATES.md CP12A (met), CP12B (after data fix); src/test/claimTotals.test.ts (4 passed); .unlazy-checks/cp12_retention_recon.mjs",
-    "test": "Unit: 10% of work done, 5% cap, stored fallback, total_claim gross. Live recon after migration.",
-    "dependency": "Run data-fix SQL; deploy.",
-    "next": "Re-run CP12B; client to confirm retention shows on Claim 01 and in the export."
+    "test": "Unit: 10% of work done, 5% cap, stored fallback, total_claim gross. Live recon: work done 5,382.00, retention 538.20, amount 4,843.80.",
+    "dependency": "None.",
+    "next": "Client to confirm retention shows on Claim 01 and in the export."
   }
 ]
