@@ -820,6 +820,21 @@ export interface CreatePOInput {
   items: { material: string; qty: number; unitPrice: number }[];
 }
 
+// CP02 — approval requests reach the boss by email via n8n. Fire-and-forget:
+// a notification failure must never block the PO itself.
+const PO_APPROVAL_URL =
+  import.meta.env.VITE_PO_APPROVAL_URL || "https://threeecho.app.n8n.cloud/webhook/conplus-po-approval";
+const PO_APPROVAL_TOKEN = import.meta.env.VITE_CHASE_TOKEN || "cnp_chase_8b21f4a9e6c3";
+
+export function notifyPoApproval(poId: string, submittedBy: string | null): void {
+  fetch(PO_APPROVAL_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Chase-Token": PO_APPROVAL_TOKEN },
+    body: JSON.stringify({ po_id: poId, submitted_by: submittedBy }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 export async function dbCreatePO(input: CreatePOInput): Promise<string> {
   const poNumber = await nextPONumber();
   const subtotal = input.items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
@@ -865,6 +880,7 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
     }))
   );
   if (lineErr) throw new Error(lineErr.message);
+  notifyPoApproval(po.id, input.requestedBy || null);
 
   await supabase.from("alerts").insert({
     type: "po_pending",
