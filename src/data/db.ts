@@ -190,6 +190,11 @@ export interface ClaimRow {
   status: string;
   description: string | null;
   is_final: boolean | null;
+  retention_amount: number | null;
+  retention_pct: number | null;
+  net_amount: number | null;
+  prc_date: string | null;
+  invoice_date: string | null;
   updated_at: string;
 }
 
@@ -200,6 +205,7 @@ export interface ClaimLineRow {
   quotation_ref: string | null;
   seq: number;
   pg_ref: string | null;
+  zone: string | null;
   description: string;
   unit: string | null;
   qty: number | null;
@@ -530,6 +536,11 @@ export function mapClaim(row: ClaimRow): Claim {
     submittedDate: row.submitted_date ?? "—",
     claimDate: row.claim_date ?? "",
     isFinal: row.is_final ?? false,
+    retentionAmount: row.retention_amount == null ? null : Number(row.retention_amount),
+    retentionPct: row.retention_pct == null ? null : Number(row.retention_pct),
+    netAmount: row.net_amount == null ? null : Number(row.net_amount),
+    prcDate: row.prc_date ?? undefined,
+    invoiceDate: row.invoice_date ?? undefined,
     certifiedDate: row.certified_date ?? undefined,
     paidDate: row.paid_date ?? undefined,
     status: row.status as Claim["status"],
@@ -545,6 +556,7 @@ export function mapClaimLine(row: ClaimLineRow): ClaimLine {
     quotationRef: row.quotation_ref ?? "",
     seq: row.seq,
     pgRef: row.pg_ref ?? "",
+    zone: row.zone ?? "",
     description: row.description,
     unit: row.unit ?? "",
     qty: row.qty ?? null,
@@ -571,6 +583,58 @@ export async function fetchClaimLines(claimId: string): Promise<ClaimLine[]> {
     .order("seq", { ascending: true });
   if (error) throw new Error(error.message);
   return (data as ClaimLineRow[]).map(mapClaimLine);
+}
+
+// Every claim write goes through SECURITY DEFINER RPCs: the browser runs with
+// the anon key, whose RLS on `claims` / `claim_lines` is SELECT-only, so a direct
+// .update()/.insert() silently affects zero rows.
+type RpcResult = { ok: boolean; error?: string } & Record<string, unknown>;
+
+async function claimRpc(name: string, args: Record<string, unknown>): Promise<RpcResult> {
+  const { data, error } = await supabase.rpc(name, args);
+  if (error) throw new Error(error.message);
+  const res = data as RpcResult;
+  if (!res || res.ok === false) throw new Error(res?.error || `${name} failed`);
+  return res;
+}
+
+export async function dbUpdateClaim(claimId: string, patch: Record<string, unknown>): Promise<void> {
+  await claimRpc("update_claim", { p_claim_id: claimId, p_patch: patch });
+}
+
+export interface ClaimLineInput {
+  section: "A" | "B";
+  quotationRef: string;
+  pgRef: string;
+  zone: string;
+  description: string;
+  unit: string;
+  qty: number | null;
+  rate: number | null;
+  prevQty: number | null;
+  currQty: number | null;
+  remarks: string;
+}
+
+export async function dbSaveClaimLines(claimId: string, lines: ClaimLineInput[]): Promise<number> {
+  const res = await claimRpc("save_claim_lines", {
+    p_claim_id: claimId,
+    p_lines: lines.map((l, i) => ({
+      section: l.section,
+      quotation_ref: l.quotationRef || null,
+      seq: i + 1,
+      pg_ref: l.pgRef || null,
+      zone: l.zone || null,
+      description: l.description,
+      unit: l.unit || null,
+      qty: l.qty,
+      rate: l.rate,
+      prev_qty: l.prevQty ?? 0,
+      curr_qty: l.currQty ?? 0,
+      remarks: l.remarks || null,
+    })),
+  });
+  return Number(res.count ?? 0);
 }
 
 export function mapAlert(row: AlertRow): Alert {
@@ -940,33 +1004,33 @@ export interface CreateClaimInput {
 }
 
 export async function dbCreateClaim(input: CreateClaimInput): Promise<string> {
-  const year = new Date().getFullYear();
-  const { count, error: cntErr } = await supabase
+  const { data: last, error: lastErr } = await supabase
     .from("claims")
-    .select("id", { count: "exact", head: true });
-  if (cntErr) throw new Error(cntErr.message);
-  const claimNumber = `CLM-${year}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+    .select("claim_no")
+    .eq("project_id", input.projectId)
+    .order("claim_no", { ascending: false, nullsFirst: false })
+    .limit(1);
+  if (lastErr) throw new Error(lastErr.message);
+  const nextNo = Number((last?.[0] as { claim_no: number | null } | undefined)?.claim_no ?? 0) + 1;
 
-  const { error } = await supabase.from("claims").insert({
-    claim_number: claimNumber,
-    project_id: input.projectId,
-    project_code: input.projectCode,
-    project_name: input.projectName,
-    amount: input.amount,
-    submitted_date: today(),
-    status: "submitted",
-    description: input.description || null,
+  const res = await claimRpc("create_claim", {
+    p_project_code: input.projectCode,
+    p_claim_no: nextNo,
+    p_claim_date: today(),
+    p_amount: input.amount,
+    p_remarks: input.description || null,
+    p_status: "submitted",
   });
-  if (error) throw new Error(error.message);
-  return claimNumber;
+  const claimId = String(res.claim_id);
+  await dbUpdateClaim(claimId, { submitted_date: today(), description: input.description || null });
+  return String(res.claim_number);
 }
 
 export async function dbUpdateClaimStatus(claimId: string, status: Claim["status"]): Promise<void> {
-  const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  const patch: Record<string, unknown> = { status };
   if (status === "certified") patch.certified_date = today();
   if (status === "paid") patch.paid_date = today();
-  const { error } = await supabase.from("claims").update(patch).eq("id", claimId);
-  if (error) throw new Error(error.message);
+  await dbUpdateClaim(claimId, patch);
 }
 
 // Store an uploaded invoice file in the documents bucket and register it
@@ -1060,8 +1124,11 @@ export interface ClaimFieldUpdates {
   claimNo: string;
   claimDate: string;
   totalClaim: string;
+  retentionAmount: string;
   certifiedAmount: string;
   certifiedDate: string;
+  prcDate: string;
+  invoiceDate: string;
   paidDate: string;
   remarks: string;
   gst: string;
@@ -1078,29 +1145,27 @@ export interface ClaimFieldUpdates {
 const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
 
 export async function dbUpdateClaimFields(claimId: string, f: ClaimFieldUpdates): Promise<void> {
-  const { error } = await supabase
-    .from("claims")
-    .update({
-      claim_no: f.claimNo.trim() === "" ? null : parseInt(f.claimNo, 10),
-      claim_date: f.claimDate || null,
-      total_claim: numOrNull(f.totalClaim),
-      certified_amount: numOrNull(f.certifiedAmount),
-      certified_date: f.certifiedDate || null,
-      paid_date: f.paidDate || null,
-      remarks: f.remarks || null,
-      gst: numOrNull(f.gst),
-      total_amount: numOrNull(f.totalAmount),
-      po_ref: f.poRef || null,
-      wo_ref: f.woRef || null,
-      do_ref: f.doRef || null,
-      payment_terms: f.paymentTerms || null,
-      client_address: f.clientAddress || null,
-      contact_person: f.contactPerson || null,
-      contact_number: f.contactNumber || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", claimId);
-  if (error) throw new Error(error.message);
+  await dbUpdateClaim(claimId, {
+    claim_no: f.claimNo.trim() === "" ? null : parseInt(f.claimNo, 10),
+    claim_date: f.claimDate || null,
+    total_claim: numOrNull(f.totalClaim),
+    retention_amount: numOrNull(f.retentionAmount),
+    certified_amount: numOrNull(f.certifiedAmount),
+    certified_date: f.certifiedDate || null,
+    prc_date: f.prcDate || null,
+    invoice_date: f.invoiceDate || null,
+    paid_date: f.paidDate || null,
+    remarks: f.remarks || null,
+    gst: numOrNull(f.gst),
+    total_amount: numOrNull(f.totalAmount),
+    po_ref: f.poRef || null,
+    wo_ref: f.woRef || null,
+    do_ref: f.doRef || null,
+    payment_terms: f.paymentTerms || null,
+    client_address: f.clientAddress || null,
+    contact_person: f.contactPerson || null,
+    contact_number: f.contactNumber || null,
+  });
 }
 
 export interface POFieldUpdates {
@@ -1145,6 +1210,7 @@ export interface CreateWOAreaInput {
   prepNote: string;
   lines: {
     description: string;
+    materialId: string | null;
     colour: string;
     dosage: number | null;
     packingSize: number | null;
@@ -1228,6 +1294,7 @@ export async function dbCreateWorksOrder(input: CreateWOInput): Promise<string> 
             wo_id: woId,
             seq: j + 1,
             description: l.description,
+            material_id: l.materialId,
             colour: l.colour || null,
             dosage: l.dosage,
             packing_size: l.packingSize,

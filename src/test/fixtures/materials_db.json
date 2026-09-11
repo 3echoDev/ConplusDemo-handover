@@ -1,0 +1,1598 @@
+[
+ {
+  "id": "8890e3dd-545b-4b5a-9387-8e595f6a3d79",
+  "name": "7005",
+  "item_code": "7005",
+  "unit": "pails",
+  "qty_on_hand": 12
+ },
+ {
+  "id": "1b76dbe6-ac99-48e2-9384-879953344c9a",
+  "name": "7035",
+  "item_code": "7035",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "0569561a-d050-4144-bf69-8a70b54c0caa",
+  "name": "Accelerator K54",
+  "item_code": "Accelerator K54",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "93705105-ec87-4980-b297-526805fdea63",
+  "name": "Acetone",
+  "item_code": "EXP-ACETONE",
+  "unit": "Can",
+  "qty_on_hand": 25
+ },
+ {
+  "id": "63199b1f-50ab-4f15-bada-9de24448d5f4",
+  "name": "Acryk 7046 Satin",
+  "item_code": "Acryk 7046 Satin",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "5a1749fc-e89c-4b8f-9c4a-6139a6c963b0",
+  "name": "BBOS 5012",
+  "item_code": "BBOS 5012",
+  "unit": "pails",
+  "qty_on_hand": 0.5
+ },
+ {
+  "id": "9777033b-3d1b-4247-97c3-29ca383cf97e",
+  "name": "BBOS 7001",
+  "item_code": "BBOS 7001",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "37234fc4-90f5-4ecb-8218-876453325edc",
+  "name": "BBOS-1001",
+  "item_code": "BBOS-1001",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "b48947bf-5040-4ead-9b65-3280f5635faa",
+  "name": "BBOS-5017",
+  "item_code": "BBOS-5017",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "10976405-52fa-4834-b435-1d4192fab389",
+  "name": "BBOS-6002",
+  "item_code": "BBOS-6002",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "f7167654-380f-458d-b0b2-e56b8961e0d0",
+  "name": "BBOS-7026",
+  "item_code": "BBOS-7026",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "ba0970b7-144b-442d-b9b1-9951253c6c18",
+  "name": "BBOS-7037",
+  "item_code": "BBOS-7037",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "f0524c05-56e6-4329-8456-d45fad0d737a",
+  "name": "BBOS-7038",
+  "item_code": "BBOS-7038",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "86e5097c-6142-40a7-adcc-71668a208ed0",
+  "name": "BBOS-80923 (7037)",
+  "item_code": "BBOS-80923 (7037)",
+  "unit": "Kgs",
+  "qty_on_hand": 76
+ },
+ {
+  "id": "feadbfb8-8b83-488d-a9d9-b4f87fc89c61",
+  "name": "Black Gloves",
+  "item_code": "EXP-BLACKGLOVES",
+  "unit": "pair",
+  "qty_on_hand": 681
+ },
+ {
+  "id": "da338268-d4cb-46a1-b576-802464fdd282",
+  "name": "Black Paint",
+  "item_code": "EXP-BLACKPAINT",
+  "unit": "Drum",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "85b09382-de82-4172-a96e-aca3a02016e4",
+  "name": "Cloth",
+  "item_code": "EXP-CLOTH",
+  "unit": "pc",
+  "qty_on_hand": 104
+ },
+ {
+  "id": "145eb612-afe9-4d51-a76c-f22f973a5dd8",
+  "name": "Cotton Gloves",
+  "item_code": "EXP-COTTONGLOVES",
+  "unit": "pair",
+  "qty_on_hand": 9971
+ },
+ {
+  "id": "5ccf4cdd-4e22-4eb0-a1fa-7320f77c2aeb",
+  "name": "Cryl Finish 200",
+  "item_code": "Cryl Finish 200",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "c779527f-8c1e-4205-aa61-219e751b1e42",
+  "name": "Cryl Primer 287",
+  "item_code": "Cryl Primer 287",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "b6b9dbab-3872-40c6-b903-f916a815a38a",
+  "name": "Cutting disc 4\"",
+  "item_code": "EXP-CUTTINGDISC4",
+  "unit": "Pc",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "1c81600e-8363-4ee1-b51f-2743e9ebbd21",
+  "name": "Cutting disc 4\" concrete",
+  "item_code": "EXP-CUTTINGDISC4CONCRETE",
+  "unit": "Pc",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "86ebd721-7222-46dd-9a6a-b80b670a8d03",
+  "name": "Deck Floor RS2K Tropic",
+  "item_code": "Deck Floor RS2K Tropic",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "987ef45d-a51b-4ca8-a04b-7d6aad766751",
+  "name": "DV100-7037",
+  "item_code": "DV100-7037",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "2bd31b53-354f-4c55-bfb6-b85f68d1c310",
+  "name": "E-Mix EP510",
+  "item_code": "E-Mix EP510",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "f8b5ec94-0957-436e-987a-f0dc25ffd95c",
+  "name": "EP510",
+  "item_code": "EP510",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "b97b5e4e-59f5-4b1e-b0a7-b06b0a7f6b5b",
+  "name": "EP510 BigTon",
+  "item_code": "EP510 BigTon",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "ba51fe59-8e06-4fa4-aca7-e8acd7abb52a",
+  "name": "EPS GP",
+  "item_code": "EPS GP",
+  "unit": "pails",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "601e3e41-557e-4a99-bb39-484e4d99d2f7",
+  "name": "Floor-Pro 401 WB PU MF (SG) PTA 2.7KG",
+  "item_code": "Floor-Pro 401 WB PU MF (SG) PTA 2.7KG",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "9117a56e-8ef2-4a9b-92c8-f677130a8baa",
+  "name": "Floor-Pro 401 WB PU MF (SG) PTB 3KG",
+  "item_code": "Floor-Pro 401 WB PU MF (SG) PTB 3KG",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "7b9fee4d-31b6-4c47-876c-6bdb16814e7b",
+  "name": "Floor-Pro 401 WPMS N1 PTC RAL 7039",
+  "item_code": "Floor-Pro 401 WPMS N1 PTC RAL 7039",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "5b95b5ff-aca8-4c44-871a-ed3606a013bf",
+  "name": "Floor-Pro 401 WPMS PTD (G) 13.8KG",
+  "item_code": "Floor-Pro 401 WPMS PTD (G) 13.8KG",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "1853c36a-5338-4053-a352-0e47b4d35baa",
+  "name": "FlowcreteMF/RT/HF-Yellow",
+  "item_code": "FlowcreteMF/RT/HF-Yellow",
+  "unit": "pails",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "7f2034a8-1d18-4007-a375-1f891cd4ac07",
+  "name": "Flowseal UV-1023",
+  "item_code": "Flowseal UV-1023",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "ced20506-6b56-4093-85bc-37110a55d570",
+  "name": "G80 AO (White)",
+  "item_code": "G80-AO-WHITE",
+  "unit": "kg",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "bfdc6363-4ac4-4c19-80b6-b8d6d4ac6fcd",
+  "name": "GH 205 Clear",
+  "item_code": "GH 205 Clear",
+  "unit": "Kgs",
+  "qty_on_hand": 43
+ },
+ {
+  "id": "f445dc59-8d8f-4ccd-bef4-cf5f55e9159a",
+  "name": "GH 532",
+  "item_code": "GH 532",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "ede7c322-a179-4caa-bca1-9176c9709a03",
+  "name": "Grinding cup 4\"",
+  "item_code": "EXP-GRINDINGCUP4",
+  "unit": "Pc",
+  "qty_on_hand": 75
+ },
+ {
+  "id": "9c4a2d27-9afa-4809-a81a-254d4c70111f",
+  "name": "Grinding cup 7\" concrete",
+  "item_code": "EXP-GRINDINGCUP7CONCRETE",
+  "unit": "Pc",
+  "qty_on_hand": 60
+ },
+ {
+  "id": "c7bf8a42-c1e1-46ff-afe6-431a9ddb2658",
+  "name": "Item Description",
+  "item_code": "EXP-ITEMDESCRIPTION",
+  "unit": "UOM",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "97a05564-a42f-4c3e-8be2-3bfed24698a8",
+  "name": "KU 601-5017",
+  "item_code": "KU 601-5017",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "0e83146b-7b6b-4b2c-a535-bd8a3fb17fd9",
+  "name": "KU 601-7001",
+  "item_code": "KU 601-7001",
+  "unit": "Kgs",
+  "qty_on_hand": -0.5
+ },
+ {
+  "id": "89411237-652e-40a1-b151-334f0c63e278",
+  "name": "KU 601-7038",
+  "item_code": "KU 601-7038",
+  "unit": "pails",
+  "qty_on_hand": 2.5
+ },
+ {
+  "id": "c447f6aa-ebb4-4ca5-9307-e90b322ea617",
+  "name": "KU 601-7046",
+  "item_code": "KU 601-7046",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "fca2cc80-57f0-4072-93d6-e3b5d425ee2e",
+  "name": "KU 601-80924 (7037)",
+  "item_code": "KU 601-80924 (7037)",
+  "unit": "Kgs",
+  "qty_on_hand": 14
+ },
+ {
+  "id": "806bdd9f-f78f-478e-8efe-69535d72e918",
+  "name": "KU 611-1001",
+  "item_code": "KU 611-1001",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "8b2e3543-1ff1-4a01-ac65-e00baa37892d",
+  "name": "KU 611-5024",
+  "item_code": "KU 611-5024",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "5e57e8cb-b39f-41e4-8f8b-0e2ab624cff6",
+  "name": "KU 611-6002",
+  "item_code": "KU 611-6002",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "e9b71aa0-9f0d-4e5f-af20-831e8de59332",
+  "name": "KU 611-7032",
+  "item_code": "KU 611-7032",
+  "unit": "pails",
+  "qty_on_hand": 1.5
+ },
+ {
+  "id": "76f9c032-6e72-4285-aa15-c11decb6ff9f",
+  "name": "KU 611-7037",
+  "item_code": "KU 611-7037",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "0b46758c-b163-4fc2-932c-686d850acfb8",
+  "name": "KU 611-7046",
+  "item_code": "KU 611-7046",
+  "unit": "Kgs",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "ac31ce49-bc70-41c2-915f-0472b52e19b8",
+  "name": "KU 614-7001",
+  "item_code": "KU 614-7001",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "be125a74-bc4e-420f-93e2-dfaab7c4f028",
+  "name": "MapeCoat CF AP-7037 Gloss",
+  "item_code": "MapeCoat CF AP-7037 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "ecbaad14-c5c5-4724-9457-e1200067adb5",
+  "name": "Mask Blue 9600",
+  "item_code": "EXP-MASKBLUE9600",
+  "unit": "pc",
+  "qty_on_hand": 720
+ },
+ {
+  "id": "79d2a108-ba03-42ab-a944-7897d873f29b",
+  "name": "Mask Dust",
+  "item_code": "EXP-MASKDUST",
+  "unit": "pc",
+  "qty_on_hand": 1000
+ },
+ {
+  "id": "4851711a-f75c-4516-8b79-c47f0013e56e",
+  "name": "Mask N95",
+  "item_code": "EXP-MASKN95",
+  "unit": "pc",
+  "qty_on_hand": 302
+ },
+ {
+  "id": "91037183-7437-40be-97f7-b1c659788430",
+  "name": "Masking 38mm",
+  "item_code": "EXP-MASKING38MM",
+  "unit": "pc",
+  "qty_on_hand": 72
+ },
+ {
+  "id": "b0b3178a-2dcd-4894-9e39-17150032ba10",
+  "name": "Master Top 1705 RAL- 7035",
+  "item_code": "Master Top 1705 RAL- 7035",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "b01f0f4c-f0c6-4c7d-963b-62efa32f4e52",
+  "name": "Multi Top",
+  "item_code": "Multi Top",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "f2d9fcfb-86b2-4dc0-8d42-addd8a4306f7",
+  "name": "Nippon Floor Pro 104 Primer",
+  "item_code": "Nippon Floor Pro 104 Primer",
+  "unit": "pails",
+  "qty_on_hand": 13
+ },
+ {
+  "id": "b2dfe9c1-106d-499b-ae0b-5c462bf5d7b2",
+  "name": "Nippon Floor Pro 107 Primer",
+  "item_code": "Nippon Floor Pro 107 Primer",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "64a11d75-ad8c-48f5-9a14-4420413b87c4",
+  "name": "Nippon Floor Pro 302 Aqua-7046",
+  "item_code": "Nippon Floor Pro 302 Aqua-7046",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "7c0ae91a-49d2-4cf9-a3d5-e96c28dcda52",
+  "name": "Nippon Floor Pro 303 WB-7040",
+  "item_code": "Nippon Floor Pro 303 WB-7040",
+  "unit": "pails",
+  "qty_on_hand": 11
+ },
+ {
+  "id": "0851c8d3-8982-4b84-8ff5-5bfe30011d2d",
+  "name": "Nippon Floor Pro 303-7035",
+  "item_code": "Nippon Floor Pro 303-7035",
+  "unit": "Kgs",
+  "qty_on_hand": 0.5
+ },
+ {
+  "id": "027715bb-1ca6-4c3a-b07c-d8f9729b2e4e",
+  "name": "Nippon Floor Pro 303-WB",
+  "item_code": "Nippon Floor Pro 303-WB",
+  "unit": "Kgs",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "6ed7bec5-f81f-486d-8805-0a8fcaf4e18a",
+  "name": "Nippon Floor Pro 307-6010",
+  "item_code": "Nippon Floor Pro 307-6010",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "4f315ced-6f28-4b23-9ccf-4b4afc7d9619",
+  "name": "Nippon Floor Pro 331 SF Rapid- 7037",
+  "item_code": "Nippon Floor Pro 331 SF Rapid- 7037",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "b9d92a7b-9e8a-49bc-8f9c-c7b32270a10a",
+  "name": "Nippon Floor Pro 333 SF-5015",
+  "item_code": "Nippon Floor Pro 333 SF-5015",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "53adce5c-4527-49ac-bbf7-d1d0365703a6",
+  "name": "Nippon Floor Pro 333-5015",
+  "item_code": "Nippon Floor Pro 333-5015",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "b662b769-d25b-4d26-936a-7f87b6755ae1",
+  "name": "Nippon Floor Pro 333-7012",
+  "item_code": "Nippon Floor Pro 333-7012",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "31d66e62-5f61-490d-921f-36b61657d4b0",
+  "name": "Nippon Floor Pro 401 WB PU MF",
+  "item_code": "Nippon Floor Pro 401 WB PU MF",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "268001dc-667f-4494-a59e-9ce9a485ef8c",
+  "name": "Nippon Floor Pro 402 WB PU MF",
+  "item_code": "Nippon Floor Pro 402 WB PU MF",
+  "unit": "pails",
+  "qty_on_hand": 37
+ },
+ {
+  "id": "90d2bb08-a8e5-4dfe-a555-5fddb202309b",
+  "name": "Nippon Floor Pro 407",
+  "item_code": "Nippon Floor Pro 407",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "c9edec2b-04f3-44e5-9a34-cef0aebb7b4a",
+  "name": "PAC Clear",
+  "item_code": "PAC Clear",
+  "unit": "pails",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "ebf8ba5c-dc94-4062-879d-e7ea1b4fc549",
+  "name": "PAC-7001 Semi Gloss",
+  "item_code": "PAC-7001 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "60ecfd83-d540-493c-ab11-cace92c213e9",
+  "name": "PAC-7032",
+  "item_code": "PAC-7032",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "c600ab2f-1b66-4ae0-ba30-34dc356510be",
+  "name": "PAC-7032 Glossy",
+  "item_code": "PAC-7032 Glossy",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "692ee749-7527-452d-bceb-dc8def4e52a8",
+  "name": "PAC-7037 Semi Gloss",
+  "item_code": "PAC-7037 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "e2a57202-d560-4c47-8216-5298af1ddd18",
+  "name": "PAC-7038",
+  "item_code": "PAC-7038",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "718ca7fc-5989-4655-939c-ad6f564fe404",
+  "name": "PAC-7038 Glossy",
+  "item_code": "PAC-7038 Glossy",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "55bf84a5-2e0b-4306-afe1-553d485f7c0e",
+  "name": "PAC-7038 Semi Gloss",
+  "item_code": "PAC-7038 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "c2525376-9a35-474a-b1de-fb24fc934630",
+  "name": "PAC-7040 Semi Gloss",
+  "item_code": "PAC-7040 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "1dcd1f3a-be62-4949-a6ff-4bc5491ce987",
+  "name": "PAC-7046",
+  "item_code": "PAC-7046",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "d39977e3-1d70-4ddb-a348-310f7c3eaf26",
+  "name": "PAC-7046 Matt",
+  "item_code": "PAC-7046 Matt",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "6d0d58f2-b178-4164-b724-bb37d522c1be",
+  "name": "PAC-7046 Semi Gloss",
+  "item_code": "PAC-7046 Semi Gloss",
+  "unit": "Kgs",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "56d56e1a-5f72-45e0-8e38-7ec800fc019b",
+  "name": "PAC-7047 Semi Gloss",
+  "item_code": "PAC-7047 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "2ebcd891-3b76-4c74-8087-bb2b8ee0a5ab",
+  "name": "Primer 209",
+  "item_code": "Primer 209",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "3ddbc078-1760-417b-a042-b4a55863cbc2",
+  "name": "Primer 287",
+  "item_code": "Primer 287",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "0ae2c340-e7ea-402c-a091-cd86d5c75c09",
+  "name": "ProDeck RS2K Tropic",
+  "item_code": "ProDeck RS2K Tropic",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "a8e44192-ed14-4494-b343-c784d19404c3",
+  "name": "ProDetail Tropic",
+  "item_code": "ProDetail Tropic",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "1af74b6a-3c90-4ba4-87e6-b27ff4512a1a",
+  "name": "Protachropic-7035",
+  "item_code": "Protachropic-7035",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "9ed04b5e-031a-4ed0-9efa-70e89339b70d",
+  "name": "Pu Deck UV-7037 Matt",
+  "item_code": "Pu Deck UV-7037 Matt",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "decf240b-8eea-4d28-9dfa-e0ad5eb2a5b0",
+  "name": "PU SMCF",
+  "item_code": "PU SMCF",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "bac8d1cb-947b-43e7-a9ef-477a360ce6c8",
+  "name": "PU-6018 Semi-Gloss",
+  "item_code": "PU-6018 Semi-Gloss",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "9ac13fad-31c4-43fb-89a8-34a266e62a08",
+  "name": "PU-9003 Semi-Gloss",
+  "item_code": "PU-9003 Semi-Gloss",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "a37987e9-ab35-426f-9cde-fffcf1b817dd",
+  "name": "RAL-6019",
+  "item_code": "RAL-6019",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "785d0400-3459-42d8-b118-21e80de87dc9",
+  "name": "Red Paint",
+  "item_code": "EXP-REDPAINT",
+  "unit": "can",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "725745df-f1ba-40ff-9d89-b9aa146f3940",
+  "name": "Roller 2\"",
+  "item_code": "EXP-ROLLER2",
+  "unit": "pcs",
+  "qty_on_hand": 60
+ },
+ {
+  "id": "e0680631-dfe5-4461-8367-247ac5ecd763",
+  "name": "Roller 4\"",
+  "item_code": "EXP-ROLLER4",
+  "unit": "pcs",
+  "qty_on_hand": 257
+ },
+ {
+  "id": "bfec574a-b6e9-4f4e-bd93-fb4ed4f83ad3",
+  "name": "Roller Nylon 12\"",
+  "item_code": "EXP-ROLLERNYLON12",
+  "unit": "pcs",
+  "qty_on_hand": 150
+ },
+ {
+  "id": "b5314cac-ed91-4f67-a092-a75e019cf4b8",
+  "name": "Roller Primer 20\"",
+  "item_code": "EXP-ROLLERPRIMER20",
+  "unit": "pcs",
+  "qty_on_hand": 137
+ },
+ {
+  "id": "01d7466c-f934-4666-9a5f-283b9ae9ed3f",
+  "name": "Roller Primer 9\"",
+  "item_code": "EXP-ROLLERPRIMER9",
+  "unit": "pcs",
+  "qty_on_hand": 489
+ },
+ {
+  "id": "55719f5f-66ff-465b-a600-095f735ed02a",
+  "name": "Roller Sparco",
+  "item_code": "EXP-ROLLERSPARCO",
+  "unit": "pcs",
+  "qty_on_hand": 90
+ },
+ {
+  "id": "833d7fb1-b192-4fb6-8c87-34a23198ac37",
+  "name": "Rubber Gloves",
+  "item_code": "EXP-RUBBERGLOVES",
+  "unit": "pair",
+  "qty_on_hand": 136
+ },
+ {
+  "id": "b6ceb1a3-8dd3-49d4-9126-cd9f39599736",
+  "name": "Safety",
+  "item_code": "EXP-SAFETY",
+  "unit": "pc",
+  "qty_on_hand": 148
+ },
+ {
+  "id": "ec2be92e-223d-4278-a1fb-3497747064ed",
+  "name": "Sand Paper Square",
+  "item_code": "EXP-SANDPAPERSQUARE",
+  "unit": "pc",
+  "qty_on_hand": 1000
+ },
+ {
+  "id": "4fed19c8-48bb-460e-965b-e9e5493e0281",
+  "name": "Sanding Pad 16\" #16",
+  "item_code": "EXP-SANDINGPAD1616",
+  "unit": "pc",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "d0cc7ee1-0866-45de-b607-03f6d8cc19ad",
+  "name": "Sanding Pad 16\" #60",
+  "item_code": "EXP-SANDINGPAD1660",
+  "unit": "pc",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "f3bc7db9-22de-4d76-afc9-db14b2bdeda4",
+  "name": "Sanding Pad 7\" #60",
+  "item_code": "EXP-SANDINGPAD760",
+  "unit": "pc",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "50c60f9f-474a-4432-ab82-1405a789591d",
+  "name": "Scrapper",
+  "item_code": "EXP-SCRAPPER",
+  "unit": "pcs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "99dfa25a-c575-45e0-ba34-2ec257e7633f",
+  "name": "SIKA Floor 155 WN",
+  "item_code": "SIKA Floor 155 WN",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "d5eb6888-6f17-43c2-a026-5f72d916584e",
+  "name": "Sika Floor 161 Primer",
+  "item_code": "Sika Floor 161 Primer",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "e9f300ad-cadb-45e3-b7a9-1de3b02aea92",
+  "name": "SIKA Floor 220W",
+  "item_code": "SIKA Floor 220W",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "5a7caf99-7fa7-4b2f-877c-5c1c5d663643",
+  "name": "Sika Floor 2530W-7005",
+  "item_code": "Sika Floor 2530W-7005",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "d1f797e8-3064-43c5-8a20-bacd1bd49c64",
+  "name": "Sika Floor 2530W-7011",
+  "item_code": "Sika Floor 2530W-7011",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "4230f6e0-9217-408f-9bd8-66d9be4ceb5e",
+  "name": "Sika Floor 2530W-7035",
+  "item_code": "Sika Floor 2530W-7035",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "b6126c35-6eb6-4c22-a8bb-75f8a8198da6",
+  "name": "SIKA Floor 2530W-7038",
+  "item_code": "SIKA Floor 2530W-7038",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "02e8140c-f764-406a-8ad2-195aba3b6fae",
+  "name": "Sika Floor 262 SN-7040",
+  "item_code": "Sika Floor 262 SN-7040",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "4f668a22-8e0e-41fd-8ed4-9579e24337ed",
+  "name": "Sika Floor 263 SL-6019",
+  "item_code": "Sika Floor 263 SL-6019",
+  "unit": "pails",
+  "qty_on_hand": 4.5
+ },
+ {
+  "id": "5cdd16fd-c498-43af-be8c-0dc4253f46c9",
+  "name": "Sika Floor 264-7040",
+  "item_code": "Sika Floor 264-7040",
+  "unit": "Kgs",
+  "qty_on_hand": 7
+ },
+ {
+  "id": "81b2791e-df0a-421b-968e-f92a40e2721b",
+  "name": "Sika Floor 341W-6021",
+  "item_code": "Sika Floor 341W-6021",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "de5f6dce-1201-4b0c-99fd-55209a9ba755",
+  "name": "Sika Floor 81 Epo",
+  "item_code": "Sika Floor 81 Epo",
+  "unit": "Kgs",
+  "qty_on_hand": 22
+ },
+ {
+  "id": "9ec32e89-18fe-48cc-819e-4a64f82b6360",
+  "name": "Sika Floor 81 epocem",
+  "item_code": "Sika Floor 81 epocem",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "b59d680b-8eb0-4c12-b92e-7e527aeb267f",
+  "name": "Sika MF",
+  "item_code": "Sika MF",
+  "unit": "pails",
+  "qty_on_hand": 20
+ },
+ {
+  "id": "0f6538e3-9f9f-4236-a653-3b01007257d5",
+  "name": "Sikafloor Curehard-24",
+  "item_code": "Sikafloor Curehard-24",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "387ca12f-370a-4983-a490-68571bbba637",
+  "name": "Sikafloor- 161 HC",
+  "item_code": "Sikafloor- 161 HC",
+  "unit": "Kgs",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "908e9685-bd21-429c-a99e-bd8c56bb9965",
+  "name": "Sikafloor- 2530W",
+  "item_code": "Sikafloor- 2530W",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "9afc4d40-92f8-42ac-b47f-489534aa436c",
+  "name": "Sikafloor- 264 HC-7035",
+  "item_code": "Sikafloor- 264 HC-7035",
+  "unit": "Kgs",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "1f0b33a5-3099-454e-96f0-2dcf902ff729",
+  "name": "Sparco 7046",
+  "item_code": "Sparco 7046",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "4a052e7b-70f2-4de7-902a-63d3f213f806",
+  "name": "Sparco Acrylic Urethane Coating-9012 Satin",
+  "item_code": "Sparco Acrylic Urethane Coating-9012 Satin",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "b08aba79-88b7-4115-ae53-5fc7fd04efb7",
+  "name": "Sparco PU S41-7037 Matt",
+  "item_code": "Sparco PU S41-7037 Matt",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "74e161a5-1446-41ba-b5a1-1d764208f494",
+  "name": "Sparco PU S41-7040 Gloss",
+  "item_code": "Sparco PU S41-7040 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "08a52c5c-48fb-4aac-9524-39581970b49f",
+  "name": "STO Color Jumfosil",
+  "item_code": "STO Color Jumfosil",
+  "unit": "pails",
+  "qty_on_hand": 18
+ },
+ {
+  "id": "1a6ee148-110e-4d47-b58f-9058eb3b399f",
+  "name": "StoCrete PU SM 1mm",
+  "item_code": "STOCRETE-PUSM-1MM",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "78c6924f-d3d8-4220-9006-5c24634f4102",
+  "name": "StoPox WG100 (Clear)",
+  "item_code": "STOPOX-WG100-CLEAR",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "9297a574-8fa3-4136-9208-5340c7031c42",
+  "name": "StoPox WG100-50% (RAL 7037)",
+  "item_code": "STOPOX-WG100-50-7037",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "eae15d7b-14d0-4b92-b0d0-f42bcb31cce3",
+  "name": "StoPox WL 100 (RAL 6017)",
+  "item_code": "STOPOX-WL100-6017",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "be2385ea-32d5-4aff-996c-f77ed9eb83ab",
+  "name": "StoPox WL 100 (RAL 7037)",
+  "item_code": "STOPOX-WL100-7037",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "6e3bf2ce-61f4-42ef-83a1-53a865d71c7b",
+  "name": "StoPox WL 100 (RAL 7038)",
+  "item_code": "STOPOX-WL100-7038",
+  "unit": "set",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "c8d1d309-1f3b-495e-a2a5-c9d786056d46",
+  "name": "TCUV Clear",
+  "item_code": "TCUV Clear",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "fa25cde0-5a4f-483e-82b4-43496b6fde89",
+  "name": "TCUV Red Matt",
+  "item_code": "TCUV Red Matt",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "08083478-a108-48c0-a707-5da91dc1f923",
+  "name": "TCUV-1023 Matt",
+  "item_code": "TCUV-1023 Matt",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "aaa25cd9-d00a-45a9-97e4-75fc5fb31d97",
+  "name": "TCUV-3011 Gloss",
+  "item_code": "TCUV-3011 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "0c1e10c1-f7dc-4a03-b200-b008d7deeb2d",
+  "name": "TCUV-3011 Matt",
+  "item_code": "TCUV-3011 Matt",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "6a4bee0e-dd60-4177-b287-99758a84e76b",
+  "name": "TCUV-5012",
+  "item_code": "TCUV-5012",
+  "unit": "pails",
+  "qty_on_hand": 7
+ },
+ {
+  "id": "3e7e4024-b272-4bf9-aef7-b58cfbb660d9",
+  "name": "TCUV-5012 Matt",
+  "item_code": "TCUV-5012 Matt",
+  "unit": "Kgs",
+  "qty_on_hand": 7
+ },
+ {
+  "id": "e7ebf704-ea28-49fc-ae08-fb1249ebacae",
+  "name": "TCUV-5017 Matt",
+  "item_code": "TCUV-5017 Matt",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "2c303b61-7234-4da5-a348-8695f7a4625e",
+  "name": "TCUV-6018 Semi Gloss",
+  "item_code": "TCUV-6018 Semi Gloss",
+  "unit": "Kgs",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "4d6ced82-f963-44d4-a888-7d461f9c0a9c",
+  "name": "TCUV-7001 Matt",
+  "item_code": "TCUV-7001 Matt",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "520fe5e5-ecc8-4da8-ae7d-d267c4cf509d",
+  "name": "TCUV-7001 Semi Gloss",
+  "item_code": "TCUV-7001 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 20
+ },
+ {
+  "id": "d0013380-998b-43e0-a5b4-993e9f68e9ab",
+  "name": "TCUV-7030 Gloss",
+  "item_code": "TCUV-7030 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "89dd908b-82db-4fdd-8a6d-ca42331810eb",
+  "name": "TCUV-7032 Matt",
+  "item_code": "TCUV-7032 Matt",
+  "unit": "pails",
+  "qty_on_hand": 11
+ },
+ {
+  "id": "f6be220c-43ce-4eaa-a083-f1c7fb739cf3",
+  "name": "TCUV-7037 Matt",
+  "item_code": "TCUV-7037 Matt",
+  "unit": "pails",
+  "qty_on_hand": 20
+ },
+ {
+  "id": "7b16a6f9-8c55-40d2-85fe-bde4fe5c32e1",
+  "name": "TCUV-7037 Semi Gloss",
+  "item_code": "TCUV-7037 Semi Gloss",
+  "unit": "pails",
+  "qty_on_hand": 17
+ },
+ {
+  "id": "13e9a807-6082-41ee-b3ee-cee477de6cca",
+  "name": "TCUV-7038 Matt",
+  "item_code": "TCUV-7038 Matt",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "7efcecd5-abc1-466e-8892-4db498a1605d",
+  "name": "TCUV-7039 Matt",
+  "item_code": "TCUV-7039 Matt",
+  "unit": "pails",
+  "qty_on_hand": 0.5
+ },
+ {
+  "id": "2457f87a-a41f-4619-bd17-61629d759431",
+  "name": "TCUV-7040 Gloss",
+  "item_code": "TCUV-7040 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "3472b444-3db1-4bf9-b26f-f858e0b845b5",
+  "name": "TCUV-7046 Gloss",
+  "item_code": "TCUV-7046 Gloss",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "5c0f5a8c-d910-4e75-a35e-d230ae74d1fc",
+  "name": "TCUV-7046 Matt",
+  "item_code": "TCUV-7046 Matt",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "8b70ba8c-b476-462e-89fb-b59270d442f8",
+  "name": "TCUV-7047 Gloss",
+  "item_code": "TCUV-7047 Gloss",
+  "unit": "pails",
+  "qty_on_hand": 11
+ },
+ {
+  "id": "bbb5fc0a-4eda-40a4-9534-baa7af67ff5b",
+  "name": "TCUV-9002 Matt",
+  "item_code": "TCUV-9002 Matt",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "2bd73133-0a55-42b1-98c6-93195a9b4f5c",
+  "name": "TCUV-9003 Gloss",
+  "item_code": "TCUV-9003 Gloss",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "7594637b-f05d-4330-9231-45c0afb31737",
+  "name": "TCUV-9003 Matt",
+  "item_code": "TCUV-9003 Matt",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "b1881a38-ba92-45a2-8cae-3aefd840f376",
+  "name": "TCUV-9010 Matt",
+  "item_code": "TCUV-9010 Matt",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "1df29216-17f1-43d3-9af6-92184caaadda",
+  "name": "TEP Multi Top",
+  "item_code": "TEP Multi Top",
+  "unit": "Kgs",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "46e0f551-b4e2-47bb-9df6-1ea0b60a73b2",
+  "name": "Thinner",
+  "item_code": "EXP-THINNER",
+  "unit": "Can",
+  "qty_on_hand": 88
+ },
+ {
+  "id": "8b7d617a-df7c-454c-8c72-556a92384db2",
+  "name": "Ucrete MF",
+  "item_code": "Ucrete MF",
+  "unit": "pails",
+  "qty_on_hand": 30
+ },
+ {
+  "id": "2c30b301-edf9-488a-aad9-7799a442a9e5",
+  "name": "Ucrete UD 200",
+  "item_code": "Ucrete UD 200",
+  "unit": "pails",
+  "qty_on_hand": 14
+ },
+ {
+  "id": "9fd0a0ff-a977-4a6d-b565-c0e9905c9bbe",
+  "name": "Viacrete PU MF/HF",
+  "item_code": "Viacrete PU MF/HF",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "219f44e0-6f6e-48d5-89cd-5d83abd2c1d9",
+  "name": "Wall Paint-9003",
+  "item_code": "Wall Paint-9003",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "7bfd6a6e-bd69-4044-b4d0-34f59369ff41",
+  "name": "Weber Floor -1023",
+  "item_code": "Weber Floor -1023",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "98c6cc4b-58ab-4fa8-a6d8-eaaf0eff10ba",
+  "name": "Weber Floor E526-7040",
+  "item_code": "Weber Floor E526-7040",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "a655cc5a-08e8-4c7c-a485-77e1ad63e5b8",
+  "name": "Weber Floor EP510 WB RAL-6019",
+  "item_code": "Weber Floor EP510 WB RAL-6019",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "5e049af6-2f21-4a2e-a2a0-c66348056f52",
+  "name": "Weber Floor EP510 WB RAL-7040",
+  "item_code": "Weber Floor EP510 WB RAL-7040",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "8f1e0c61-cb37-4825-81a3-66f3cc2e9386",
+  "name": "Weber Floor EP510-6037",
+  "item_code": "Weber Floor EP510-6037",
+  "unit": "pails",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "abc7c879-1100-4c94-959a-11aff33ebc61",
+  "name": "Weber Floor EP536 NV-7040",
+  "item_code": "Weber Floor EP536 NV-7040",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "0861af36-64a7-4938-b970-6cb7ff2131b3",
+  "name": "Weber Floor EP536-7032",
+  "item_code": "Weber Floor EP536-7032",
+  "unit": "pails",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "d029e378-a363-4dd9-a980-8c76e1ed36d0",
+  "name": "Weber Floor Green",
+  "item_code": "Weber Floor Green",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "d157f519-b68b-4e35-acbb-6978dbaaa8ec",
+  "name": "Weber Floor PUR top coat-7032 Matt",
+  "item_code": "Weber Floor PUR top coat-7032 Matt",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "7be90098-6b0a-4cf9-85f0-343b205e1cc4",
+  "name": "Weber PUR Top Coat Yellow Matt",
+  "item_code": "Weber PUR Top Coat Yellow Matt",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "346d8c5e-3eef-42c5-8dfe-c195c5bc7754",
+  "name": "Weberfloor MF",
+  "item_code": "Weberfloor MF",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "5102ce85-12f0-4248-8e5b-2bb6b45364e1",
+  "name": "Weberfloor MF Green",
+  "item_code": "Weberfloor MF Green",
+  "unit": "Kgs",
+  "qty_on_hand": 25
+ },
+ {
+  "id": "8ab97940-e4c0-4aa3-9bc9-3d9e07a04378",
+  "name": "WG 100",
+  "item_code": "WG 100",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "38f1e853-1b13-446b-b870-00e680e4e101",
+  "name": "WG 100-5017",
+  "item_code": "WG 100-5017",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "aab917ba-bf67-49aa-9d36-8fd74dc10978",
+  "name": "WG 100-7037",
+  "item_code": "WG 100-7037",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "bd77b06c-95a7-454c-bc7e-1f22ca75240b",
+  "name": "WG 100-7046",
+  "item_code": "WG 100-7046",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "92e6e30f-d36d-40cf-bdbb-9a05e76f87a3",
+  "name": "White Paint",
+  "item_code": "EXP-WHITEPAINT",
+  "unit": "can",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "525b465e-5d3d-4fec-ae19-7f5dc4a1aa5d",
+  "name": "WL 100-1001",
+  "item_code": "WL 100-1001",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "c83f57f6-8a70-4fdc-93db-642f142743be",
+  "name": "WL 100-1015",
+  "item_code": "WL 100-1015",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "57e0b5b3-1693-46e6-990d-2ff7c4fce23f",
+  "name": "WL 100-1023",
+  "item_code": "WL 100-1023",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "eb3f9e90-0db3-4644-9ec7-ffe21f4cdfa5",
+  "name": "WL 100-2000",
+  "item_code": "WL 100-2000",
+  "unit": "pails",
+  "qty_on_hand": 1.5
+ },
+ {
+  "id": "b0265b9f-e0d2-40ce-9aa1-fbb35a9e7409",
+  "name": "WL 100-2004",
+  "item_code": "WL 100-2004",
+  "unit": "pails",
+  "qty_on_hand": 0.5
+ },
+ {
+  "id": "8ee69b31-dd82-4be8-b55c-a0937e16557f",
+  "name": "WL 100-3001",
+  "item_code": "WL 100-3001",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "e22410ca-3f78-45b5-9410-e459410cf2e7",
+  "name": "WL 100-3002",
+  "item_code": "WL 100-3002",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "03d45eaa-7702-49d8-ac44-aa80d60e3e24",
+  "name": "WL 100-3028",
+  "item_code": "WL 100-3028",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "449e17c5-7f45-4126-9b6c-4231e3765dec",
+  "name": "WL 100-5017",
+  "item_code": "WL 100-5017",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "96d4f1a1-e92b-442d-950a-b58e44c0ae04",
+  "name": "WL 100-6001",
+  "item_code": "WL 100-6001",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "c9437cfc-09c8-4825-97b1-7e94a52f9e11",
+  "name": "WL 100-6002",
+  "item_code": "WL 100-6002",
+  "unit": "pails",
+  "qty_on_hand": 12
+ },
+ {
+  "id": "6321111f-3437-46b3-817b-d3fbe75b0698",
+  "name": "WL 100-6017",
+  "item_code": "WL 100-6017",
+  "unit": "Kgs",
+  "qty_on_hand": 0.5
+ },
+ {
+  "id": "e3cbf415-c7e4-4802-99ba-a3faeb61b16b",
+  "name": "WL 100-6018",
+  "item_code": "WL 100-6018",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "c9822690-3522-4313-bd99-730ab4f9d216",
+  "name": "WL 100-7001",
+  "item_code": "WL 100-7001",
+  "unit": "pails",
+  "qty_on_hand": 7
+ },
+ {
+  "id": "89c18f3c-3396-4d4c-9dec-0e29c71fd21a",
+  "name": "WL 100-7004",
+  "item_code": "WL 100-7004",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "2f0518b2-1e60-4a5d-912e-04112bf2b367",
+  "name": "WL 100-7004+DD133:D136",
+  "item_code": "WL 100-7004+DD133:D136",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "28e76375-bfc5-4878-bd69-36889c861474",
+  "name": "WL 100-7021",
+  "item_code": "WL 100-7021",
+  "unit": "Kgs",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "fc168c79-f9c5-442b-a0f8-d51f3eae7c39",
+  "name": "WL 100-7026",
+  "item_code": "WL 100-7026",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "cf276d1b-c1de-46bb-8274-42049ab06a87",
+  "name": "WL 100-7032",
+  "item_code": "WL 100-7032",
+  "unit": "Kgs",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "4d75a22e-7e87-4665-b956-85f8b9a0ffb1",
+  "name": "WL 100-7036",
+  "item_code": "WL 100-7036",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "36e3aec5-45bd-4965-bf32-d5c4ce8f3fba",
+  "name": "WL 100-7037",
+  "item_code": "WL 100-7037",
+  "unit": "pails",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "f0c0c25e-223a-4cf4-ac29-745459d82fde",
+  "name": "WL 100-7037 Anti Skid",
+  "item_code": "WL 100-7037 Anti Skid",
+  "unit": "pails",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "360a3930-8bed-4de2-934b-9990aa8b94f2",
+  "name": "WL 100-7038",
+  "item_code": "WL 100-7038",
+  "unit": "pails",
+  "qty_on_hand": 11.5
+ },
+ {
+  "id": "91732e9f-f11e-4cd7-ba76-dea4e16a05bd",
+  "name": "WL 100-7038 Anti Skid",
+  "item_code": "WL 100-7038 Anti Skid",
+  "unit": "pails",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "71b51e8b-6dc3-4961-bc3c-e3b4dc5586d5",
+  "name": "WL 100-7039",
+  "item_code": "WL 100-7039",
+  "unit": "Kgs",
+  "qty_on_hand": 1.5
+ },
+ {
+  "id": "939085e9-bc74-4895-9bf2-d708a8dc3dbc",
+  "name": "WL 100-7043",
+  "item_code": "WL 100-7043",
+  "unit": "pails",
+  "qty_on_hand": 6.5
+ },
+ {
+  "id": "4a7f25a7-cb7f-4589-98aa-1e9a3a4117d2",
+  "name": "WL 100-7045 Anti Skid",
+  "item_code": "WL 100-7045 Anti Skid",
+  "unit": "pails",
+  "qty_on_hand": 1
+ },
+ {
+  "id": "a64794d4-8c07-4853-a0af-1c7730bbebd9",
+  "name": "WL 100-7046",
+  "item_code": "WL 100-7046",
+  "unit": "pails",
+  "qty_on_hand": 29.5
+ },
+ {
+  "id": "9ae43882-2f66-40f8-846c-547519c8e6df",
+  "name": "WL 100-7047",
+  "item_code": "WL 100-7047",
+  "unit": "Kgs",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "b5d18682-084a-400a-b13e-cb9fc06d52ae",
+  "name": "WL 100-80655",
+  "item_code": "WL 100-80655",
+  "unit": "pails",
+  "qty_on_hand": 5
+ },
+ {
+  "id": "5c899e73-549f-40e7-b29f-f9bc0bdf360c",
+  "name": "WL 100-80825",
+  "item_code": "WL 100-80825",
+  "unit": "pails",
+  "qty_on_hand": 4
+ },
+ {
+  "id": "234552d0-9f3d-4ef7-ac5b-385e714a6ade",
+  "name": "WL 100-9003",
+  "item_code": "WL 100-9003",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "446c3f85-cce8-490f-bab2-e23481ba6bc7",
+  "name": "WL 100-9005",
+  "item_code": "WL 100-9005",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "c0530aad-1d40-4b21-8065-d93c7c505822",
+  "name": "WL 100-9012",
+  "item_code": "WL 100-9012",
+  "unit": "Kgs",
+  "qty_on_hand": 0
+ },
+ {
+  "id": "de2b5d38-0c72-40b3-a408-f0d24ee2a160",
+  "name": "WL 110",
+  "item_code": "WL 110",
+  "unit": "pails",
+  "qty_on_hand": 2
+ },
+ {
+  "id": "63da2975-da32-41a9-937c-e4281e8f9e43",
+  "name": "WL 113 Black",
+  "item_code": "WL 113 Black",
+  "unit": "pails",
+  "qty_on_hand": 10
+ },
+ {
+  "id": "6b6b4db8-c220-4e18-9f13-efedf5579df3",
+  "name": "WL 113-7046",
+  "item_code": "WL 113-7046",
+  "unit": "Kgs",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "88a99b5f-b457-4f6d-9632-e7505d5bef99",
+  "name": "WL 118",
+  "item_code": "WL 118",
+  "unit": "pails",
+  "qty_on_hand": 3
+ },
+ {
+  "id": "c1de7512-d58e-43cc-8c53-402f0068ed90",
+  "name": "WL 150",
+  "item_code": "WL 150",
+  "unit": "pails",
+  "qty_on_hand": 8
+ },
+ {
+  "id": "7ac74aba-0e39-42dd-a33d-c5e998c87306",
+  "name": "WL 150 Transparent",
+  "item_code": "WL 150 Transparent",
+  "unit": "pails",
+  "qty_on_hand": 6
+ },
+ {
+  "id": "3f9232ab-25db-4c7a-9fae-549824e60124",
+  "name": "Yellow Paint",
+  "item_code": "EXP-YELLOWPAINT",
+  "unit": "can",
+  "qty_on_hand": 0
+ }
+]

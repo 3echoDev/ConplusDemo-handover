@@ -20,13 +20,14 @@ import { cn } from "@/lib/utils";
   Vincent (loading bay) / Wendy (reconciliation) log received deliveries against
   issued POs. Closes the loop issued → closed.
 
-  The only write path is the SECURITY DEFINER RPC `log_delivery`, which:
-    - requires a non-empty DO number
-    - only accepts POs in status 'issued' (throws otherwise)
+  Write path (CP04, migration 20260911_cp04_partial_receipts.sql): the SECURITY
+  DEFINER RPC `log_delivery_lines(po, do_number, [{line_id, qty_received}], …)`:
+    - requires a non-empty DO number and PO status issued|partial
     - inserts the delivery_orders row (status 'received')
-    - if p_close_po, composes po_close() → PO becomes 'closed' and its
-      actual_delivery_date is stamped
-    - writes an audit_log entry
+    - decrements each po_line_items.qty_balance (rejects over-receipt)
+    - closes the PO (status 'closed', actual_delivery_date) only when every
+      line's balance is 0; otherwise status 'partial' and the PO stays listed
+  POs with no line items fall back to the legacy `log_delivery(..., p_close_po=true)`.
 
   No real auth layer, so — like StoreHealthPage — the operator picks who they are.
   Store staff (Vincent, Wendy) aren't in `salespeople`, and log_delivery does NOT
@@ -44,6 +45,7 @@ const EDIT_WINDOW_MS = 4 * 60 * 60 * 1000; // inline DO-number edit allowed for 
 interface IssuedPO {
   id: string;
   po_number: string;
+  status: "issued" | "partial";
   supplier_name: string | null;
   works_order: string | null;
   project_site: string | null;
@@ -54,6 +56,29 @@ interface IssuedPO {
   line_count: number;
   partial_deliveries: number;
   is_overdue: boolean;
+  delivery_status: DeliveryStatus;
+  qty_received: number;
+  qty_ordered: number;
+}
+
+interface POLine {
+  id: string;
+  description: string;
+  qty: number;
+  unit: string | null;
+  qty_balance: number; // outstanding (null in DB means nothing received yet → qty)
+}
+
+type DeliveryStatus = "Pending" | "Partially Delivered" | "Fully Delivered";
+
+// Same rule as the po_delivery_status view: a PO is only fully delivered when
+// every line's outstanding balance is zero; anything received short of that is partial.
+function deriveDeliveryStatus(lines: { qty: number; qty_balance: number | null }[]): DeliveryStatus {
+  if (lines.length === 0) return "Pending";
+  const outstanding = lines.reduce((s, l) => s + (l.qty_balance ?? l.qty), 0);
+  const received = lines.reduce((s, l) => s + (l.qty - (l.qty_balance ?? l.qty)), 0);
+  if (outstanding <= 0) return "Fully Delivered";
+  return received > 0 ? "Partially Delivered" : "Pending";
 }
 
 interface DeliveryRow {
@@ -120,8 +145,9 @@ export default function DeliveriesPage() {
   const [doNumber, setDoNumber] = useState("");
   const [deliveryDate, setDeliveryDate] = useState(todayISO());
   const [formNotes, setFormNotes] = useState("");
-  const [markClosed, setMarkClosed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [poLines, setPoLines] = useState<POLine[] | null>(null); // null = loading
+  const [receiving, setReceiving] = useState<Record<string, string>>({});
 
   // inline DO-number edit
   const [editId, setEditId] = useState<string | null>(null);
@@ -137,9 +163,9 @@ export default function DeliveriesPage() {
       supabase
         .from("purchase_orders")
         .select(
-          "id,po_number,supplier_name,works_order,project_site,ship_to,total_amount,approved_at,delivery_date,po_line_items(id)",
+          "id,po_number,status,supplier_name,works_order,project_site,ship_to,total_amount,approved_at,delivery_date,po_line_items(id,qty,qty_balance)",
         )
-        .eq("status", "issued"),
+        .in("status", ["issued", "partial"]),
       // every DO (po_id + date) — 85 rows, cheap. Powers the partial-count map + stats.
       supabase.from("delivery_orders").select("po_id,delivery_date"),
       supabase
@@ -165,9 +191,14 @@ export default function DeliveriesPage() {
 
     const rows = ((issuedRes.data as Record<string, unknown>[]) ?? []).map((r) => {
       const expected = (r.delivery_date as string) ?? null;
+      const lines = (((r.po_line_items as Record<string, unknown>[]) ?? [])).map((l) => ({
+        qty: Number(l.qty ?? 0),
+        qty_balance: l.qty_balance == null ? null : Number(l.qty_balance),
+      }));
       return {
         id: r.id as string,
         po_number: r.po_number as string,
+        status: r.status as IssuedPO["status"],
         supplier_name: (r.supplier_name as string) ?? null,
         works_order: (r.works_order as string) ?? null,
         project_site: (r.project_site as string) ?? null,
@@ -175,9 +206,12 @@ export default function DeliveriesPage() {
         total_amount: Number(r.total_amount ?? 0),
         approved_at: (r.approved_at as string) ?? null,
         expected_date: expected,
-        line_count: ((r.po_line_items as unknown[]) ?? []).length,
+        line_count: lines.length,
         partial_deliveries: partial.get(r.id as string) ?? 0,
         is_overdue: !!expected && expected < todayStr,
+        delivery_status: deriveDeliveryStatus(lines),
+        qty_ordered: lines.reduce((s, l) => s + l.qty, 0),
+        qty_received: lines.reduce((s, l) => s + (l.qty - (l.qty_balance ?? l.qty)), 0),
       } as IssuedPO;
     });
     rows.sort((a, b) => {
@@ -243,13 +277,48 @@ export default function DeliveriesPage() {
     else localStorage.removeItem(RECEIVER_KEY);
   };
 
-  const openLog = (po: IssuedPO) => {
+  const openLog = async (po: IssuedPO) => {
     setLogFor(po);
     setDoNumber("");
     setDeliveryDate(todayISO());
     setFormNotes("");
-    setMarkClosed(false);
+    setPoLines(null);
+    setReceiving({});
+    const { data, error } = await supabase
+      .from("po_line_items")
+      .select("id,description,qty,unit,qty_balance")
+      .eq("po_id", po.id)
+      .order("created_at", { ascending: true });
+    if (error) {
+      toast.error(error.message);
+      setPoLines([]);
+      return;
+    }
+    const lines = ((data as Record<string, unknown>[]) ?? []).map((l) => {
+      const qty = Number(l.qty ?? 0);
+      return {
+        id: l.id as string,
+        description: (l.description as string) ?? "",
+        qty,
+        unit: (l.unit as string) ?? null,
+        qty_balance: l.qty_balance == null ? qty : Number(l.qty_balance),
+      } as POLine;
+    });
+    setPoLines(lines);
+    // default: receive everything still outstanding
+    setReceiving(Object.fromEntries(lines.map((l) => [l.id, l.qty_balance > 0 ? String(l.qty_balance) : ""])));
   };
+
+  const closeLog = () => {
+    setLogFor(null);
+    setPoLines(null);
+    setReceiving({});
+  };
+
+  const receivingTotal = useMemo(
+    () => Object.values(receiving).reduce((s, v) => s + (Number(v) > 0 ? Number(v) : 0), 0),
+    [receiving],
+  );
 
   const submitDelivery = async () => {
     if (!logFor) return;
@@ -257,15 +326,42 @@ export default function DeliveriesPage() {
       toast.error("DO number is required.");
       return;
     }
+    const lines = poLines ?? [];
+    const payload = lines
+      .map((l) => ({ line_id: l.id, qty_received: Number(receiving[l.id] || 0) }))
+      .filter((p) => p.qty_received > 0);
+    if (lines.length > 0) {
+      const over = lines.find((l) => Number(receiving[l.id] || 0) > l.qty_balance);
+      if (over) {
+        toast.error(`"${over.description}" — receiving more than the ${over.qty_balance} outstanding.`);
+        return;
+      }
+      if (payload.length === 0) {
+        toast.error("Enter a received quantity on at least one line.");
+        return;
+      }
+    }
+
     setSubmitting(true);
-    const { data, error } = await supabase.rpc("log_delivery", {
-      p_po_id: logFor.id,
-      p_do_number: doNumber.trim(),
-      p_delivery_date: deliveryDate || todayISO(),
-      p_received_by_name: receiver.trim() || null,
-      p_notes: formNotes.trim() || null,
-      p_close_po: markClosed,
-    });
+    // POs with line items: per-line receipt (partial-aware). Legacy POs with no
+    // lines fall back to the whole-PO log_delivery and close on the receiver's say-so.
+    const { data, error } = lines.length > 0
+      ? await supabase.rpc("log_delivery_lines", {
+          p_po_id: logFor.id,
+          p_do_number: doNumber.trim(),
+          p_lines: payload,
+          p_delivery_date: deliveryDate || todayISO(),
+          p_received_by_name: receiver.trim() || null,
+          p_notes: formNotes.trim() || null,
+        })
+      : await supabase.rpc("log_delivery", {
+          p_po_id: logFor.id,
+          p_do_number: doNumber.trim(),
+          p_delivery_date: deliveryDate || todayISO(),
+          p_received_by_name: receiver.trim() || null,
+          p_notes: formNotes.trim() || null,
+          p_close_po: true,
+        });
     setSubmitting(false);
     if (error) {
       toast.error(error.message);
@@ -273,9 +369,12 @@ export default function DeliveriesPage() {
     }
     const res = (data as { po_number?: string; po_status?: string }[] | null)?.[0];
     toast.success(`Delivery logged for ${res?.po_number ?? logFor.po_number}`, {
-      description: res?.po_status === "closed" ? "PO closed — fully delivered." : "PO stays open for further deliveries.",
+      description:
+        res?.po_status === "closed"
+          ? "Fully delivered — PO closed."
+          : "Partially delivered — PO stays open for the balance.",
     });
-    setLogFor(null);
+    closeLog();
     await load();
   };
 
@@ -406,6 +505,23 @@ export default function DeliveriesPage() {
                       {po.works_order && po.works_order !== "NIL" && (
                         <span className="text-xs text-muted-foreground">WO {po.works_order}</span>
                       )}
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          po.delivery_status === "Partially Delivered"
+                            ? "bg-amber-100 text-amber-700"
+                            : po.delivery_status === "Fully Delivered"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-secondary text-muted-foreground",
+                        )}
+                        title={
+                          po.line_count > 0
+                            ? `${po.qty_received} of ${po.qty_ordered} received across ${po.line_count} line${po.line_count === 1 ? "" : "s"}`
+                            : "No line items on this PO — closes on receipt"
+                        }
+                      >
+                        {po.delivery_status}
+                      </span>
                       {po.is_overdue && (
                         <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
                           overdue
@@ -414,6 +530,7 @@ export default function DeliveriesPage() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {fmtMoney(po.total_amount)} · {po.line_count} line{po.line_count === 1 ? "" : "s"}
+                      {po.line_count > 0 ? ` · ${po.qty_received}/${po.qty_ordered} received` : ""}
                       {po.approved_at ? ` · issued ${daysBetween(new Date(po.approved_at), now)}d ago` : ""}
                       {po.expected_date ? ` · required ${fmtDateStr(po.expected_date)}` : ""}
                     </p>
@@ -519,8 +636,8 @@ export default function DeliveriesPage() {
       {/* Log delivery dialog */}
       {logFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setLogFor(null)} />
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+          <div className="absolute inset-0 bg-black/40" onClick={closeLog} />
+          <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="font-heading font-semibold text-card-foreground">Log delivery · {logFor.po_number}</h3>
@@ -529,10 +646,81 @@ export default function DeliveriesPage() {
                   {logFor.partial_deliveries > 0 ? ` · ${logFor.partial_deliveries} DO already logged` : ""}
                 </p>
               </div>
-              <button onClick={() => setLogFor(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary">
+              <button onClick={closeLog} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary">
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {/* per-line receipt */}
+            <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+              {poLines === null ? (
+                <p className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading PO lines…
+                </p>
+              ) : poLines.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground">
+                  This PO has no line items — logging the DO will close it as fully delivered.
+                </p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-secondary/50 text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium">Item</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Ordered</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Received</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Outstanding</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Receiving now</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poLines.map((l) => {
+                      const done = l.qty_balance <= 0;
+                      const val = Number(receiving[l.id] || 0);
+                      const over = val > l.qty_balance;
+                      return (
+                        <tr key={l.id} className={cn("border-t border-border/60", done && "opacity-60")}>
+                          <td className="px-2 py-1.5 text-card-foreground">
+                            {l.description}
+                            {l.unit ? <span className="ml-1 text-muted-foreground">({l.unit})</span> : null}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{l.qty}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{l.qty - l.qty_balance}</td>
+                          <td className={cn("px-2 py-1.5 text-right tabular-nums", !done && "font-semibold")}>
+                            {l.qty_balance}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={l.qty_balance}
+                              step="any"
+                              disabled={done}
+                              value={receiving[l.id] ?? ""}
+                              onChange={(e) => setReceiving((m) => ({ ...m, [l.id]: e.target.value }))}
+                              className={cn(
+                                "w-24 rounded-md border bg-background px-2 py-1 text-right tabular-nums outline-none focus:ring-2 focus:ring-ring",
+                                over ? "border-red-500" : "border-input",
+                              )}
+                              aria-label={`Receiving now: ${l.description}`}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {poLines && poLines.length > 0 && (
+              <p
+                className="mt-1.5 text-[11px] text-muted-foreground"
+                title="Closing a PO short (writing off an undelivered balance) is not offered here yet — adjust the PO line quantity instead."
+              >
+                Receiving {receivingTotal} now. The PO closes automatically once every line is fully received;
+                anything less keeps it open as partially delivered.
+              </p>
+            )}
 
             <div className="mt-4 space-y-3">
               <label className="block">
@@ -578,28 +766,18 @@ export default function DeliveriesPage() {
                   className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                 />
               </label>
-
-              <label className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-card-foreground">
-                <input
-                  type="checkbox"
-                  checked={markClosed}
-                  onChange={(e) => setMarkClosed(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Mark PO as fully delivered (closes the PO)
-              </label>
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                onClick={() => setLogFor(null)}
+                onClick={closeLog}
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={submitDelivery}
-                disabled={submitting}
+                disabled={submitting || poLines === null}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}

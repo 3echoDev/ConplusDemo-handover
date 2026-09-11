@@ -23,8 +23,10 @@ import {
 import { printPO, exportPOToExcel } from "@/lib/poDocument";
 import { printWO, woOrderTotal } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
-import { printClaim, exportClaimToExcel, type ClaimDocContext } from "@/lib/claimDocument";
+import { printClaim, computeClaimTotals, type ClaimDocContext } from "@/lib/claimDocument";
+import { exportClaimToExcel } from "@/lib/claimExcel";
 import { fetchClaimLines } from "@/data/db";
+import ClaimLinesEditor from "@/components/ClaimLinesEditor";
 import StockWatchlist from "@/components/StockWatchlist";
 import { cn } from "@/lib/utils";
 
@@ -792,8 +794,13 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
     retentionPct: project?.retentionPct ?? null,
     retentionCapPct: project?.retentionCapPct ?? null,
     gstPct: 9,
+    projectSite: project?.name,
+    preparedBy: "Hnin (QS)",
+    authorisedBy: project?.manager && project.manager !== "—" ? project.manager : "",
   };
   const claimWithLines: Claim = { ...claim, lines };
+  const totals = computeClaimTotals(claimWithLines, docCtx);
+  const [editingLines, setEditingLines] = useState(false);
   const clientAddress = claim.clientAddress || project?.companyAddress || "—";
   const contact = claim.contactPerson || project?.contactPerson || "—";
   const isInvoice = isInternalInvoice(claim);
@@ -802,8 +809,11 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
     claimNo: claim.claimNo != null ? String(claim.claimNo) : "",
     claimDate: claim.submittedDate && claim.submittedDate !== "—" ? claim.submittedDate : "",
     totalClaim: claim.totalClaim != null ? String(claim.totalClaim) : "",
+    retentionAmount: claim.retentionAmount != null ? String(claim.retentionAmount) : "",
     certifiedAmount: claim.certifiedAmount != null ? String(claim.certifiedAmount) : "",
     certifiedDate: claim.certifiedDate ?? "",
+    prcDate: claim.prcDate ?? "",
+    invoiceDate: claim.invoiceDate ?? "",
     paidDate: claim.paidDate ?? "",
     remarks: claim.remarks ?? "",
     gst: claim.gst != null ? String(claim.gst) : "",
@@ -872,11 +882,29 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
           )}
         </div>
 
-        {/* Financial totals ladder */}
-        <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
-          {claim.totalClaim != null && (
+        {/* Financial totals ladder — same shape as the Cover Page ladder */}
+        <div className="ml-auto w-full max-w-xs space-y-1 text-sm" data-testid="claim-ladder">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Total Value of Work Done</span><span className="tabular-nums">{formatCurrency(totals.workDone)}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>
+              Less: Retention
+              {docCtx.retentionPct != null || claim.retentionPct != null
+                ? ` (${docCtx.retentionPct ?? claim.retentionPct}%)`
+                : ""}
+              {totals.retentionSource === "stored" && (
+                <span className="ml-1 text-[10px] uppercase tracking-wide" title="No claim lines yet — showing the retention amount stored on the claim">stored</span>
+              )}
+            </span>
+            <span className="tabular-nums">−{formatCurrency(totals.retention)}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>Net Amount</span><span className="tabular-nums">{formatCurrency(totals.netAfterRetention)}</span>
+          </div>
+          {totals.previouslyCertified > 0 && (
             <div className="flex justify-between text-muted-foreground">
-              <span>Total Claim</span><span className="tabular-nums">{formatCurrency(claim.totalClaim)}</span>
+              <span>Less: Previously Certified</span><span className="tabular-nums">−{formatCurrency(totals.previouslyCertified)}</span>
             </div>
           )}
           <div className="flex justify-between text-muted-foreground">
@@ -903,8 +931,22 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
           </div>
         )}
 
-        {/* Line items table */}
-        {lines.length > 0 && (
+        {/* Line items — editable schedule; persisted via save_claim_lines RPC */}
+        {editingLines && (
+          <ClaimLinesEditor
+            claimId={claim.id}
+            lines={lines}
+            onSaved={(ls) => { setLines(ls); setEditingLines(false); }}
+            onCancel={() => setEditingLines(false)}
+          />
+        )}
+        {!editingLines && lines.length === 0 && (
+          <div className="flex items-center justify-between rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+            <span>No claim lines recorded yet — totals use the stored amounts.</span>
+            <button onClick={() => setEditingLines(true)} className="font-medium text-primary hover:underline">Add lines</button>
+          </div>
+        )}
+        {!editingLines && lines.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-xs">
               <thead>
@@ -929,7 +971,11 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
                       </tr>
                       {secLines.map((l) => (
                         <tr key={l.id} className="border-t border-border/60">
-                          <td className="px-2 py-1.5 text-card-foreground">{l.description}</td>
+                          <td className="px-2 py-1.5 text-card-foreground">
+                            {l.zone && <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{l.zone}</span>}
+                            {l.pgRef && <span className="mr-1 font-medium">{l.pgRef}</span>}
+                            {l.description.split("\n")[0]}
+                          </td>
                           <td className="px-2 py-1.5 text-right text-muted-foreground tabular-nums">{l.prevAmount != null ? formatCurrency(l.prevAmount) : "—"}</td>
                           <td className="px-2 py-1.5 text-right text-muted-foreground tabular-nums">{l.currAmount != null ? formatCurrency(l.currAmount) : "—"}</td>
                           <td className="px-2 py-1.5 text-right font-medium text-card-foreground tabular-nums">{l.cumAmount != null ? formatCurrency(l.cumAmount) : "—"}</td>
@@ -959,6 +1005,14 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
           >
             Edit
           </button>
+          {!editingLines && lines.length > 0 && (
+            <button
+              onClick={() => setEditingLines(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
+            >
+              Edit lines
+            </button>
+          )}
           <button
             onClick={() => exportClaimToExcel(claimWithLines, docCtx)}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
@@ -994,8 +1048,20 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
           <input className={inp} inputMode="decimal" value={draft.totalClaim} onChange={(e) => setDraft({ ...draft, totalClaim: e.target.value })} />
         </div>
         <div>
+          <label className={lbl}>Retention Amount (held)</label>
+          <input className={inp} inputMode="decimal" placeholder="e.g. 10% of work done" value={draft.retentionAmount} onChange={(e) => setDraft({ ...draft, retentionAmount: e.target.value })} />
+        </div>
+        <div>
           <label className={lbl}>Certified Amount</label>
           <input className={inp} inputMode="decimal" placeholder="Can be less than claimed" value={draft.certifiedAmount} onChange={(e) => setDraft({ ...draft, certifiedAmount: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>PRC Received</label>
+          <input type="date" className={inp} value={draft.prcDate} onChange={(e) => setDraft({ ...draft, prcDate: e.target.value })} />
+        </div>
+        <div>
+          <label className={lbl}>Invoice Date</label>
+          <input type="date" className={inp} value={draft.invoiceDate} onChange={(e) => setDraft({ ...draft, invoiceDate: e.target.value })} />
         </div>
         <div>
           <label className={lbl}>Certified Date</label>

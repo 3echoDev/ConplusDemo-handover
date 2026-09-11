@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Plus, Search, Calendar, DollarSign, MapPin, TrendingUp, Users, X } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import { formatCurrency } from "@/data/sampleData";
@@ -18,6 +19,18 @@ interface VORowInput {
 
 function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { projects, createProject } = useAppData();
+  // Canonical sales managers only — free text used to land as "Ng Wan Fern" etc.
+  // and split the management summary; the DB trigger normalises, the UI prevents.
+  const [salespeople, setSalespeople] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    supabase
+      .from("salespeople")
+      .select("canonical_name")
+      .eq("active", true)
+      .order("canonical_name")
+      .then(({ data }) => setSalespeople((data ?? []).map((r: { canonical_name: string }) => r.canonical_name)));
+  }, [open]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
@@ -82,7 +95,12 @@ function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
           <div>
             <label className={labelCls}>Sales Manager</label>
-            <input type="text" value={salesManager} onChange={(e) => setSalesManager(e.target.value)} placeholder="e.g. JENSEN" className={inputCls} />
+            <select value={salesManager} onChange={(e) => setSalesManager(e.target.value)} className={inputCls}>
+              <option value="">— Select —</option>
+              {salespeople.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls}>Project / Site Name</label>

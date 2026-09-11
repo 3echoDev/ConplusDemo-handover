@@ -1,0 +1,1098 @@
+[
+  {
+    "id": "PO-01",
+    "sheet": "PO Summary Dashboard",
+    "text": "Shows all POs that are still pending delivery to us, including partial deliveries.",
+    "status": "planned",
+    "mapping": "Waiting-delivery list on Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round; now includes POs in status partial",
+    "note": ""
+  },
+  {
+    "id": "PO-02",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Click Outstanding PO → show the list by PO No.",
+    "status": "existing",
+    "mapping": "Store Health (/store/health) pending list and Deliveries waiting list are both keyed by PO No.",
+    "note": ""
+  },
+  {
+    "id": "PO-03",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Click a PO No. → show the PO item details.",
+    "status": "planned",
+    "mapping": "Log-delivery dialog loads po_line_items for the selected PO — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-04",
+    "sheet": "PO Summary Dashboard",
+    "text": "• PO Qty",
+    "status": "planned",
+    "mapping": "po_line_items.qty shown as Ordered — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-05",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Delivered Qty",
+    "status": "planned",
+    "mapping": "qty − qty_balance shown as Received — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-06",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Outstanding Qty",
+    "status": "planned",
+    "mapping": "po_line_items.qty_balance shown as Outstanding — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-07",
+    "sheet": "PO Summary Dashboard",
+    "text": "• UOM",
+    "status": "planned",
+    "mapping": "po_line_items.unit shown per line — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-08",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Delivery Status",
+    "status": "planned",
+    "mapping": "delivery_status column in view po_delivery_status + badge per PO — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-09",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Pending - No quantity received",
+    "status": "planned",
+    "mapping": "Pending = qty_received 0 (po_delivery_status)",
+    "note": ""
+  },
+  {
+    "id": "PO-10",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Partially Delivered - Some quantity received, balance outstanding",
+    "status": "planned",
+    "mapping": "Partially Delivered = 0 < received < ordered (po_delivery_status; PO status 'partial')",
+    "note": ""
+  },
+  {
+    "id": "PO-11",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Fully Delivered - Full PO quantity delivered to us",
+    "status": "planned",
+    "mapping": "Fully Delivered = outstanding 0 (po_delivery_status; PO status 'closed')",
+    "note": ""
+  },
+  {
+    "id": "PO-12",
+    "sheet": "PO Summary Dashboard",
+    "text": "• User manually enters the received quantity by item.",
+    "status": "planned",
+    "mapping": "Per-line 'Receiving now' inputs in the log-delivery dialog — Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PO-13",
+    "sheet": "PO Summary Dashboard",
+    "text": "• System updates the PO delivery record automatically.",
+    "status": "planned",
+    "mapping": "log_delivery_lines inserts the delivery_orders row and decrements each line's qty_balance",
+    "note": ""
+  },
+  {
+    "id": "PO-14",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Delivered Qty and Outstanding Qty are updated accordingly.",
+    "status": "planned",
+    "mapping": "Received = qty − qty_balance; Outstanding = qty_balance, both recomputed on each receipt",
+    "note": ""
+  },
+  {
+    "id": "PO-15",
+    "sheet": "PO Summary Dashboard",
+    "text": "• The dashboard is updated automatically.",
+    "status": "planned",
+    "mapping": "Deliveries page refetches after logging (plus 60s poll / focus refetch)",
+    "note": ""
+  },
+  {
+    "id": "PO-16",
+    "sheet": "PO Summary Dashboard",
+    "text": "• User scans/uploads the DO.",
+    "status": "gap",
+    "mapping": "No DO scanning/OCR: supplier_invoices has ocr_* columns for invoices only; DO details are typed",
+    "note": "Candidate: upload DO photo → Claude vision → prefill the per-line receipt table"
+  },
+  {
+    "id": "PO-17",
+    "sheet": "PO Summary Dashboard",
+    "text": "• System reads the DO details and matches them to the relevant PO No. and items.",
+    "status": "gap",
+    "mapping": "No DO scanning/OCR: supplier_invoices has ocr_* columns for invoices only; DO details are typed",
+    "note": ""
+  },
+  {
+    "id": "PO-18",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Received quantity is automatically recorded against the PO.",
+    "status": "gap",
+    "mapping": "No DO scanning/OCR: supplier_invoices has ocr_* columns for invoices only; DO details are typed",
+    "note": ""
+  },
+  {
+    "id": "PO-19",
+    "sheet": "PO Summary Dashboard",
+    "text": "• PO Delivered Qty, Outstanding Qty and dashboard are updated automatically.",
+    "status": "gap",
+    "mapping": "No DO scanning/OCR: supplier_invoices has ocr_* columns for invoices only; DO details are typed",
+    "note": ""
+  },
+  {
+    "id": "PO-20",
+    "sheet": "PO Summary Dashboard",
+    "text": "• User can review and amend the scanned quantities before confirming the receipt.",
+    "status": "gap",
+    "mapping": "No DO scanning/OCR: supplier_invoices has ocr_* columns for invoices only; DO details are typed",
+    "note": "The manual per-line table already gives the review/amend step once scanning exists"
+  },
+  {
+    "id": "PO-21",
+    "sheet": "PO Summary Dashboard",
+    "text": "• PO → Store, or",
+    "status": "existing",
+    "mapping": "Receipts are logged against the PO regardless of ship_to; ship_to = Admiralty Store on the PO",
+    "note": ""
+  },
+  {
+    "id": "PO-22",
+    "sheet": "PO Summary Dashboard",
+    "text": "• PO → Project Site (Direct Delivery)",
+    "status": "clarify",
+    "mapping": "Receipts for site-shipped POs are logged the same way (ship_to = project_site); Direct-to-site is not a movement type: a PO with ship_to = site is closed on the Deliveries page but nothing is written to material_movements",
+    "note": "Ask: who logs a site delivery — store staff from the DO copy, or the site supervisor?"
+  },
+  {
+    "id": "PO-23",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Mark PO as Fully Delivered (Close PO)",
+    "status": "planned",
+    "mapping": "Close happens automatically when every line's qty_balance reaches 0 (log_delivery_lines → po_close); the manual 'mark closed' checkbox is removed",
+    "note": "'Close PO short' (write off an undelivered balance) is deliberately not offered this round"
+  },
+  {
+    "id": "PO-24",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Change PO status to Fully Delivered / Closed",
+    "status": "planned",
+    "mapping": "po_close sets purchase_orders.status = closed and actual_delivery_date",
+    "note": ""
+  },
+  {
+    "id": "PO-25",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Remove it from Outstanding PO",
+    "status": "existing",
+    "mapping": "Waiting-delivery list queries status in (issued, partial); closed POs drop out",
+    "note": ""
+  },
+  {
+    "id": "PO-26",
+    "sheet": "PO Summary Dashboard",
+    "text": "• Retain the complete PO delivery history for future reference.",
+    "status": "existing",
+    "mapping": "delivery_orders rows are never deleted; audit_log triggers on delivery_orders, po_line_items and purchase_orders",
+    "note": ""
+  },
+  {
+    "id": "PO-27",
+    "sheet": "PO Summary Dashboard",
+    "text": "Important: A PO should only be considered fully delivered based on the actual quantities received/delivered, not simply because the PO was issued. Partial deliveries must remain outstanding until the full PO quantity is accounted for.",
+    "status": "planned",
+    "mapping": "log_delivery_lines is the only close path and requires all balances = 0; partial receipts leave status = partial",
+    "note": ""
+  },
+  {
+    "id": "PR-01",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "The system must support partial receipt against a PO.",
+    "status": "planned",
+    "mapping": "Deliveries page (/store/deliveries) + RPC log_delivery_lines + view po_delivery_status — this round",
+    "note": ""
+  },
+  {
+    "id": "PR-02",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• PO Quantity: 100 units",
+    "status": "planned",
+    "mapping": "Worked example covered by log_delivery_lines (qty 100)",
+    "note": ""
+  },
+  {
+    "id": "PR-03",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• First DO received: 60 units",
+    "status": "planned",
+    "mapping": "Worked example: receive 60 → qty_balance 40, status partial",
+    "note": ""
+  },
+  {
+    "id": "PR-04",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Remaining PO Quantity: 40 units",
+    "status": "planned",
+    "mapping": "Worked example: qty_balance 40 shown as Outstanding",
+    "note": ""
+  },
+  {
+    "id": "PR-05",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "1. Record only the actual received quantity (60 units) as Stock-In if delivered to Store.",
+    "status": "gap",
+    "mapping": "Receipt does not post a Stock-In: inventory only moves via Store form (/store) → RPC log_material_movement(in|out, qty, project_ref, remarks, doc_ref); po_line_items.material_id is mostly null so a receipt cannot be mapped to a material automatically",
+    "note": "Needs material_id on every PO line (CP01 picker helps) before auto Stock-In is safe"
+  },
+  {
+    "id": "PR-06",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "2. Maintain the PO balance as 40 units outstanding.",
+    "status": "planned",
+    "mapping": "qty_balance maintained per line by log_delivery_lines",
+    "note": ""
+  },
+  {
+    "id": "PR-07",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "3. Allow the 60 received units to be:",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-08",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Reserved for one project, or",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-09",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Allocated to multiple Project Codes / Sites, or",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-10",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Kept as Available Stock.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-11",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "4. When the remaining 40 units are received under another DO:",
+    "status": "planned",
+    "mapping": "Second DO logged against the same PO from the waiting list (PO stays listed while partial)",
+    "note": ""
+  },
+  {
+    "id": "PR-12",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Record another Stock-In transaction for the actual received quantity.",
+    "status": "gap",
+    "mapping": "Second Stock-In not auto-posted (see PR-05)",
+    "note": ""
+  },
+  {
+    "id": "PR-13",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Link it to the same PO No.",
+    "status": "planned",
+    "mapping": "delivery_orders.po_id links every DO to the PO",
+    "note": ""
+  },
+  {
+    "id": "PR-14",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Record the new DO No.",
+    "status": "planned",
+    "mapping": "delivery_orders.do_number captured per receipt",
+    "note": ""
+  },
+  {
+    "id": "PR-15",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Update the remaining PO balance.",
+    "status": "planned",
+    "mapping": "qty_balance decremented; PO closes when it reaches 0",
+    "note": ""
+  },
+  {
+    "id": "PR-16",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• PO: 100 units",
+    "status": "planned",
+    "mapping": "Example — PO qty per line (po_line_items.qty)",
+    "note": ""
+  },
+  {
+    "id": "PR-17",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Project EX001: 30 units - Reserved",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-18",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Project EX002: 20 units - Reserved",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-19",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Available Stock: 10 units",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-20",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Remaining PO Balance: 40 units",
+    "status": "planned",
+    "mapping": "Example — remaining balance (po_line_items.qty_balance)",
+    "note": ""
+  },
+  {
+    "id": "PR-21",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Project EX003: 25 units - Reserved",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-22",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Available Stock: 15 units",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-23",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "PO Quantity | 100",
+    "status": "planned",
+    "mapping": "PO Quantity = po_line_items.qty (view po_delivery_status.qty_ordered)",
+    "note": ""
+  },
+  {
+    "id": "PR-24",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "Received Quantity | 100",
+    "status": "planned",
+    "mapping": "Received Quantity = qty − qty_balance (po_delivery_status.qty_received)",
+    "note": ""
+  },
+  {
+    "id": "PR-25",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "Allocated / Reserved Quantity | 75",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-26",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "Available Quantity | 25",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced; today Available = materials.qty_on_hand",
+    "note": ""
+  },
+  {
+    "id": "PR-27",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "Outstanding PO Quantity | 0",
+    "status": "planned",
+    "mapping": "Outstanding PO Quantity = po_delivery_status.qty_outstanding",
+    "note": ""
+  },
+  {
+    "id": "PR-28",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• PO Quantity, Received Quantity, Reserved Quantity and Available Quantity must be tracked separately.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "PR-29",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• The system must not treat the full PO quantity as inventory until the material is physically received.",
+    "status": "existing",
+    "mapping": "Issuing a PO never touches materials.qty_on_hand; stock only moves via Store form (/store) → RPC log_material_movement(in|out, qty, project_ref, remarks, doc_ref)",
+    "note": ""
+  },
+  {
+    "id": "PR-30",
+    "sheet": "Partial Receipt & Allocation",
+    "text": "• Only the actual received quantity should increase Store Inventory.",
+    "status": "clarify",
+    "mapping": "Store staff post Stock-In manually on /store after physically receiving; receipt on the Deliveries page does not post stock (see PR-05)",
+    "note": "Ask: should DO receipt auto-post Stock-In for lines with a known material, or stay a separate store action?"
+  },
+  {
+    "id": "MM-01",
+    "sheet": "Material Inventory Movement",
+    "text": "• PO → Store: Record as Inventory Stock-In.",
+    "status": "existing",
+    "mapping": "Store form (/store) → RPC log_material_movement(in|out, qty, project_ref, remarks, doc_ref) with direction 'in' and project_ref 'Store'",
+    "note": "PO/DO numbers go into doc_ref → remarks (free text)"
+  },
+  {
+    "id": "MM-02",
+    "sheet": "Material Inventory Movement",
+    "text": "• Available - for general/future project use; or",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-03",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reserved - allocated to a specific Project Code / Project Site.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-04",
+    "sheet": "Material Inventory Movement",
+    "text": "• One PO may be allocated to multiple Project Codes / Sites. The system must allow this.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced; multi-project split of one PO not modelled",
+    "note": ""
+  },
+  {
+    "id": "MM-05",
+    "sheet": "Material Inventory Movement",
+    "text": "• PO No.",
+    "status": "existing",
+    "mapping": "Store form optional DO/PO field → log_material_movement p_doc_ref (folded into remarks)",
+    "note": "Free text, not a FK to purchase_orders"
+  },
+  {
+    "id": "MM-06",
+    "sheet": "Material Inventory Movement",
+    "text": "• DO No.",
+    "status": "existing",
+    "mapping": "Same field as MM-05",
+    "note": ""
+  },
+  {
+    "id": "MM-07",
+    "sheet": "Material Inventory Movement",
+    "text": "• Movement Date",
+    "status": "existing",
+    "mapping": "material_movements.date_in / date_out (set to today by the RPC)",
+    "note": "Backdating not supported — see MM-77"
+  },
+  {
+    "id": "MM-08",
+    "sheet": "Material Inventory Movement",
+    "text": "• Material",
+    "status": "existing",
+    "mapping": "material_movements.material_id via Store form material search",
+    "note": ""
+  },
+  {
+    "id": "MM-09",
+    "sheet": "Material Inventory Movement",
+    "text": "• Quantity",
+    "status": "existing",
+    "mapping": "material_movements.qty_in / qty_out",
+    "note": ""
+  },
+  {
+    "id": "MM-10",
+    "sheet": "Material Inventory Movement",
+    "text": "• UOM",
+    "status": "existing",
+    "mapping": "material_movements.uom (from materials.unit)",
+    "note": ""
+  },
+  {
+    "id": "MM-11",
+    "sheet": "Material Inventory Movement",
+    "text": "• Project Code / Project Site, where applicable.",
+    "status": "existing",
+    "mapping": "material_movements.project_in — project code dropdown (validated against projects)",
+    "note": "Project Site is not stored on the movement; only the code"
+  },
+  {
+    "id": "MM-12",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record as Direct Delivery to Site.",
+    "status": "gap",
+    "mapping": "Direct-to-site is not a movement type: a PO with ship_to = site is closed on the Deliveries page but nothing is written to material_movements",
+    "note": ""
+  },
+  {
+    "id": "MM-13",
+    "sheet": "Material Inventory Movement",
+    "text": "• No Inventory Stock-In is required because the material does not enter the Store.",
+    "status": "gap",
+    "mapping": "Direct-to-site is not a movement type: a PO with ship_to = site is closed on the Deliveries page but nothing is written to material_movements",
+    "note": "Correct today by accident: nothing is posted at all"
+  },
+  {
+    "id": "MM-14",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record PO No., DO No., Movement Date, Project Code, Project Site, Material and Quantity.",
+    "status": "gap",
+    "mapping": "Direct-to-site is not a movement type: a PO with ship_to = site is closed on the Deliveries page but nothing is written to material_movements",
+    "note": ""
+  },
+  {
+    "id": "MM-15",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record as Inventory Stock-In - Site Return.",
+    "status": "gap",
+    "mapping": "Site returns can only be logged as a plain 'in' movement with the project code; no 'Site Return' type",
+    "note": ""
+  },
+  {
+    "id": "MM-16",
+    "sheet": "Material Inventory Movement",
+    "text": "• Default Stock Status = Available.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-17",
+    "sheet": "Material Inventory Movement",
+    "text": "• Project Code",
+    "status": "existing",
+    "mapping": "Store form IN movement: project dropdown",
+    "note": ""
+  },
+  {
+    "id": "MM-18",
+    "sheet": "Material Inventory Movement",
+    "text": "• Project Site",
+    "status": "existing",
+    "mapping": "Derived from the project (projects.location); not stored on the movement",
+    "note": ""
+  },
+  {
+    "id": "MM-19",
+    "sheet": "Material Inventory Movement",
+    "text": "• Movement Date",
+    "status": "existing",
+    "mapping": "material_movements.date_in",
+    "note": ""
+  },
+  {
+    "id": "MM-20",
+    "sheet": "Material Inventory Movement",
+    "text": "• Material",
+    "status": "existing",
+    "mapping": "material_movements.material_id",
+    "note": ""
+  },
+  {
+    "id": "MM-21",
+    "sheet": "Material Inventory Movement",
+    "text": "• Quantity",
+    "status": "existing",
+    "mapping": "material_movements.qty_in",
+    "note": ""
+  },
+  {
+    "id": "MM-22",
+    "sheet": "Material Inventory Movement",
+    "text": "• UOM",
+    "status": "existing",
+    "mapping": "material_movements.uom",
+    "note": ""
+  },
+  {
+    "id": "MM-23",
+    "sheet": "Material Inventory Movement",
+    "text": "• The returned material becomes available for use by any project unless it is subsequently reserved.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-24",
+    "sheet": "Material Inventory Movement",
+    "text": "1. Check the required material and quantity in the WO.",
+    "status": "existing",
+    "mapping": "Works order lines carry required_qty (calc_wo_line_qty) — Works Orders page",
+    "note": ""
+  },
+  {
+    "id": "MM-25",
+    "sheet": "Material Inventory Movement",
+    "text": "2. Check existing Available Stock.",
+    "status": "existing",
+    "mapping": "StockWatchlist / materials.qty_on_hand",
+    "note": "'Available' currently equals on-hand because nothing is reserved"
+  },
+  {
+    "id": "MM-26",
+    "sheet": "Material Inventory Movement",
+    "text": "3. If sufficient stock is available:",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-27",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reserve the required quantity.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-28",
+    "sheet": "Material Inventory Movement",
+    "text": "• Change Available → Reserved.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-29",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record Project Code, Project Site, WO No. and Reserved Quantity.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced; WO No. not captured on movements",
+    "note": ""
+  },
+  {
+    "id": "MM-30",
+    "sheet": "Material Inventory Movement",
+    "text": "• Physical stock remains in the Store.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-31",
+    "sheet": "Material Inventory Movement",
+    "text": "4. If insufficient stock is available:",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-32",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reserve the available quantity.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-33",
+    "sheet": "Material Inventory Movement",
+    "text": "• Calculate the balance quantity required.",
+    "status": "existing",
+    "mapping": "WO line 'Order qty' field (works_order_lines.order_qty) is set manually to the balance after ex-stock",
+    "note": "Not auto-computed"
+  },
+  {
+    "id": "MM-34",
+    "sheet": "Material Inventory Movement",
+    "text": "• Issue a PO for the balance quantity.",
+    "status": "existing",
+    "mapping": "Create PO dialog → purchase_orders / po_line_items",
+    "note": ""
+  },
+  {
+    "id": "MM-35",
+    "sheet": "Material Inventory Movement",
+    "text": "• When received, allocate the material to the relevant project if delivered to Store.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-36",
+    "sheet": "Material Inventory Movement",
+    "text": "Balance to Purchase = WO Required Quantity - Available Stock",
+    "status": "clarify",
+    "mapping": "Formula not computed anywhere; order_qty is typed by sales",
+    "note": "Ask: compute order_qty = required − on-hand automatically, and should on-hand mean Available (after reservations)?"
+  },
+  {
+    "id": "MM-37",
+    "sheet": "Material Inventory Movement",
+    "text": "• Material may be reserved for a specific Project Code / Project Site for future use.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-38",
+    "sheet": "Material Inventory Movement",
+    "text": "• Change Available → Reserved.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-39",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record Project Code and Project Site.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-40",
+    "sheet": "Material Inventory Movement",
+    "text": "• Material remains physically in the Store.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-41",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reserved material cannot be allocated to another project unless the reservation is released or changed.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-42",
+    "sheet": "Material Inventory Movement",
+    "text": "Important: Reservation is an allocation only. It is not a Stock-Out.",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": "Design note for the reservation model: reservation must not change qty_on_hand"
+  },
+  {
+    "id": "MM-43",
+    "sheet": "Material Inventory Movement",
+    "text": "• Record Inventory Stock-Out - Issue to Site.",
+    "status": "existing",
+    "mapping": "Store form (/store) → RPC log_material_movement(in|out, qty, project_ref, remarks, doc_ref) with direction 'out' and a project code",
+    "note": "No explicit 'Issue to Site' type label"
+  },
+  {
+    "id": "MM-44",
+    "sheet": "Material Inventory Movement",
+    "text": "• Movement Date",
+    "status": "existing",
+    "mapping": "material_movements.date_out",
+    "note": ""
+  },
+  {
+    "id": "MM-45",
+    "sheet": "Material Inventory Movement",
+    "text": "• Project Code",
+    "status": "existing",
+    "mapping": "material_movements.project_out",
+    "note": ""
+  },
+  {
+    "id": "MM-46",
+    "sheet": "Material Inventory Movement",
+    "text": "• Project Site",
+    "status": "existing",
+    "mapping": "Derived from the project; not stored on the movement",
+    "note": ""
+  },
+  {
+    "id": "MM-47",
+    "sheet": "Material Inventory Movement",
+    "text": "• Material",
+    "status": "existing",
+    "mapping": "material_movements.material_id",
+    "note": ""
+  },
+  {
+    "id": "MM-48",
+    "sheet": "Material Inventory Movement",
+    "text": "• Quantity",
+    "status": "existing",
+    "mapping": "material_movements.qty_out",
+    "note": ""
+  },
+  {
+    "id": "MM-49",
+    "sheet": "Material Inventory Movement",
+    "text": "• UOM",
+    "status": "existing",
+    "mapping": "material_movements.uom",
+    "note": ""
+  },
+  {
+    "id": "MM-50",
+    "sheet": "Material Inventory Movement",
+    "text": "• WO No., where applicable",
+    "status": "gap",
+    "mapping": "WO No. has no field on the Store form or material_movements (would have to go into remarks)",
+    "note": ""
+  },
+  {
+    "id": "MM-51",
+    "sheet": "Material Inventory Movement",
+    "text": "• PO No. / DO No., where applicable.",
+    "status": "existing",
+    "mapping": "Store form DO/PO field → remarks",
+    "note": ""
+  },
+  {
+    "id": "MM-52",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reduce the physical Store Inventory balance.",
+    "status": "existing",
+    "mapping": "Trigger trg_movement_recompute → recompute_material_balance updates materials.qty_on_hand",
+    "note": ""
+  },
+  {
+    "id": "MM-53",
+    "sheet": "Material Inventory Movement",
+    "text": "• Reserved → Project Site",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-54",
+    "sheet": "Material Inventory Movement",
+    "text": "• Available → Project Site",
+    "status": "existing",
+    "mapping": "OUT movement from on-hand stock",
+    "note": ""
+  },
+  {
+    "id": "MM-55",
+    "sheet": "Material Inventory Movement",
+    "text": "• Stock-Out occurs only when the material physically leaves the Store.",
+    "status": "existing",
+    "mapping": "Only OUT movements reduce qty_on_hand; nothing else does",
+    "note": ""
+  },
+  {
+    "id": "MM-56",
+    "sheet": "Material Inventory Movement",
+    "text": "PO → Store | Stock-In - PO Receipt",
+    "status": "existing",
+    "mapping": "IN movement (see MM-01)",
+    "note": "Type label 'PO Receipt' not stored; source = 'store_form'"
+  },
+  {
+    "id": "MM-57",
+    "sheet": "Material Inventory Movement",
+    "text": "PO → Project Site | Direct Delivery to Site - No Inventory Stock-In",
+    "status": "gap",
+    "mapping": "Direct-to-site is not a movement type: a PO with ship_to = site is closed on the Deliveries page but nothing is written to material_movements",
+    "note": ""
+  },
+  {
+    "id": "MM-58",
+    "sheet": "Material Inventory Movement",
+    "text": "Project Site → Store | Stock-In - Site Return",
+    "status": "gap",
+    "mapping": "No 'Site Return' type (see MM-15)",
+    "note": ""
+  },
+  {
+    "id": "MM-59",
+    "sheet": "Material Inventory Movement",
+    "text": "Available → Reserved | Reservation only; no physical movement",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-60",
+    "sheet": "Material Inventory Movement",
+    "text": "Reserved → Project Site | Stock-Out - Issue to Site",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced — OUT from reserved stock is indistinguishable from OUT from available",
+    "note": ""
+  },
+  {
+    "id": "MM-61",
+    "sheet": "Material Inventory Movement",
+    "text": "Available → Project Site | Stock-Out - Issue to Site",
+    "status": "existing",
+    "mapping": "OUT movement (see MM-43)",
+    "note": ""
+  },
+  {
+    "id": "MM-62",
+    "sheet": "Material Inventory Movement",
+    "text": "Total Physical Stock = Available Stock + Reserved Stock",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced; only Total Physical Stock (qty_on_hand) exists",
+    "note": ""
+  },
+  {
+    "id": "MM-63",
+    "sheet": "Material Inventory Movement",
+    "text": "Available Stock is Reserved | No change | Decrease | Increase",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-64",
+    "sheet": "Material Inventory Movement",
+    "text": "Reserved Stock is Issued to Site | Decrease | - | Decrease",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-65",
+    "sheet": "Material Inventory Movement",
+    "text": "Available Stock is Issued Directly to Site | Decrease | -",
+    "status": "existing",
+    "mapping": "OUT movement decreases qty_on_hand",
+    "note": "Available column of this row is implicit (equals total today)"
+  },
+  {
+    "id": "MM-66",
+    "sheet": "Material Inventory Movement",
+    "text": "Material is Returned from Site | Increase | Increase (default status) | -",
+    "status": "gap",
+    "mapping": "Return increases qty_on_hand via an IN movement, but no default-status semantics exist (see MM-15)",
+    "note": ""
+  },
+  {
+    "id": "MM-67",
+    "sheet": "Material Inventory Movement",
+    "text": "Movement Type | Stock-In - PO Receipt / Stock-In - Site Return / Stock-Out - Issue to Site / Reservation / Direct Delivery to Site",
+    "status": "gap",
+    "mapping": "Store form has only IN / OUT; no movement-type enum (PO Receipt / Site Return / Issue to Site / Reservation / Direct Delivery)",
+    "note": ""
+  },
+  {
+    "id": "MM-68",
+    "sheet": "Material Inventory Movement",
+    "text": "Stock Status | Available / Reserved",
+    "status": "gap",
+    "mapping": "No Available/Reserved stock state exists: material_movements is an in/out ledger; material_allocations (material_id, project_id, allocated_qty, used_qty) exists but is not written or surfaced",
+    "note": ""
+  },
+  {
+    "id": "MM-69",
+    "sheet": "Material Inventory Movement",
+    "text": "Project Code | Select Project Code, e.g. EX123",
+    "status": "existing",
+    "mapping": "Store form project dropdown (active projects + Store / Sample)",
+    "note": ""
+  },
+  {
+    "id": "MM-70",
+    "sheet": "Material Inventory Movement",
+    "text": "Project Site | Auto-populate based on Project Code, where possible",
+    "status": "clarify",
+    "mapping": "projects.location holds the site address; the Store form does not display it",
+    "note": "Ask: show projects.location read-only next to the project dropdown, or store it on the movement?"
+  },
+  {
+    "id": "MM-71",
+    "sheet": "Material Inventory Movement",
+    "text": "Material | Select Material",
+    "status": "existing",
+    "mapping": "Store form material search-select with recent chips",
+    "note": ""
+  },
+  {
+    "id": "MM-72",
+    "sheet": "Material Inventory Movement",
+    "text": "Quantity | Input Quantity",
+    "status": "existing",
+    "mapping": "Store form quantity input",
+    "note": ""
+  },
+  {
+    "id": "MM-73",
+    "sheet": "Material Inventory Movement",
+    "text": "UOM | Auto-populate based on Material",
+    "status": "existing",
+    "mapping": "Unit shown from materials.unit next to the qty input",
+    "note": ""
+  },
+  {
+    "id": "MM-74",
+    "sheet": "Material Inventory Movement",
+    "text": "PO No. | Input / Select, where applicable",
+    "status": "existing",
+    "mapping": "Store form optional DO/PO field (free text)",
+    "note": "'Select' from existing POs is not offered"
+  },
+  {
+    "id": "MM-75",
+    "sheet": "Material Inventory Movement",
+    "text": "DO No. | Input / Select, where applicable",
+    "status": "existing",
+    "mapping": "Same field as MM-74",
+    "note": ""
+  },
+  {
+    "id": "MM-76",
+    "sheet": "Material Inventory Movement",
+    "text": "WO No. | Input / Select, where applicable",
+    "status": "gap",
+    "mapping": "No WO No. field (see MM-50)",
+    "note": ""
+  },
+  {
+    "id": "MM-77",
+    "sheet": "Material Inventory Movement",
+    "text": "Movement Date | Input / Select Date",
+    "status": "clarify",
+    "mapping": "Movement date is always today (RPC sets date_in/date_out); no date picker",
+    "note": "Ask: is back-dating movements required (e.g. logging yesterday's issue)?"
+  },
+  {
+    "id": "MM-78",
+    "sheet": "Material Inventory Movement",
+    "text": "Remarks | Optional",
+    "status": "existing",
+    "mapping": "Store form remarks (optional)",
+    "note": ""
+  },
+  {
+    "id": "MM-79",
+    "sheet": "Material Inventory Movement",
+    "text": "Note: Project Code and Project Site should be mandatory for project-related movements. For general Available Stock, they may remain blank until the material is allocated to a project.",
+    "status": "existing",
+    "mapping": "Project dropdown is mandatory; 'Store' / 'Sample' pinned for non-project stock; RPC rejects free text",
+    "note": ""
+  },
+  {
+    "id": "MM-80",
+    "sheet": "Material Inventory Movement",
+    "text": "The system must maintain the complete movement history without overwriting previous transactions, allowing the current stock balance and movement history to be checked at any time.",
+    "status": "existing",
+    "mapping": "material_movements is append-only: Store page never edits/deletes, corrections are reversal rows ('Reversal of #sno'); sno sequence preserved",
+    "note": ""
+  }
+]

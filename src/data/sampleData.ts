@@ -222,6 +222,11 @@ export interface Claim {
   submittedDate: string;
   claimDate: string; // Spec 4 — the claim's own date (claims.claim_date)
   isFinal: boolean; // Spec 4 — appends "(Final)" to the claim number
+  retentionAmount: number | null; // claims.retention_amount — held this claim
+  retentionPct: number | null; // claims.retention_pct
+  netAmount: number | null; // claims.net_amount
+  prcDate?: string;
+  invoiceDate?: string;
   certifiedDate?: string;
   paidDate?: string;
   status: "submitted" | "certified" | "paid" | "pending" | "rejected";
@@ -236,6 +241,7 @@ export interface ClaimLine {
   quotationRef: string;
   seq: number;
   pgRef: string;
+  zone: string; // group header printed above the line (e.g. "H92 ZONE 28 - WST")
   description: string;
   unit: string;
   qty: number | null;

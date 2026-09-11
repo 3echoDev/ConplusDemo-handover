@@ -1,5 +1,4 @@
 import type { Claim, ClaimLine } from "@/data/sampleData";
-import { exportRecordToExcel, type RecordSection } from "@/lib/exportData";
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -19,11 +18,16 @@ export interface ClaimDocContext {
   retentionPct: number | null; // projects.retention_pct (e.g. 10)
   retentionCapPct: number | null; // projects.retention_cap_pct (e.g. 5)
   gstPct?: number; // default 9
+  projectSite?: string; // cover "Project Site:" — project name when the claim only has a code
+  clientEmail?: string; // projects.contact_email
+  preparedBy?: string; // signature block, left
+  authorisedBy?: string; // signature block, right
 }
 
 export interface ClaimTotals {
   workDone: number; // cumulative value of work done this claim (section A + B)
   retention: number; // retention held (capped)
+  retentionSource: "lines" | "stored"; // computed from lines, or claims.retention_amount fallback
   retentionCapValue: number | null; // the 5%-of-sum ceiling, for display
   advancePayment: number;
   advanceRecovery: number;
@@ -43,14 +47,22 @@ export interface ClaimTotals {
  */
 export function computeClaimTotals(claim: Claim, ctx: ClaimDocContext): ClaimTotals {
   const lines = claim.lines ?? [];
-  const workDone = lines.reduce((s, l) => s + (l.cumAmount ?? 0), 0);
-  const previouslyCertified = lines.reduce((s, l) => s + (l.prevAmount ?? 0), 0);
+  const hasLines = lines.length > 0;
+  // Without lines (claims keyed in by amount only) fall back to the stored
+  // figures: total_claim is the gross, else amount is net of the stored retention.
+  const workDone = hasLines
+    ? lines.reduce((s, l) => s + (l.cumAmount ?? 0), 0)
+    : claim.totalClaim ?? claim.amount + (claim.retentionAmount ?? 0);
+  const previouslyCertified = hasLines ? lines.reduce((s, l) => s + (l.prevAmount ?? 0), 0) : 0;
 
-  const retPct = ctx.retentionPct ?? 10;
+  const retPct = ctx.retentionPct ?? claim.retentionPct ?? 10;
   const capPct = ctx.retentionCapPct ?? 5;
-  const rawRetention = workDone * (retPct / 100);
+  const rawRetention = Math.round(workDone * (retPct / 100) * 100) / 100;
   const capValue = ctx.subContractSum != null ? ctx.subContractSum * (capPct / 100) : null;
-  const retention = capValue != null ? Math.min(rawRetention, capValue) : rawRetention;
+  const computedRetention = capValue != null ? Math.min(rawRetention, capValue) : rawRetention;
+  const retentionSource: ClaimTotals["retentionSource"] =
+    !hasLines && claim.retentionAmount != null ? "stored" : "lines";
+  const retention = retentionSource === "stored" ? claim.retentionAmount! : computedRetention;
 
   const advancePayment = claim.advancePayment ?? 0;
   const advanceRecovery = claim.advanceRecovery ?? 0;
@@ -68,6 +80,7 @@ export function computeClaimTotals(claim: Claim, ctx: ClaimDocContext): ClaimTot
   return {
     workDone,
     retention,
+    retentionSource,
     retentionCapValue: capValue,
     advancePayment,
     advanceRecovery,
@@ -85,7 +98,7 @@ export function computeClaimTotals(claim: Claim, ctx: ClaimDocContext): ClaimTot
  * Spec 4.1 — append "(Final)" inside the claim number when the claim is flagged
  * final (skip if the number already carries it).
  */
-function claimNumberDisplay(claim: Claim): string {
+export function claimNumberDisplay(claim: Claim): string {
   if (claim.isFinal && !/\(final\)/i.test(claim.claimNumber)) return `${claim.claimNumber}(Final)`;
   return claim.claimNumber;
 }
@@ -99,13 +112,21 @@ export function claimExportWarnings(claim: Claim, ctx: ClaimDocContext): string[
   const w: string[] = [];
   if (!claim.claimDate) w.push("Claim date is empty.");
   if (!claim.paymentTerms) w.push("Payment terms are empty.");
-  if (!claim.lines || claim.lines.length === 0) w.push("This claim has no line items.");
+  if (!claim.lines || claim.lines.length === 0) w.push("This claim has no line items (totals fall back to the stored amounts).");
   if (t.workDone === 0) w.push("Total Value of Work Done is $0.00.");
   return w;
 }
 
+export function confirmClaimExport(claim: Claim, ctx: ClaimDocContext): boolean {
+  const warnings = claimExportWarnings(claim, ctx);
+  return (
+    warnings.length === 0 ||
+    window.confirm(`This claim looks incomplete:\n\n• ${warnings.join("\n• ")}\n\nExport anyway?`)
+  );
+}
+
 /** Group lines by section (A / B), each section's lines ordered by seq. */
-function bySection(lines: ClaimLine[]): { A: ClaimLine[]; B: ClaimLine[] } {
+export function bySection(lines: ClaimLine[]): { A: ClaimLine[]; B: ClaimLine[] } {
   const A = lines.filter((l) => l.section === "A").sort((a, b) => a.seq - b.seq);
   const B = lines.filter((l) => l.section === "B").sort((a, b) => a.seq - b.seq);
   return { A, B };
@@ -301,69 +322,4 @@ export function printClaim(claim: Claim, ctx: ClaimDocContext): void {
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 250);
-}
-
-/** The same claim as a spreadsheet, keeping the template's two-section shape. */
-export function exportClaimToExcel(claim: Claim, ctx: ClaimDocContext): void {
-  const warnings = claimExportWarnings(claim, ctx);
-  if (
-    warnings.length &&
-    !window.confirm(`This claim looks incomplete:\n\n• ${warnings.join("\n• ")}\n\nExport anyway?`)
-  )
-    return;
-  const lines = claim.lines ?? [];
-  const { A, B } = bySection(lines);
-  const t = computeClaimTotals(claim, ctx);
-
-  // Spec 4.2 — outgoing claim shows prev / curr / cum (qty + amount), no verified.
-  const lineTable = (ls: ClaimLine[]) => ({
-    headers: [
-      "Pg Ref", "Description", "Unit", "Qty", "Rate",
-      "Prev Qty", "Prev $", "Curr Qty", "Curr $", "Cum Qty", "Cum $",
-    ],
-    rows: ls.map((l, i) => [
-      l.pgRef || i + 1,
-      l.description,
-      l.unit,
-      l.qty ?? "",
-      l.rate ?? "",
-      l.prevQty ?? "",
-      l.prevAmount ?? "",
-      l.currQty ?? "",
-      l.currAmount ?? "",
-      l.cumQty ?? "",
-      l.cumAmount ?? "",
-    ]),
-  });
-
-  const sections: RecordSection[] = [
-    {
-      heading: `Progress Claim ${claimNumberDisplay(claim)}`,
-      fields: [
-        { label: "Project", value: claim.projectName },
-        { label: "Project Code", value: claim.projectCode },
-        { label: "Claim No", value: claim.claimNo ?? "" },
-        { label: "Claim Date", value: claim.claimDate },
-        { label: "Client / Respondent", value: claim.clientName },
-        { label: "Payment Terms", value: claim.paymentTerms },
-        { label: "Status", value: claim.status },
-      ],
-    },
-  ];
-  if (A.length) sections.push({ heading: "A — Sub-Contract Works", table: lineTable(A) });
-  if (B.length) sections.push({ heading: "B — Variation Works", table: lineTable(B) });
-  sections.push({
-    heading: "Payment Summary",
-    fields: [
-      { label: "Total Value of Work Done", value: t.workDone },
-      { label: "Less: Retention", value: -t.retention },
-      { label: "Net Amount", value: t.netAfterRetention },
-      { label: "Less: Previously Certified", value: -t.previouslyCertified },
-      { label: "Claim Amount", value: t.claimAmount },
-      { label: "GST", value: t.gst },
-      { label: "Claim Amount incl. GST", value: t.claimInclGst },
-    ],
-  });
-
-  exportRecordToExcel(sections, `progress_claim_${claim.claimNumber}`);
 }

@@ -535,8 +535,9 @@ function ClaimDetail({ project }) {
         claim_date: editDraft.claim_date || null,
         status: editDraft.status,
       };
-      const { error } = await supabase.from("claims").update(updates).eq("id", c.id);
-      if (error) { alert("Save failed: " + error.message); return; }
+      // claims RLS is SELECT-only for the browser key — writes go via the RPC.
+      const { data, error } = await supabase.rpc("update_claim", { p_claim_id: c.id, p_patch: updates });
+      if (error || !data?.ok) { alert("Save failed: " + (error?.message || data?.error || "unknown")); return; }
       // Reflect locally
       Object.assign(c, {
         certified: updates.certified_amount,
@@ -982,9 +983,17 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 
   const handleDateUpdate = async (claimId, field, value) => {
     try {
-      const { error } = await supabase.from("claims").update({ [field]: value || null }).eq("id", claimId);
-      if (error) { showFeedback("Error: " + error.message); }
-      else { showFeedback(`${field.replace("_", " ")} recorded.`); }
+      // claims RLS is SELECT-only for the browser key — writes go via the RPC.
+      const { data, error } = await supabase.rpc("update_claim", {
+        p_claim_id: claimId,
+        p_patch: { [field]: value === "" || value == null ? null : value },
+      });
+      if (error || !data?.ok) { showFeedback("Error: " + (error?.message || data?.error || "not saved")); }
+      else if (field === "prc_date" && value) {
+        showFeedback("PRC date recorded. This claim leaves the Certificate chase; enter the invoice date to start the Payment chase.");
+      } else if (field === "paid_date" && value) {
+        showFeedback("Payment date recorded. This claim leaves the Payment chase.");
+      } else { showFeedback(`${field.replace("_", " ")} recorded.`); }
     } catch (e) { showFeedback("Error: " + e.message); }
     await onRefresh();
   };
@@ -1222,10 +1231,10 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
             </div>
             <div className="cpc-actrow">
               {email && !held && (
-                <button className="cpc-btn small" onClick={() => openDraft(row, false)}>Edit draft</button>
+                <button className="cpc-btn small" onClick={() => openDraft(row, false)} title="Open this cycle's scheduled reminder — edit the wording, then log it as sent or skip this cycle">Edit draft</button>
               )}
               {!held && (
-                <button className="cpc-btn small" onClick={() => openDraft(row, true)} title="Reminder outside the normal cadence">Manual</button>
+                <button className="cpc-btn small" onClick={() => openDraft(row, true)} title="Log an extra reminder outside the schedule (e.g. after a phone call). Same editor; logged as manual so it does not advance the cadence.">Manual reminder</button>
               )}
               {!held && (
                 <button className="cpc-btn small" onClick={() => setHoldModal({ row, clock })}>Pause chase</button>
@@ -1274,18 +1283,24 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                     <>
                       <div className="cpc-node">
                         <div className="cpc-node-lbl">PRC received</div>
-                        <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)} />
+                        <input className="cpc-node-input" type="date" defaultValue={row.prc_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)} />
                       </div>
                       <div className="cpc-node">
                         <div className="cpc-node-lbl">Invoice submitted</div>
-                        <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)} />
+                        <input className="cpc-node-input" type="date" defaultValue={row.invoice_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)} />
                       </div>
                     </>
                   ) : (
-                    <div className="cpc-node">
-                      <div className="cpc-node-lbl">Payment received</div>
-                      <input className="cpc-node-input" type="date" onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)} />
-                    </div>
+                    <>
+                      <div className="cpc-node done">
+                        <div className="cpc-node-lbl">PRC received</div>
+                        <div className="cpc-node-val">{row.prc_date ? fmtDate(row.prc_date) : "—"}</div>
+                      </div>
+                      <div className="cpc-node">
+                        <div className="cpc-node-lbl">Payment received</div>
+                        <input className="cpc-node-input" type="date" defaultValue={row.paid_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)} />
+                      </div>
+                    </>
                   )}
                 </div>
                 {clock === "certificate" && (
@@ -1295,9 +1310,13 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                       type="number"
                       placeholder="Certified amount ($)"
                       style={{ maxWidth: 200 }}
-                      onBlur={(e) => { const v = e.target.value.trim(); if (v) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v)); }}
+                      defaultValue={row.certified_amount ?? ""}
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v !== "" && Number(v) !== Number(row.certified_amount ?? NaN)) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v)); }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
                     />
+                    <div className="cpc-node-rel" style={{ marginTop: 4 }}>
+                      Saved values reload here. Entering a PRC date moves the claim to the Payment chase once an invoice date is set.
+                    </div>
                   </div>
                 )}
 
@@ -1499,16 +1518,25 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 // ============================================================================
 // EMAIL PREVIEW MODAL (with variant picker for Final Reminder)
 // ============================================================================
-function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, onClose }) {
+export function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, onClose }) {
   const [copied, setCopied] = useState("");
   const [variant, setVariant] = useState(null); // for final reminder variant selection
   const hasVariants = email.variants && email.variants.length > 0;
 
-  // Resolve the active body/subject — either single value or selected variant
+  // Resolve the drafted body/subject — either single value or selected variant
   const activeVariant = hasVariants && variant ? email.variants.find((v) => v.id === variant) : null;
-  const activeBody = hasVariants ? (activeVariant?.body ?? null) : email.body;
-  const activeSubject = activeVariant?.subject || email.subject;
-  const canProceed = activeBody != null;
+  const draftBody = hasVariants ? (activeVariant?.body ?? null) : email.body;
+  const draftSubject = activeVariant?.subject || email.subject;
+
+  // Editable copies — the user can reword before logging. Reset when the
+  // variant changes so a Final-reminder pick starts from its own template.
+  const [subjectText, setSubjectText] = useState(draftSubject || "");
+  const [bodyText, setBodyText] = useState(draftBody || "");
+  useEffect(() => { setSubjectText(draftSubject || ""); setBodyText(draftBody || ""); }, [draftSubject, draftBody]);
+
+  const activeSubject = subjectText;
+  const activeBody = draftBody == null ? null : bodyText;
+  const canProceed = activeBody != null && bodyText.trim() !== "";
 
   const copyText = async (text, what) => {
     try {
@@ -1551,7 +1579,12 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
                 {copied === "subject" ? "Copied!" : "Copy"}
               </button>
             </div>
-            <div className="cp-modal-fvalue">{activeSubject}</div>
+            <input
+              className="cp-modal-fvalue cp-modal-edit"
+              aria-label="Subject"
+              value={subjectText}
+              onChange={(e) => setSubjectText(e.target.value)}
+            />
           </div>
 
           {/* Variant picker (Final Reminder only) */}
@@ -1582,13 +1615,24 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
                   {copied === "body" ? "Copied!" : "Copy"}
                 </button>
               </div>
-              <pre className="cp-modal-body">{activeBody}</pre>
+              <textarea
+                className="cp-modal-body cp-modal-edit"
+                aria-label="Body"
+                rows={12}
+                value={bodyText}
+                onChange={(e) => setBodyText(e.target.value)}
+              />
             </div>
           )}
 
           {/* Hints */}
           <div className="cp-modal-hint">
-            Copy the subject and body into your mail client. Your signature appends automatically on send.
+            {isManual
+              ? "Manual reminder: an extra reminder outside the schedule. It is logged as manual and does not advance the cadence."
+              : "Edit draft: this cycle's scheduled reminder. Reword the subject or body as needed."}
+            <br />
+            <strong>Log as Sent</strong> records the text below as sent for this claim (use after copying it into your mail client, or use &ldquo;Proceed &amp; send&rdquo; on the card to send via n8n).{" "}
+            <strong>Skip This Cycle</strong> records that no reminder was sent this cycle and leaves the schedule untouched.
             {isPayment && (
               <><br /><strong>Remember to attach the Statement of Account (SOA).</strong></>
             )}
@@ -1603,7 +1647,7 @@ function EmailPreviewModal({ row, clock, email, isManual, onProceed, onIgnore, o
           >
             Log as Sent
           </button>
-          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(activeSubject, activeBody || "")}>
+          <button className="cp-btn cp-btn-ignore" onClick={() => onIgnore(draftSubject, draftBody || "")}>
             Skip This Cycle
           </button>
           <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
@@ -2410,6 +2454,12 @@ const CSS = `
   border-radius: 6px;
   border: 1px solid var(--border-lt);
 }
+.cp-modal-edit {
+  display: block; width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border-lt); border-radius: 6px;
+  resize: vertical; white-space: pre-wrap;
+}
+.cp-modal-edit:focus { outline: 2px solid var(--blue, #2563eb); outline-offset: 1px; }
 .cp-modal-body {
   font-family: inherit;
   font-size: 13px; color: var(--fg);

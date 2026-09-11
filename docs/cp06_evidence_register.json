@@ -1,0 +1,38 @@
+{
+  "item": "CP06",
+  "catalogued_on": "2026-09-11",
+  "client_statement": "Supplier invoices and delivery orders attached for 2608-0009, 2609-0003 and 2607-0006.",
+  "files": [
+    {
+      "file": "2607-0006 - 7220038808, 80067779.pdf",
+      "location": "C:/Users/Muhsin/Desktop/Changes",
+      "pages": 4,
+      "supplier": "Sto SEA Pte Ltd",
+      "invoice_number": "7220038808",
+      "invoice_date": "2026-07-24",
+      "do_number": "80067779",
+      "do_date": "2026-07-24",
+      "sto_order_no": "47223",
+      "stated_po": "2607-0006",
+      "project_on_document": "Leadbuild Constn - The Hill @ One North",
+      "subtotal": 4275.36,
+      "gst": 384.78,
+      "total": 4660.14,
+      "lines": [
+        { "article": "53000-199", "description": "StoPox WL 100 (A) RAL 7046 10KG", "qty": 34, "unit_price": 90.14, "amount": 3064.76 },
+        { "article": "53000-051", "description": "StoPox WG/WB/WL Hardener (B) 2KG", "qty": 34, "unit_price": 24.86, "amount": 845.24 },
+        { "article": "53000-199", "description": "StoPox WL 100 (A) RAL 5017 10KG", "qty": 1, "unit_price": 106.10, "amount": 106.10 },
+        { "article": "53000-051", "description": "StoPox WG/WB/WL Hardener (B) 2KG", "qty": 1, "unit_price": 29.26, "amount": 29.26 },
+        { "article": "53000-199", "description": "StoPox WL 100 (A) RAL 6017 10KG", "qty": 2, "unit_price": 90.14, "amount": 180.28 },
+        { "article": "53000-051", "description": "StoPox WG/WB/WL Hardener (B) 2KG", "qty": 2, "unit_price": 24.86, "amount": 49.72 }
+      ],
+      "match_status": "unmatched",
+      "system_po_note": "System PO 2607-0006 is a Mansor $975.00 draft for 810C Sengkang LRT Depot Extn. (created 2026-07-10), not a Sto SEA order — the client's PO numbering does not correspond to the system's 2607-NNNN sequence. No supplier_invoices row created; awaiting client confirmation of the correct system PO (or PO import).",
+      "question_to_client": "The Sto invoice 7220038808 / DO 80067779 quotes 'Customer PO 2607-0006', but in the system 2607-0006 is a Mansor draft PO. Was this Sto order raised outside the system, or under a different system PO number? Please confirm the PO it should be matched to."
+    }
+  ],
+  "outstanding": [
+    { "po": "2608-0009", "status": "not received", "note": "No file for this reference arrived in Desktop/Changes; PO number does not exist in the system either." },
+    { "po": "2609-0003", "status": "not received", "note": "No file for this reference arrived in Desktop/Changes; PO number does not exist in the system either." }
+  ]
+}

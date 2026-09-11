@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Calculator } from "lucide-react";
 import { useAppData } from "@/data/AppDataContext";
 import { calcRequiredQty } from "@/data/db";
 import { cn } from "@/lib/utils";
+import MaterialPicker from "@/components/MaterialPicker";
 
 interface Props {
   open: boolean;
@@ -11,6 +12,7 @@ interface Props {
 
 interface LineDraft {
   description: string;
+  materialId: string | null;
   colour: string;
   dosage: string;
   packingSize: string;
@@ -32,6 +34,7 @@ interface AreaDraft {
 
 const emptyLine = (): LineDraft => ({
   description: "",
+  materialId: null,
   colour: "",
   dosage: "",
   packingSize: "",
@@ -169,6 +172,7 @@ export default function CreateWODialog({ open, onClose }: Props) {
               prepNote: a.prepNote,
               lines: kept.map((l, idx) => ({
                 description: l.description.trim(),
+                materialId: l.materialId,
                 colour: l.colour,
                 dosage: num(l.dosage),
                 packingSize: num(l.packingSize),
@@ -353,11 +357,12 @@ export default function CreateWODialog({ open, onClose }: Props) {
                       key={li}
                       className="grid grid-cols-1 gap-2 py-1.5 sm:grid-cols-[1fr_88px_88px_92px_88px_1fr_28px] sm:items-center"
                     >
-                      <input
+                      <MaterialPicker
                         className={field}
                         placeholder="Primer coat"
                         value={line.description}
-                        onChange={(e) => patchLine(ai, li, { description: e.target.value })}
+                        materialId={line.materialId}
+                        onChange={(next) => patchLine(ai, li, next)}
                       />
                       <input
                         className={field}

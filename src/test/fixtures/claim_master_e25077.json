@@ -1,0 +1,483 @@
+{
+ "sheets": [
+  "Instructions",
+  "Cover Page & Claim Summary",
+  "Claim Details"
+ ],
+ "cover": {
+  "labels": {
+   "B8": "PROGRESS CLAIM",
+   "B10": "Progress Claim Ref. No.:",
+   "G10": "Progress Claim Date:",
+   "B12": "To:  (Main Contractor)",
+   "B13": "Company Name:",
+   "B14": "Address:",
+   "B17": "Tel:",
+   "B18": "Fax:",
+   "B19": "Email:",
+   "B20": "Person-in-charge (Respondent):",
+   "B22": "From:",
+   "B23": "Company Name:",
+   "B32": "Particulars of Contract",
+   "B33": "Project Site:",
+   "H33": "Project No.:",
+   "B34": "Sub-Contract Title / Description:",
+   "B36": "LOA / WO / PO (*) Ref. No.:",
+   "G36": "LOA / WO / PO (*) Date:",
+   "B37": "Sub-Contract Period:",
+   "B38": "Reference Period of Claim:",
+   "E38": "From:",
+   "G38": "To:",
+   "B39": "Monthly Claim Cut-off Date:",
+   "B41": "PAYMENT CLAIM PARTICULARS",
+   "B43": "S/N",
+   "C43": "Description",
+   "D43": "Sub-Contract\nSum (S$)",
+   "E43": "% of Work\nDone",
+   "F43": "Amount Claimed\nfor Work Done (S$)",
+   "G43": "Payment\nCertified (S$)",
+   "C45": "Sub-Contract Works",
+   "C46": "Variation Works",
+   "C47": "Total Value of Work Carried Out",
+   "C48": "Add: Advance Payment",
+   "C49": "Less: Recovery of Advance Payment",
+   "C50": "Less: Retention (10%) — Max 5% of Sub-Contract Sum",
+   "C51": "Add: Release of First Half Retention",
+   "C52": "Add: Release of Second Half Retention",
+   "C53": "Net Amount",
+   "C54": "Less: Amounts Previously Certified",
+   "C55": "Claim Amount",
+   "C56": "Add: 9% GST",
+   "C57": "Claim Amount incl. GST",
+   "B45": "1",
+   "B46": "2",
+   "B47": "3",
+   "B48": "4",
+   "B49": "5",
+   "B50": "6",
+   "B51": "6.1",
+   "B52": "6.2",
+   "B53": "7",
+   "B54": "8",
+   "B55": "9",
+   "B56": "10",
+   "B57": "11",
+   "B60": "Prepared By:",
+   "F60": "Name of Claimant / Auth. Rep.:",
+   "B63": "Name / Designation / Date"
+  },
+  "yellow": [
+   "E10",
+   "I10",
+   "E13",
+   "E14",
+   "E17",
+   "E18",
+   "E19",
+   "E20",
+   "E30",
+   "D33",
+   "I33",
+   "D34",
+   "D36",
+   "I36",
+   "D37",
+   "F38",
+   "I38",
+   "E39",
+   "F48",
+   "F49",
+   "E50",
+   "F51",
+   "F52",
+   "F54"
+  ],
+  "formulas": {
+   "D45": "='Claim Details'!G42",
+   "F45": "='Claim Details'!O42",
+   "G45": "='Claim Details'!Y42",
+   "D46": "='Claim Details'!G50",
+   "F46": "='Claim Details'!O50",
+   "F47": "=F45+F46",
+   "F50": "=-ROUND((F47+F48-F49)*E50,2)",
+   "G50": "=-ROUND((G47+G48-G49)*E50,2)",
+   "F53": "=F47+F48-F49+F50+F51+F52",
+   "F55": "=F53-F54",
+   "F56": "=F55*0.09",
+   "F57": "=F55+F56"
+  },
+  "fills": {
+   "B43": "FFD9D9D9",
+   "D47": "FFFCE4D6",
+   "F53": "FFFCE4D6",
+   "B32": "FFBFBFBF"
+  }
+ },
+ "details": {
+  "headers": {
+   "B1": "Project No.:",
+   "B2": "Project Title / Site:",
+   "B3": "Sub-Contractor:",
+   "B4": "LOA / WO / PO (*) Ref. No.:",
+   "B7": "S/C Payment Claim No.:",
+   "F7": "Monthly Claim Cut-off Date:",
+   "M7": "For WORK executed up to month ending:",
+   "B10": "S/N /\nPG Ref",
+   "C10": "Description",
+   "D10": "SUB-CONTRACT SUM",
+   "I10": "SUB-CONTRACTOR'S CUMULATIVE CLAIMED",
+   "P10": "%\nClaimed",
+   "Q10": "Remarks",
+   "S10": "MAIN CONTRACTOR'S CUMULATIVE VERIFIED",
+   "Z10": "%\nVerified",
+   "AA10": "Difference\n(S$)",
+   "D11": "Unit",
+   "E11": "Qty",
+   "F11": "Rate\nS$",
+   "G11": "Amount\nS$",
+   "I11": "Rate\nS$",
+   "J11": "Quantities",
+   "M11": "Amount S$",
+   "S11": "Rate\nS$",
+   "T11": "Quantities",
+   "W11": "Amount S$",
+   "J12": "Previous",
+   "K12": "Current",
+   "L12": "Total",
+   "M12": "Previous",
+   "N12": "Current",
+   "O12": "Total",
+   "T12": "Previous",
+   "U12": "Current",
+   "V12": "Total",
+   "W12": "Previous",
+   "X12": "Current",
+   "Y12": "Total",
+   "B13": "A    SUB-CONTRACT WORKS",
+   "B44": "B    VARIATION WORKS"
+  },
+  "items": [
+   {
+    "row": 16,
+    "pgRef": "A1",
+    "description": "To Floor\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne Coat of Primer, StoPox GH 532\nTwo Coats of Grout Coat, StoPox BB OS\nTwo Coats of Epoxy Coat, StoPox BB OS",
+    "unit": "m2",
+    "qty": 759,
+    "rate": 50,
+    "currQty": 107.64,
+    "remarks": "Work Done: 17-23 Aug'26 - 1st Storey",
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 19,
+    "pgRef": "A2",
+    "description": "To Floor - Confine Space\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne Coat of Primer, StoPox GH 532\nTwo Coats of Grout Coat, StoPox BB OS\nTwo Coats of Epoxy Coat, StoPox BB OS",
+    "unit": "m2",
+    "qty": 488,
+    "rate": 50,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 21,
+    "pgRef": "A3",
+    "description": "To Wall\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 6,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 23,
+    "pgRef": "A4",
+    "description": "To Wall - Confine Space\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 1098,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 25,
+    "pgRef": "A5",
+    "description": "Ditto, upturn 300mm - Confine Space",
+    "unit": "m",
+    "qty": 155,
+    "rate": 30,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 28,
+    "pgRef": "A6",
+    "description": "To Floor - Confine Space\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne Coat of Primer, StoPox GH 532\nTwo Coats of Grout Coat, StoPox BB OS\nTwo Coats of Epoxy Coat, StoPox BB OS",
+    "unit": "m2",
+    "qty": 25,
+    "rate": 50,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 30,
+    "pgRef": "A7",
+    "description": "To Wall - Confine Space\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 94,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 32,
+    "pgRef": "A8",
+    "description": "To Ceiling - Confine Space\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 25,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 35,
+    "pgRef": "A9",
+    "description": "To Floor\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne Coat of Primer, StoPox GH 532\nTwo Coats of Grout Coat, StoPox BB OS\nTwo Coats of Epoxy Coat, StoPox BB OS",
+    "unit": "m2",
+    "qty": 267,
+    "rate": 50,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 37,
+    "pgRef": "A10",
+    "description": "To Wall\nSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 16,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   },
+   {
+    "row": 39,
+    "pgRef": "A11",
+    "description": "To CeilingSurface preparation by Mechanical Grinding & Vacuum clean.\nOne coat of Primer, StoPox WL 100\nOne coat of Base Coat, StoPox WL 100\nOne coat of Top Coat, StoPox WL 100",
+    "unit": "m2",
+    "qty": 129,
+    "rate": 22,
+    "currQty": 0,
+    "remarks": null,
+    "yellow": [
+     "E",
+     "F",
+     "I",
+     "J",
+     "K",
+     "M",
+     "N",
+     "P"
+    ],
+    "subYellow": [
+     "J",
+     "K",
+     "M",
+     "N"
+    ]
+   }
+  ],
+  "zones": [
+   {
+    "row": 15,
+    "text": "H92 ZONE 28 - WST"
+   },
+   {
+    "row": 18,
+    "text": "H92 ZONE 29 - EQL TANK"
+   },
+   {
+    "row": 27,
+    "text": "H92 ZONE 30 - UTILITIES COMPLEX: Epoxy to basement ground collection tank"
+   },
+   {
+    "row": 34,
+    "text": "H92 ZONE 30 - UTILITIES COMPLEX: Epoxy to Chemical dosing room"
+   }
+  ],
+  "formulas": {
+   "B42": "Subtotal — Sub-Contract Works (A)",
+   "G42": "=SUBTOTAL(9,G15:G41)",
+   "O42": "=SUMIF(F15:F41,\"<>\",O15:O41)",
+   "B50": "Subtotal — Variation Works (B)",
+   "B52": "TOTAL — SUB-CONTRACT & VARIATION WORKS (A + B)",
+   "O52": "=O42+O50",
+   "G16": "=E16*F16",
+   "J16": "=SUM(J17:J17)",
+   "P16": "=IF(G16=0,0,O16/G16)",
+   "L17": "=J17+K17"
+  },
+  "fills": {
+   "B10": "FFD9D9D9",
+   "B13": "FFBFBFBF"
+  },
+  "quotationRef": "QUOTATION REF: Q26259-2E/082026/186/WF "
+ }
+}
