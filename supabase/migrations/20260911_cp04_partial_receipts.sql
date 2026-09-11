@@ -116,9 +116,9 @@ commit;
 -- ---------------------------------------------------------------------------
 -- insert into purchase_orders (id, po_number, supplier_name, status, total_amount, created_date)
 --   values ('11111111-1111-1111-1111-111111111111','ZZTEST-PO-1','ZZ Test Supplier','issued',0,current_date);
--- insert into po_line_items (id, po_id, description, qty, unit, unit_price, total_price)
---   values ('22222222-2222-2222-2222-222222222221','11111111-1111-1111-1111-111111111111','Line A',100,'pc',0,0),
---          ('22222222-2222-2222-2222-222222222222','11111111-1111-1111-1111-111111111111','Line B',10,'pc',0,0);
+-- insert into po_line_items (id, po_id, description, qty, unit, unit_price)
+--   values ('22222222-2222-2222-2222-222222222221','11111111-1111-1111-1111-111111111111','Line A',100,'pc',0),
+--          ('22222222-2222-2222-2222-222222222222','11111111-1111-1111-1111-111111111111','Line B',10,'pc',0);
 -- select * from log_delivery_lines('11111111-1111-1111-1111-111111111111','ZZ-1',
 --   '[{"line_id":"22222222-2222-2222-2222-222222222221","qty_received":60}]', current_date, 'SMOKE', null);
 -- select delivery_status, qty_outstanding from po_delivery_status where po_id='11111111-1111-1111-1111-111111111111';
@@ -133,3 +133,16 @@ commit;
 -- delete from purchase_orders where id='11111111-1111-1111-1111-111111111111';
 -- delete from audit_log where record_id in ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222221','22222222-2222-2222-2222-222222222222')
 --    or (table_name='delivery_orders' and new_data->>'po_id'='11111111-1111-1111-1111-111111111111');
+
+-- ---------------------------------------------------------------------------
+-- Follow-up applied 2026-09-11 (cp04_qty_balance_default): qty_balance defaulted
+-- to 0, which reads as "fully delivered" for never-received lines.
+-- ---------------------------------------------------------------------------
+-- alter table public.po_line_items alter column qty_balance set default null;
+-- create or replace function public.po_line_init_balance() returns trigger language plpgsql as $$
+-- begin if new.qty_balance is null then new.qty_balance := new.qty; end if; return new; end $$;
+-- drop trigger if exists trg_po_line_init_balance on public.po_line_items;
+-- create trigger trg_po_line_init_balance before insert on public.po_line_items
+--   for each row execute function public.po_line_init_balance();
+-- update public.po_line_items li set qty_balance = li.qty from public.purchase_orders po
+--  where po.id = li.po_id and po.status <> 'closed' and li.qty_balance = 0 and li.qty > 0;
