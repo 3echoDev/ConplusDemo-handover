@@ -1447,6 +1447,7 @@ export default function LiveViewPage() {
                 { href: "/store", label: "Store", Icon: Package },
                 { href: "/store/health", label: "Store Health", Icon: Activity },
                 { href: "/store/deliveries", label: "Deliveries", Icon: Truck },
+                { href: "/store/import", label: "Stock Import", Icon: FileSpreadsheet },
               ].map(({ href, label, Icon }) => (
                 <a
                   key={href}
