@@ -1,17 +1,22 @@
 // Excel → material_movements importer for the client's Material_Inventory_Record.
 //
 // The workbook's "Sheet2" is NOT a transaction log: each row is one stock line
-// (material × location × batch) with Quantity_IN and Quantity_OUT side by side,
-// and material_movements mirrors it 1:1 (source = 'inventory_record_sheet2',
-// sno = the sheet's S/No.). Re-uploading the whole workbook therefore means:
-//   - a S/No. we have never seen → insert
-//   - a S/No. whose cells changed → update in place
-//   - everything else            → leave alone
-// The recompute trigger on material_movements keeps materials.qty_on_hand honest.
+// (material × location × batch) with Quantity_IN and Quantity_OUT side by side.
+// material_movements mirrors it (source = 'inventory_record_sheet2'). The S/No.
+// column is a ROW() formula, so it renumbers whenever the client inserts or
+// deletes a line — it cannot be used as a key. Each upload is therefore a
+// SNAPSHOT: every sheet-sourced ledger row is replaced by the sheet's rows,
+// Store-form rows are kept, and the recompute trigger settles the balances.
+//
+// Material names are the catalog. An exact (whitespace / separator
+// insensitive) match reuses the existing materials row; anything else is a new
+// material, because the client's new master distinguishes colours ("RAL 7037")
+// that the old catalog merged. Old materials that end up with no stock rows at
+// all can be deactivated so the watchlist stops listing them as "out".
 //
 // Erasable-syntax TypeScript only: unit tests import this file directly.
 
-import { resolveMaterial, type MaterialLike } from "@/lib/materialMatch";
+import { resolveMaterial, normalizeMaterialName, type MaterialLike } from "@/lib/materialMatch";
 
 export const INVENTORY_SOURCE = "inventory_record_sheet2";
 
@@ -45,52 +50,54 @@ export interface SheetRow {
   remarksOut: string | null;
 }
 
+/** One line of the workbook's "Material" master sheet (unit + shelf life per part). */
+export interface MasterEntry {
+  supplier: string | null;
+  material: string;
+  unit: string | null;
+  shelfLifeA: string | null;
+  shelfLifeB: string | null;
+  shelfLifeC: string | null;
+  shelfLifeD: string | null;
+}
+
 /** The subset of a material_movements row the importer reads back. */
 export interface ExistingMovement {
   id: string;
   sno: number | null;
   material_id: string | null;
-  supplier_name: string | null;
-  location: string | null;
-  packing: number | string | null;
-  uom: string | null;
-  expiry_date: string | null;
-  coating_type: string | null;
-  shelf_life: string | null;
   qty_in: number | string | null;
-  date_in: string | null;
-  project_in: string | null;
-  remarks_in: string | null;
   qty_out: number | string | null;
-  date_out: string | null;
-  project_out: string | null;
-  remarks_out: string | null;
 }
 
-export interface FieldChange {
-  field: keyof SheetRow;
-  before: string | number | null;
-  after: string | number | null;
+export interface MaterialRef extends MaterialLike {
+  qtyOnHand: number;
+  isActive: boolean;
 }
 
-export interface PlannedRow {
-  row: SheetRow;
-  materialId: string | null;
-  materialName: string;
-  /** Present only for updates. */
-  changes?: FieldChange[];
-  /** Present only for ambiguous / unmatched rows. */
-  candidates?: string[];
+export interface BalanceChange {
+  materialId: string | null; // null → will be created
+  name: string;
+  before: number;
+  after: number;
+  rows: number;
 }
 
 export interface ImportPlan {
-  inserts: PlannedRow[];
-  updates: PlannedRow[];
-  unchanged: PlannedRow[];
-  /** Material name did not resolve to a materials row (or resolved to several). */
-  unmatched: PlannedRow[];
+  /** Sheet rows with a material name (what will be written). */
+  rows: SheetRow[];
   /** Rows with a S/No. but no material / quantities — the sheet's empty tail. */
   blank: number;
+  /** Distinct materials the sheet references that already exist. */
+  matched: number;
+  /** Distinct new names that will become materials. */
+  toCreate: string[];
+  /** Every material whose balance moves, plus new ones. Sorted by |delta| desc. */
+  balanceChanges: BalanceChange[];
+  /** Materials with sheet rows today but none in this upload and no other stock rows. */
+  orphans: MaterialRef[];
+  /** Materials referenced by both, whose balance is unchanged. */
+  unchanged: number;
 }
 
 // ---------------------------------------------------------------- cell helpers
@@ -115,7 +122,7 @@ export function cellValue(c: RawCell): string | number | boolean | Date | null {
   return c;
 }
 
-/** Trimmed text; "-" and "" collapse to null (the sheet uses "-" as its blank). */
+/** Trimmed text; "-", "NA" and "" collapse to null. */
 export function cellText(c: RawCell): string | null {
   const v = cellValue(c);
   if (v == null) return null;
@@ -134,10 +141,9 @@ export function cellNumber(c: RawCell): number | null {
 }
 
 /**
- * Dates in the sheet arrive three ways: a real Excel date, legacy text
- * "DD.MM.YY", or ISO text from a store-form row ("2026-08-30", sometimes with
- * a trailing " 00:00:00"). All canonicalise to "YYYY-MM-DD"; anything else
- * (e.g. an expiry written as "04/2025") is kept verbatim.
+ * Dates arrive three ways: a real Excel date, legacy text "DD.MM.YY", or ISO
+ * text ("2026-08-30", sometimes with " 00:00:00"). All canonicalise to
+ * "YYYY-MM-DD"; anything else (an expiry written as "04/2025") is kept verbatim.
  */
 export function canonDate(c: RawCell): string | null {
   const v = cellValue(c);
@@ -153,6 +159,26 @@ export function canonDate(c: RawCell): string | null {
     return `${yy}-${pad2(Number(m[2]))}-${pad2(Number(m[1]))}`;
   }
   return s;
+}
+
+/**
+ * Shelf life in Sheet2 is a VLOOKUP whose cached result ExcelJS often returns
+ * as garbage. Keep only a value that reads like a duration ("12 months").
+ */
+export function shelfLifeText(c: RawCell): string | null {
+  const t = cellText(c);
+  return t && /^\d+\s*(month|months|mth|mths|year|years|yr|yrs)$/i.test(t) ? t : null;
+}
+
+/**
+ * Material cells sometimes carry a multi-line article note or a kit breakdown
+ * ("Article No.: …", "Consists of: - 03 x …"). The name stops before those.
+ */
+export function cleanMaterialName(c: RawCell): string | null {
+  const t = cellText(c);
+  if (!t) return null;
+  const cut = t.replace(/\s*(Article\s*No\.?:|Consists of:).*$/i, "").trim();
+  return cut || null;
 }
 
 // ---------------------------------------------------------------- sheet parsing
@@ -173,7 +199,7 @@ export function findHeaderRow(cells: RawCell[][]): number {
 /**
  * Turn a cell matrix (row-major, 17 columns in the sheet's order) into rows.
  * Rows without a numeric S/No. are ignored; blank tail rows are kept (the
- * caller counts them) so the plan can report how much of the sheet is empty.
+ * caller counts them).
  */
 export function parseInventorySheet(cells: RawCell[][]): { rows: SheetRow[]; headerIndex: number } {
   const headerIndex = findHeaderRow(cells);
@@ -189,7 +215,7 @@ export function parseInventorySheet(cells: RawCell[][]): { rows: SheetRow[]; hea
       sno,
       supplier: cellText(r[1]),
       location: cellText(r[2]),
-      material: cellText(r[3]),
+      material: cleanMaterialName(r[3]),
       expiryDate: canonDate(r[4]),
       shelfLife: shelfLifeText(r[5]),
       packing: cellNumber(r[6]),
@@ -208,111 +234,136 @@ export function parseInventorySheet(cells: RawCell[][]): { rows: SheetRow[]; hea
   return { rows, headerIndex };
 }
 
-/**
- * Shelf life is a VLOOKUP into the ShelfLife sheet; ExcelJS often returns its
- * cached result as garbage. Keep only a value that looks like one ("12 months"),
- * and even then the importer never uses it to overwrite the material master.
- */
-export function shelfLifeText(c: RawCell): string | null {
-  const t = cellText(c);
-  return t && /^\d+\s*(month|months|mth|mths|year|years|yr|yrs)$/i.test(t) ? t : null;
-}
-
 export const isBlankRow = (r: SheetRow) =>
   !r.material && (r.qtyIn ?? 0) === 0 && (r.qtyOut ?? 0) === 0;
 
-// ---------------------------------------------------------------- diffing
-
-const numOrNull = (v: number | string | null | undefined): number | null => {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-
-/** Both sides of a quantity compare as numbers; the DB stores 0 for the unused side. */
-const qtyEq = (a: number | null, b: number | string | null) => (a ?? 0) === (numOrNull(b) ?? 0);
-const textEq = (a: string | null, b: string | null | undefined) => (cellText(a) ?? null) === (cellText(b) ?? null);
-const dateEq = (a: string | null, b: string | null | undefined) => (canonDate(a) ?? null) === (canonDate(b) ?? null);
-const numEq = (a: number | null, b: number | string | null | undefined) => (a ?? null) === (numOrNull(b) ?? null);
-
-const COMPARATORS: {
-  field: keyof SheetRow;
-  db: keyof ExistingMovement;
-  eq: (a: never, b: never) => boolean;
-}[] = [
-  { field: "supplier", db: "supplier_name", eq: textEq },
-  { field: "location", db: "location", eq: textEq },
-  { field: "expiryDate", db: "expiry_date", eq: dateEq },
-  { field: "packing", db: "packing", eq: numEq },
-  { field: "uom", db: "uom", eq: textEq },
-  { field: "coatingType", db: "coating_type", eq: textEq },
-  { field: "qtyIn", db: "qty_in", eq: qtyEq },
-  { field: "dateIn", db: "date_in", eq: dateEq },
-  { field: "projectIn", db: "project_in", eq: textEq },
-  { field: "remarksIn", db: "remarks_in", eq: textEq },
-  { field: "qtyOut", db: "qty_out", eq: qtyEq },
-  { field: "dateOut", db: "date_out", eq: dateEq },
-  { field: "projectOut", db: "project_out", eq: textEq },
-  { field: "remarksOut", db: "remarks_out", eq: textEq },
-];
-
-export function diffRow(row: SheetRow, existing: ExistingMovement, materialId: string | null): FieldChange[] {
-  const changes: FieldChange[] = [];
-  for (const c of COMPARATORS) {
-    const a = row[c.field] as never;
-    const b = existing[c.db] as never;
-    if (!c.eq(a, b)) {
-      const before = existing[c.db];
-      const numeric = c.eq === qtyEq || c.eq === numEq;
-      changes.push({
-        field: c.field,
-        before: before == null ? null : numeric ? numOrNull(before as number | string) : String(before),
-        after: row[c.field] as string | number | null,
-      });
+/**
+ * The "Material" master sheet: header "Supplier | Material | UNIT | Shelf Life
+ * (PART A..D)" somewhere in columns B..H. Returns entries keyed by
+ * normalised name; missing sheet → empty map.
+ */
+export function parseMaterialMaster(cells: RawCell[][]): Map<string, MasterEntry> {
+  const out = new Map<string, MasterEntry>();
+  let header = -1;
+  let col = -1;
+  for (let i = 0; i < cells.length && header < 0; i++) {
+    const r = cells[i] ?? [];
+    for (let c = 0; c < r.length - 1; c++) {
+      if (/^supplier$/i.test(cellText(r[c]) ?? "") && /^material$/i.test(cellText(r[c + 1]) ?? "")) {
+        header = i;
+        col = c;
+        break;
+      }
     }
   }
-  if (materialId && existing.material_id && materialId !== existing.material_id) {
-    changes.unshift({ field: "material", before: existing.material_id, after: row.material });
+  if (header < 0) return out;
+  for (let i = header + 1; i < cells.length; i++) {
+    const r = cells[i] ?? [];
+    const material = cleanMaterialName(r[col + 1]);
+    if (!material) continue;
+    const key = normalizeMaterialName(material);
+    if (out.has(key)) continue;
+    out.set(key, {
+      supplier: cellText(r[col]),
+      material,
+      unit: cellText(r[col + 2]),
+      shelfLifeA: shelfLifeText(r[col + 3]),
+      shelfLifeB: shelfLifeText(r[col + 4]),
+      shelfLifeC: shelfLifeText(r[col + 5]),
+      shelfLifeD: shelfLifeText(r[col + 6]),
+    });
   }
-  return changes;
+  return out;
 }
 
-export function planInventoryImport<M extends MaterialLike>(
+// ---------------------------------------------------------------- planning
+
+const num = (v: number | string | null | undefined): number => {
+  if (v == null || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * Resolve every sheet row to a material (existing id, or a new name), compute
+ * the balance each material will have after the snapshot replaces the current
+ * sheet rows, and list old materials that would be left with no stock rows.
+ *
+ * @param storeFormMaterialIds materials that also have Store-form rows — they
+ *        are never orphans even if the sheet drops them.
+ */
+export function planInventoryImport(
   sheetRows: SheetRow[],
   existing: ExistingMovement[],
-  materials: M[],
+  materials: MaterialRef[],
+  storeFormMaterialIds: Iterable<string> = [],
 ): ImportPlan {
-  const bySno = new Map<number, ExistingMovement>();
-  for (const e of existing) if (e.sno != null) bySno.set(Number(e.sno), e);
+  const rows = sheetRows.filter((r) => !isBlankRow(r));
+  const blank = sheetRows.length - rows.length;
 
-  const plan: ImportPlan = { inserts: [], updates: [], unchanged: [], unmatched: [], blank: 0 };
-
-  for (const row of sheetRows) {
-    if (isBlankRow(row)) {
-      plan.blank += 1;
-      continue;
-    }
-    const res = resolveMaterial(row.material, materials);
-    const planned: PlannedRow = {
-      row,
-      materialId: res.match?.id ?? null,
-      materialName: res.match?.name ?? row.material ?? "",
-    };
-    if (!res.match) {
-      planned.candidates = res.candidates.map((c) => c.name);
-      plan.unmatched.push(planned);
-      continue;
-    }
-    const prev = bySno.get(row.sno);
-    if (!prev) {
-      plan.inserts.push(planned);
-      continue;
-    }
-    const changes = diffRow(row, prev, planned.materialId);
-    if (changes.length === 0) plan.unchanged.push(planned);
-    else plan.updates.push({ ...planned, changes });
+  // current contribution of sheet rows per material
+  const beforeSheet = new Map<string, number>();
+  for (const e of existing) {
+    if (!e.material_id) continue;
+    beforeSheet.set(e.material_id, (beforeSheet.get(e.material_id) ?? 0) + num(e.qty_in) - num(e.qty_out));
   }
-  return plan;
+
+  // new contribution per material id, or per new-name key
+  const afterExisting = new Map<string, { delta: number; rows: number }>();
+  const afterNew = new Map<string, { name: string; delta: number; rows: number }>();
+  const byId = new Map(materials.map((m) => [m.id, m]));
+
+  for (const r of rows) {
+    const delta = num(r.qtyIn) - num(r.qtyOut);
+    if (!r.material) continue; // a quantity with no name: nothing to attach it to (RPC rejects too)
+    const res = resolveMaterial(r.material, materials);
+    if (res.match) {
+      const cur = afterExisting.get(res.match.id) ?? { delta: 0, rows: 0 };
+      afterExisting.set(res.match.id, { delta: cur.delta + delta, rows: cur.rows + 1 });
+    } else {
+      const key = normalizeMaterialName(r.material);
+      const cur = afterNew.get(key) ?? { name: r.material, delta: 0, rows: 0 };
+      afterNew.set(key, { name: cur.name, delta: cur.delta + delta, rows: cur.rows + 1 });
+    }
+  }
+
+  const balanceChanges: BalanceChange[] = [];
+  let unchanged = 0;
+  const touched = new Set<string>([...afterExisting.keys(), ...beforeSheet.keys()]);
+  for (const id of touched) {
+    const m = byId.get(id);
+    if (!m) continue;
+    const before = m.qtyOnHand;
+    const after = round3(before - (beforeSheet.get(id) ?? 0) + (afterExisting.get(id)?.delta ?? 0));
+    if (Math.abs(after - before) < 0.0005) {
+      unchanged += 1;
+      continue;
+    }
+    balanceChanges.push({ materialId: id, name: m.name, before, after, rows: afterExisting.get(id)?.rows ?? 0 });
+  }
+  for (const n of afterNew.values()) {
+    balanceChanges.push({ materialId: null, name: n.name, before: 0, after: round3(n.delta), rows: n.rows });
+  }
+  balanceChanges.sort((a, b) => Math.abs(b.after - b.before) - Math.abs(a.after - a.before) || a.name.localeCompare(b.name));
+
+  const keep = new Set(storeFormMaterialIds);
+  const orphans = [...beforeSheet.keys()]
+    .filter((id) => !afterExisting.has(id) && !keep.has(id))
+    .map((id) => byId.get(id))
+    .filter((m): m is MaterialRef => !!m && m.isActive)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    rows,
+    blank,
+    matched: afterExisting.size,
+    toCreate: [...afterNew.values()].map((n) => n.name).sort((a, b) => a.localeCompare(b)),
+    balanceChanges,
+    orphans,
+    unchanged,
+  };
 }
 
 // ---------------------------------------------------------------- RPC payload
@@ -336,35 +387,44 @@ export interface RpcRow {
   date_out: string | null;
   project_out: string | null;
   remarks_out: string | null;
+  /** From the Material master sheet, used only when a material is created. */
+  stock_unit: string | null;
+  shelf_life_a: string | null;
+  shelf_life_b: string | null;
+  shelf_life_c: string | null;
+  shelf_life_d: string | null;
 }
 
-export function toRpcRow(p: PlannedRow): RpcRow {
-  const r = p.row;
-  return {
-    sno: r.sno,
-    material_id: p.materialId,
-    material_name: r.material,
-    supplier_name: r.supplier,
-    location: r.location,
-    packing: r.packing,
-    uom: r.uom,
-    expiry_date: r.expiryDate,
-    coating_type: r.coatingType,
-    shelf_life: r.shelfLife,
-    qty_in: r.qtyIn,
-    date_in: r.dateIn,
-    project_in: r.projectIn,
-    remarks_in: r.remarksIn,
-    qty_out: r.qtyOut,
-    date_out: r.dateOut,
-    project_out: r.projectOut,
-    remarks_out: r.remarksOut,
-  };
-}
-
-/** Rows the RPC should receive: inserts + updates, plus unmatched only when creating materials. */
-export function rpcRowsForPlan(plan: ImportPlan, createMissing: boolean): RpcRow[] {
-  const rows = [...plan.inserts, ...plan.updates].map(toRpcRow);
-  if (createMissing) rows.push(...plan.unmatched.filter((u) => u.row.material).map(toRpcRow));
-  return rows;
+export function toRpcRows(plan: ImportPlan, materials: MaterialLike[], master: Map<string, MasterEntry>): RpcRow[] {
+  return plan.rows
+    .filter((r) => r.material)
+    .map((r) => {
+      const res = resolveMaterial(r.material, materials);
+      const me = master.get(normalizeMaterialName(r.material));
+      return {
+        sno: r.sno,
+        material_id: res.match?.id ?? null,
+        material_name: r.material,
+        supplier_name: r.supplier,
+        location: r.location,
+        packing: r.packing,
+        uom: r.uom,
+        expiry_date: r.expiryDate,
+        coating_type: r.coatingType,
+        shelf_life: r.shelfLife ?? me?.shelfLifeA ?? null,
+        qty_in: r.qtyIn,
+        date_in: r.dateIn,
+        project_in: r.projectIn,
+        remarks_in: r.remarksIn,
+        qty_out: r.qtyOut,
+        date_out: r.dateOut,
+        project_out: r.projectOut,
+        remarks_out: r.remarksOut,
+        stock_unit: me?.unit ?? null,
+        shelf_life_a: me?.shelfLifeA ?? null,
+        shelf_life_b: me?.shelfLifeB ?? null,
+        shelf_life_c: me?.shelfLifeC ?? null,
+        shelf_life_d: me?.shelfLifeD ?? null,
+      };
+    });
 }

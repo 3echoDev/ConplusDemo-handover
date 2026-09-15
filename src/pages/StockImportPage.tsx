@@ -1,22 +1,24 @@
 /*
   Stock Import — /store/import
 
-  Drop the client's Material_Inventory_Record workbook (Sheet2) on the page and
-  it is reconciled against material_movements by S/No.:
+  Drop the client's Material_Inventory_Record workbook on the page. Each upload
+  is a SNAPSHOT of the store ledger:
 
-    parse (ExcelJS, in the browser)
-      → resolve every material name against `materials` (materialMatch)
-      → diff against rows already imported (source = inventory_record_sheet2)
-      → preview: new / changed (field by field) / unchanged / needs material
-      → Apply → RPC import_inventory_rows(p_rows, p_actor, p_create_missing)
+    parse Sheet2 + the "Material" master sheet (ExcelJS, in the browser)
+      → resolve every material name against `materials` (exact / separator-
+        insensitive only — colours like "RAL 7037" are distinct items)
+      → preview: balance before → after per material, materials to be created,
+        old materials that would be left with no stock rows
+      → Apply → RPC replace_inventory_sheet(p_rows, p_actor, p_create_missing,
+        p_deactivate_orphans)
 
-  Single write path is the RPC (SECURITY DEFINER, one transaction). The AFTER
-  trigger on material_movements recomputes materials.qty_on_hand, so the Store
-  Health and Stock Watchlist views pick the new balances up immediately.
+  The RPC deletes every ledger row with source = inventory_record_sheet2 and
+  inserts the sheet's rows in one transaction; Store-form rows are untouched.
+  The AFTER trigger on material_movements recomputes materials.qty_on_hand, so
+  Store Health and the Stock Watchlist pick the new balances up immediately.
 
-  Rows logged through the Store form (source = store_form) are NOT in the
-  workbook and are left untouched; the page says how many exist so the person
-  importing knows the sheet is not the only source of truth.
+  Why snapshot and not upsert: the sheet's S/No. is a ROW() formula and
+  renumbers whenever a line is inserted or deleted, so it cannot key updates.
 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,62 +40,41 @@ import {
   cellText,
   findHeaderRow,
   parseInventorySheet,
+  parseMaterialMaster,
   planInventoryImport,
-  rpcRowsForPlan,
+  toRpcRows,
   type ExistingMovement,
   type ImportPlan,
-  type PlannedRow,
+  type MasterEntry,
+  type MaterialRef,
   type RawCell,
   type SheetRow,
 } from "@/lib/inventoryImport";
 
 const ACTOR_KEY = "conplus_import_actor";
 const SHEET_COLS = 17;
-
-interface MaterialRef {
-  id: string;
-  name: string;
-  code: string | null;
-}
+const MASTER_COLS = 10;
 
 interface ImportResult {
   ok: boolean;
+  deleted: number;
   inserted: number;
-  updated: number;
   created_materials: number;
   created_material_names: string[];
+  deactivated_materials: number;
+  deactivated_material_names: string[];
   materials_touched: number;
 }
 
-const FIELD_LABEL: Record<keyof SheetRow, string> = {
-  sno: "S/No.",
-  supplier: "Supplier",
-  location: "Location",
-  material: "Material",
-  expiryDate: "Expiry",
-  shelfLife: "Shelf life",
-  packing: "Packing",
-  uom: "UOM",
-  coatingType: "Coating",
-  qtyIn: "Qty IN",
-  dateIn: "Date IN",
-  projectIn: "Project IN",
-  remarksIn: "Remarks IN",
-  qtyOut: "Qty OUT",
-  dateOut: "Date OUT",
-  projectOut: "Project OUT",
-  remarksOut: "Remarks OUT",
-};
-
-const show = (v: string | number | null | undefined) => (v == null || v === "" ? "—" : String(v));
+const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""));
 
 /** Read a worksheet into the plain cell matrix the parser expects. */
-function sheetToCells(ws: ExcelJS.Worksheet): RawCell[][] {
+function sheetToCells(ws: ExcelJS.Worksheet, cols: number): RawCell[][] {
   const out: RawCell[][] = [];
   for (let r = 1; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const cells: RawCell[] = [];
-    for (let c = 1; c <= SHEET_COLS; c++) cells.push(row.getCell(c).value as RawCell);
+    for (let c = 1; c <= cols; c++) cells.push(row.getCell(c).value as RawCell);
     out.push(cells);
   }
   return out;
@@ -117,12 +98,15 @@ export default function StockImportPage() {
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [sheetRows, setSheetRows] = useState<SheetRow[] | null>(null);
+  const [master, setMaster] = useState<Map<string, MasterEntry>>(new Map());
   const [parseError, setParseError] = useState<string | null>(null);
 
   const [materials, setMaterials] = useState<MaterialRef[]>([]);
   const [existing, setExisting] = useState<ExistingMovement[]>([]);
+  const [storeFormIds, setStoreFormIds] = useState<Set<string>>(new Set());
   const [storeFormCount, setStoreFormCount] = useState(0);
   const [createMissing, setCreateMissing] = useState(true);
+  const [deactivateOrphans, setDeactivateOrphans] = useState(true);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const setActingActor = (v: string) => {
@@ -137,21 +121,21 @@ export default function StockImportPage() {
   const loadDb = useCallback(async () => {
     setLoadingDb(true);
     const [mats, rows, sf] = await Promise.all([
-      supabase.from("materials").select("id,name,item_code").order("name"),
-      supabase
-        .from("material_movements")
-        .select(
-          "id,sno,material_id,supplier_name,location,packing,uom,expiry_date,coating_type,shelf_life,qty_in,date_in,project_in,remarks_in,qty_out,date_out,project_out,remarks_out",
-        )
-        .eq("source", INVENTORY_SOURCE)
-        .order("sno"),
-      supabase.from("material_movements").select("id", { count: "exact", head: true }).eq("source", "store_form"),
+      supabase.from("materials").select("id,name,item_code,qty_on_hand,is_active").order("name"),
+      supabase.from("material_movements").select("id,sno,material_id,qty_in,qty_out").eq("source", INVENTORY_SOURCE),
+      supabase.from("material_movements").select("material_id").eq("source", "store_form"),
     ]);
     if (mats.error) toast.error(`Materials: ${mats.error.message}`);
     if (rows.error) toast.error(`Existing rows: ${rows.error.message}`);
-    setMaterials(((mats.data ?? []) as { id: string; name: string; item_code: string | null }[]).map((m) => ({ id: m.id, name: m.name, code: m.item_code })));
+    setMaterials(
+      ((mats.data ?? []) as { id: string; name: string; item_code: string | null; qty_on_hand: number | string | null; is_active: boolean | null }[]).map(
+        (m) => ({ id: m.id, name: m.name, code: m.item_code, qtyOnHand: Number(m.qty_on_hand ?? 0), isActive: m.is_active !== false }),
+      ),
+    );
     setExisting((rows.data ?? []) as ExistingMovement[]);
-    setStoreFormCount(sf.count ?? 0);
+    const sfRows = (sf.data ?? []) as { material_id: string | null }[];
+    setStoreFormCount(sfRows.length);
+    setStoreFormIds(new Set(sfRows.map((r) => r.material_id).filter((x): x is string => !!x)));
     setLoadingDb(false);
   }, []);
 
@@ -174,11 +158,11 @@ export default function StockImportPage() {
 
       // Prefer "Sheet2"; otherwise the first sheet that carries the S/No. | … | Material header.
       let ws = wb.getWorksheet("Sheet2") ?? null;
-      let cells = ws ? sheetToCells(ws) : [];
+      let cells = ws ? sheetToCells(ws, SHEET_COLS) : [];
       if (!ws || findHeaderRow(cells) < 0) {
         ws = null;
         for (const cand of wb.worksheets) {
-          const c = sheetToCells(cand);
+          const c = sheetToCells(cand, SHEET_COLS);
           if (findHeaderRow(c) >= 0) {
             ws = cand;
             cells = c;
@@ -191,8 +175,18 @@ export default function StockImportPage() {
       const { rows, headerIndex } = parseInventorySheet(cells);
       // "LAST UPDATED DATE:" sits in B2 with the value in D2 on the client's sheet.
       const stamp = cells.slice(0, headerIndex).map((r) => cellText(r[3])).find((v) => v && /\d{4}/.test(v)) ?? null;
+
+      // Optional "Material" master sheet (unit + shelf life per part) for new materials.
+      let masterMap = new Map<string, MasterEntry>();
+      for (const cand of wb.worksheets) {
+        if (cand === ws) continue;
+        const m = parseMaterialMaster(sheetToCells(cand, MASTER_COLS));
+        if (m.size > masterMap.size) masterMap = m;
+      }
+
       setSheetName(ws.name);
       setLastUpdated(stamp);
+      setMaster(masterMap);
       setSheetRows(rows);
     } catch (e) {
       setParseError(e instanceof Error ? e.message : String(e));
@@ -203,20 +197,22 @@ export default function StockImportPage() {
 
   const plan: ImportPlan | null = useMemo(() => {
     if (!sheetRows) return null;
-    return planInventoryImport(sheetRows, existing, materials);
-  }, [sheetRows, existing, materials]);
+    return planInventoryImport(sheetRows, existing, materials, storeFormIds);
+  }, [sheetRows, existing, materials, storeFormIds]);
 
-  const toApply = plan ? rpcRowsForPlan(plan, createMissing) : [];
-  const skippedUnmatched = plan && !createMissing ? plan.unmatched.length : 0;
-  const canApply = !!plan && toApply.length > 0 && !applying && !loadingDb;
+  const rpcRows = plan ? toRpcRows(plan, materials, master) : [];
+  const blockedByCreate = !!plan && plan.toCreate.length > 0 && !createMissing;
+  const canApply = !!plan && rpcRows.length > 0 && !blockedByCreate && !applying && !loadingDb;
+  const noChange = !!plan && plan.balanceChanges.length === 0 && plan.orphans.length === 0 && plan.toCreate.length === 0;
 
   const apply = async () => {
-    if (!plan || toApply.length === 0) return;
+    if (!plan || rpcRows.length === 0) return;
     setApplying(true);
-    const { data, error } = await supabase.rpc("import_inventory_rows", {
-      p_rows: toApply,
+    const { data, error } = await supabase.rpc("replace_inventory_sheet", {
+      p_rows: rpcRows,
       p_actor: actor.trim() || null,
       p_create_missing: createMissing,
+      p_deactivate_orphans: deactivateOrphans,
     });
     setApplying(false);
     if (error) {
@@ -225,11 +221,8 @@ export default function StockImportPage() {
     }
     const res = data as ImportResult;
     setResult(res);
-    toast.success(
-      `Imported — ${res.inserted} new, ${res.updated} updated` +
-        (res.created_materials ? `, ${res.created_materials} material${res.created_materials === 1 ? "" : "s"} created` : ""),
-    );
-    await loadDb(); // re-diff: everything should now read as unchanged
+    toast.success(`Ledger replaced — ${res.inserted} rows, ${res.materials_touched} materials`);
+    await loadDb(); // re-plan: a second drop of the same file should read as no change
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -238,6 +231,9 @@ export default function StockImportPage() {
     const f = e.dataTransfer.files?.[0];
     if (f) void handleFile(f);
   };
+
+  const ups = plan?.balanceChanges.filter((b) => b.after > b.before).length ?? 0;
+  const downs = plan?.balanceChanges.filter((b) => b.after < b.before).length ?? 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -265,7 +261,7 @@ export default function StockImportPage() {
           <button
             onClick={() => void loadDb()}
             disabled={loadingDb}
-            title="Reload materials and existing rows"
+            title="Reload materials and current ledger"
             className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary disabled:opacity-50"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loadingDb && "animate-spin")} />
@@ -309,10 +305,10 @@ export default function StockImportPage() {
               <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             )}
             <p className="text-sm font-medium text-card-foreground">
-              Drag &amp; drop the Material_Inventory_Record workbook here, or click to browse
+              Drag &amp; drop the whole Material_Inventory_Record workbook here, or click to browse
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Reads Sheet2 (S/No. · Material · Quantity_IN · Quantity_OUT …). Nothing is written until you press Apply.
+              Reads Sheet2 (the stock lines) and the Material sheet (units, shelf life). The pivot is ignored. Nothing is written until you press Apply.
             </p>
           </div>
 
@@ -322,6 +318,7 @@ export default function StockImportPage() {
                 <span className="font-medium text-foreground">{fileName}</span> · sheet “{sheetName}”
               </span>
               <span>{sheetRows.length} numbered rows</span>
+              {master.size > 0 && <span>{master.size} master entries</span>}
               {lastUpdated && <span>Sheet says last updated {lastUpdated}</span>}
             </div>
           )}
@@ -337,95 +334,107 @@ export default function StockImportPage() {
         {plan && (
           <>
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <Stat label="New rows" value={plan.inserts.length} tone={plan.inserts.length ? "good" : "muted"} />
-              <Stat label="Changed" value={plan.updates.length} tone={plan.updates.length ? "warn" : "muted"} />
-              <Stat label="Unchanged" value={plan.unchanged.length} tone="muted" />
-              <Stat label="Needs material" value={plan.unmatched.length} tone={plan.unmatched.length ? "bad" : "muted"} />
-              <Stat label="Blank rows" value={plan.blank} tone="muted" />
+              <Stat label="Stock rows" value={plan.rows.length} tone="muted" />
+              <Stat label="Balances up" value={ups} tone={ups ? "good" : "muted"} />
+              <Stat label="Balances down" value={downs} tone={downs ? "warn" : "muted"} />
+              <Stat label="New materials" value={plan.toCreate.length} tone={plan.toCreate.length ? "warn" : "muted"} />
+              <Stat label="Dropped from sheet" value={plan.orphans.length} tone={plan.orphans.length ? "bad" : "muted"} />
             </section>
 
-            {storeFormCount > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {storeFormCount} movement{storeFormCount === 1 ? "" : "s"} logged through the Store form are not in the workbook and stay as they are. Balances = workbook rows + Store form rows.
-              </p>
+            <p className="text-xs text-muted-foreground">
+              This upload replaces the {existing.length} ledger rows that came from the previous workbook.
+              {storeFormCount > 0 &&
+                ` ${storeFormCount} movement${storeFormCount === 1 ? "" : "s"} logged through the Store form stay as they are; balances = workbook rows + Store form rows.`}
+              {plan.unchanged > 0 && ` ${plan.unchanged} material${plan.unchanged === 1 ? "" : "s"} keep the same balance.`}
+              {plan.blank > 0 && ` ${plan.blank} blank tail row${plan.blank === 1 ? "" : "s"} ignored.`}
+            </p>
+
+            {noChange && (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 text-success" />
+                The ledger already matches this workbook. Applying would rewrite the same rows.
+              </div>
             )}
 
-            {plan.unmatched.length > 0 && (
+            {plan.balanceChanges.length > 0 && (
               <section className="space-y-2">
-                <h2 className="text-sm font-semibold text-foreground">Rows whose material is not in the system</h2>
-                <label className="flex items-center gap-2 text-sm text-foreground">
-                  <input type="checkbox" checked={createMissing} onChange={(e) => setCreateMissing(e.target.checked)} className="h-4 w-4 rounded border-input" />
-                  Create {plan.unmatched.length} missing material{plan.unmatched.length === 1 ? "" : "s"} as new stock items (name, supplier, location, UOM taken from the sheet)
-                </label>
-                <RowTable
-                  rows={plan.unmatched}
-                  extra={(p) =>
-                    p.candidates && p.candidates.length > 0 ? (
-                      <span className="text-xs text-muted-foreground">Similar: {p.candidates.join(" · ")}</span>
-                    ) : null
-                  }
-                />
-              </section>
-            )}
-
-            {plan.inserts.length > 0 && (
-              <section className="space-y-2">
-                <h2 className="text-sm font-semibold text-foreground">New rows</h2>
-                <RowTable rows={plan.inserts} />
-              </section>
-            )}
-
-            {plan.updates.length > 0 && (
-              <section className="space-y-2">
-                <h2 className="text-sm font-semibold text-foreground">Changed rows</h2>
+                <h2 className="text-sm font-semibold text-foreground">Balance changes</h2>
                 <div className="overflow-x-auto rounded-xl border border-border bg-card">
                   <table className="w-full text-sm">
                     <thead className="bg-secondary/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <tr>
-                        <th className="px-3 py-2">S/No.</th>
                         <th className="px-3 py-2">Material</th>
-                        <th className="px-3 py-2">Changes</th>
+                        <th className="px-3 py-2 text-right">Before</th>
+                        <th className="px-3 py-2 text-right">After</th>
+                        <th className="px-3 py-2 text-right">Change</th>
+                        <th className="px-3 py-2 text-right">Sheet rows</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {plan.updates.map((p) => (
-                        <tr key={p.row.sno} className="border-t border-border align-top">
-                          <td className="px-3 py-2 tabular-nums text-muted-foreground">{p.row.sno}</td>
-                          <td className="px-3 py-2 font-medium text-foreground">{p.materialName}</td>
-                          <td className="px-3 py-2">
-                            <ul className="space-y-0.5">
-                              {p.changes?.map((c) => (
-                                <li key={c.field} className="text-xs">
-                                  <span className="text-muted-foreground">{FIELD_LABEL[c.field]}:</span>{" "}
-                                  <span className="line-through text-muted-foreground/70">{show(c.before)}</span>{" "}
-                                  <span className="font-medium text-foreground">{show(c.after)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </td>
-                        </tr>
-                      ))}
+                      {plan.balanceChanges.map((b) => {
+                        const d = b.after - b.before;
+                        return (
+                          <tr key={b.materialId ?? `new:${b.name}`} className="border-t border-border">
+                            <td className="px-3 py-2">
+                              <span className="font-medium text-foreground">{b.name}</span>
+                              {b.materialId === null && (
+                                <span className="ml-2 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-warning">new</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmtQty(b.before)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmtQty(b.after)}</td>
+                            <td className={cn("px-3 py-2 text-right tabular-nums font-medium", d > 0 ? "text-success" : "text-destructive")}>
+                              {d > 0 ? "+" : ""}
+                              {fmtQty(d)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{b.rows}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </section>
             )}
 
-            {plan.inserts.length === 0 && plan.updates.length === 0 && plan.unmatched.length === 0 && (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-success" />
-                The ledger already matches this workbook. Nothing to import.
-              </div>
+            {plan.toCreate.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold text-foreground">Materials not in the system yet</h2>
+                <label className="flex items-start gap-2 text-sm text-foreground">
+                  <input type="checkbox" checked={createMissing} onChange={(e) => setCreateMissing(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-input" />
+                  <span>
+                    Create these {plan.toCreate.length} as new stock items, using the sheet's supplier, location and unit
+                    {master.size > 0 && " plus unit and shelf life from the Material sheet"}.
+                    <span className="block text-xs text-muted-foreground">
+                      Names are matched exactly, so a colour variant like “(RAL 7037)” is a separate item from the plain name. Untick to stop and rename in the workbook first.
+                    </span>
+                  </span>
+                </label>
+                <NameList names={plan.toCreate} />
+              </section>
+            )}
+
+            {plan.orphans.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold text-foreground">Materials no longer in the sheet</h2>
+                <label className="flex items-start gap-2 text-sm text-foreground">
+                  <input type="checkbox" checked={deactivateOrphans} onChange={(e) => setDeactivateOrphans(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-input" />
+                  <span>
+                    Deactivate these {plan.orphans.length} so they leave the watchlist. Their balance becomes 0 either way, because their only stock rows came from the old workbook.
+                    <span className="block text-xs text-muted-foreground">They are not deleted. Re-uploading a sheet that names them reactivates them.</span>
+                  </span>
+                </label>
+                <NameList names={plan.orphans.map((o) => `${o.name} (${fmtQty(o.qtyOnHand)})`)} />
+              </section>
             )}
 
             {/* Step 3 — apply */}
             <section className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
               <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3">
                 <div className="mr-auto text-xs text-muted-foreground">
-                  {toApply.length > 0
-                    ? `${toApply.length} row${toApply.length === 1 ? "" : "s"} will be written in one transaction`
-                    : "Nothing to write"}
-                  {skippedUnmatched > 0 && ` · ${skippedUnmatched} unmatched row${skippedUnmatched === 1 ? "" : "s"} will be skipped`}
+                  {blockedByCreate
+                    ? "Tick “create” above or rename the unknown materials in the workbook before applying"
+                    : `${existing.length} rows out, ${rpcRows.length} rows in, one transaction`}
                 </div>
                 <button
                   onClick={() => void apply()}
@@ -433,7 +442,7 @@ export default function StockImportPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Apply to store ledger
+                  Replace store ledger with this sheet
                 </button>
               </div>
             </section>
@@ -444,8 +453,9 @@ export default function StockImportPage() {
           <section className="rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm">
             <p className="font-medium text-foreground">Import complete</p>
             <p className="text-muted-foreground">
-              {result.inserted} new · {result.updated} updated · {result.materials_touched} material balance{result.materials_touched === 1 ? "" : "s"} recomputed
-              {result.created_materials > 0 && ` · created: ${result.created_material_names.join(", ")}`}
+              {result.deleted} old rows replaced by {result.inserted} · {result.materials_touched} material balance{result.materials_touched === 1 ? "" : "s"} recomputed
+              {result.created_materials > 0 && ` · ${result.created_materials} created`}
+              {result.deactivated_materials > 0 && ` · ${result.deactivated_materials} deactivated`}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Check <a href="/store/health" className="underline">Store Health</a> for the new balances.
@@ -472,38 +482,16 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: "goo
   );
 }
 
-function RowTable({ rows, extra }: { rows: PlannedRow[]; extra?: (p: PlannedRow) => React.ReactNode }) {
+function NameList({ names }: { names: string[] }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card">
-      <table className="w-full text-sm">
-        <thead className="bg-secondary/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2">S/No.</th>
-            <th className="px-3 py-2">Material</th>
-            <th className="px-3 py-2">Supplier</th>
-            <th className="px-3 py-2">Location</th>
-            <th className="px-3 py-2 text-right">IN</th>
-            <th className="px-3 py-2 text-right">OUT</th>
-            <th className="px-3 py-2">Project</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((p) => (
-            <tr key={p.row.sno} className="border-t border-border align-top">
-              <td className="px-3 py-2 tabular-nums text-muted-foreground">{p.row.sno}</td>
-              <td className="px-3 py-2">
-                <div className="font-medium text-foreground">{p.materialName || show(p.row.material)}</div>
-                {extra?.(p)}
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">{show(p.row.supplier)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{show(p.row.location)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{show(p.row.qtyIn)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{show(p.row.qtyOut)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{show(p.row.projectOut ?? p.row.projectIn)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-card px-3 py-2">
+      <ul className="columns-1 gap-x-6 text-sm text-foreground sm:columns-2">
+        {names.map((n) => (
+          <li key={n} className="break-inside-avoid py-0.5">
+            {n}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
