@@ -977,8 +977,31 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   // Send the reminder email now via the n8n webhook (server re-checks the claim
   // is still actionable, sends, and logs the reminder). The recipient comes from
   // the project's contact_email and is passed to the webhook as `to`.
+  // Days until this claim's next scheduled reminder day (certificate: T-4, due day,
+  // then every 7 days after due; payment: the view's next_flag_date).
+  const nextScheduledSend = (row) => {
+    if (clock === "payment") return row.days_to_next_flag == null ? null : Math.max(0, Number(row.days_to_next_flag));
+    const d = Number(row.days_to_due);
+    if (Number.isNaN(d)) return null;
+    if (d > 4) return d - 4;
+    if (d > 0) return d;
+    const over = -d;
+    return over % 7 === 0 ? 0 : 7 - (over % 7);
+  };
+
   const handleSend = async (row) => {
     if (!row.contact_email) { showFeedback("Add a recipient email first."); return; }
+    if (!row.needs_action_today) {
+      // Sending ahead of schedule: confirm, and say what it will be logged as.
+      const inDays = nextScheduledSend(row);
+      const nextNo = (Number(row.reminders_sent) || 0) + 1;
+      const when = inDays == null ? "" : inDays === 0 ? " today" : inDays === 1 ? " tomorrow" : ` in ${inDays} days (${fmtDate(new Date(Date.now() + inDays * 86400000).toISOString().slice(0, 10))})`;
+      const ok = window.confirm(
+        `This claim's next scheduled reminder is${when}.\n\n` +
+        `Send ahead of schedule now? It will go out immediately and be logged as reminder #${nextNo} (a manual reminder \u2014 it counts in the sequence but does not move the schedule).`
+      );
+      if (!ok) return;
+    }
     setSendingId(row.claim_id);
     try {
       // Send exactly what the card previews (templates are editable); n8n falls
