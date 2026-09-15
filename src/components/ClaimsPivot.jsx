@@ -997,7 +997,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
       if (isManual) params.p_is_manual = true;
       const { data, error } = await supabase.rpc("log_chase_reminder", params);
       if (error) { showFeedback("Error: " + error.message); }
-      else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); await clearDraftAfterSend(row); }
+      else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); await clearDraftAfterSend(row); await loadDetail(row); }
     } catch (e) { showFeedback("Error: " + e.message); }
     setEmailModal(null);
     await onRefresh();
@@ -1045,7 +1045,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (data.ok) { showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`); await clearDraftAfterSend(row); }
+      if (data.ok) { showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`); await clearDraftAfterSend(row); await loadDetail(row); }
       else showFeedback("Send failed: " + (data.reason || `HTTP ${res.status}`));
     } catch (e) { showFeedback("Send failed: " + e.message); }
     setSendingId(null);
@@ -1269,11 +1269,12 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
     const s = row.stage;
     let cur;
     if (clock === "certificate") {
-      cur = s === "not_due" || s === "t-7" ? 1
-        : s === "t-4" ? 2
-        : s === "due" ? 3
-        : s === "overdue" ? 4 + Math.min(Math.max(sent - 2, 0), 2)
-        : 1;
+      // Segments: Submit | T-7 | R1 | R2 | R3 | R4 | R5. Filled = reminders actually sent;
+      // the marker sits on the NEXT reminder (R{sent+1}). Before any reminder is due the
+      // marker stays on Submit / T-7 by stage.
+      if (s === "not_due") cur = 1;
+      else if (s === "t-7" && sent === 0) cur = 1;
+      else cur = 2 + sent;
     } else {
       cur = s === "soa" ? 2 : s === "soa_overdue" ? 3 : s === "1st" ? 4 : s === "2nd" ? 5 : s === "final" ? 6 : 1;
     }
@@ -1283,7 +1284,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
     let labels;
     if (clock === "certificate") {
       labels = ["Submit", "T\u22127", "R1", "R2", "R3", "R4", "R5"];
-      if (sent > 4) labels[6] = `R${sent + 1}`;
+      if (sent >= 4) labels[6] = `R${sent + 1}`; // past R5: the last segment names the next one
     } else {
       labels = ["Inv", "SOA", "+35", "+42", "+49", "+56", "+63"];
     }
