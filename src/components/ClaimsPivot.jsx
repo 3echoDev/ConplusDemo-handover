@@ -167,13 +167,41 @@ export default function ClaimsPivot() {
   const [projectsList, setProjectsList] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Claims that have left the Certificate chase (PRC received) but not yet entered
+  // the Payment chase (no invoice date). Neither view lists them, so they are
+  // fetched here and shown on the Certificate tab as "Certified, invoice pending".
+  const [pendingRows, setPendingRows] = useState([]);
   const fetchChase = useCallback(async () => {
-    const [certRes, payRes] = await Promise.all([
+    const [certRes, payRes, pendRes] = await Promise.all([
       supabase.from("certificate_chase").select("*"),
       supabase.from("payment_chase").select("*"),
+      supabase
+        .from("claims")
+        .select("id, claim_no, claim_number, project_id, project_code, project_name, client_name, contact_person, amount, certified_amount, retention_amount, prc_date, invoice_date, claim_date, projects(name, contact_email)")
+        .not("prc_date", "is", null)
+        .is("invoice_date", null)
+        .is("paid_date", null)
+        .order("prc_date", { ascending: false }),
     ]);
     if (!certRes.error) setCertRows(certRes.data || []);
     if (!payRes.error) setPayRows(payRes.data || []);
+    if (!pendRes.error) {
+      setPendingRows((pendRes.data || []).map((c) => ({
+        claim_id: c.id,
+        claim_no: c.claim_no,
+        claim_number: c.claim_number,
+        project_code: c.project_code,
+        project_name: c.project_name || c.projects?.name || null,
+        client_name: c.client_name,
+        contact_person: c.contact_person,
+        contact_email: c.projects?.contact_email || null,
+        amount: c.amount == null ? null : Number(c.amount),
+        certified_amount: c.certified_amount == null ? null : Number(c.certified_amount),
+        prc_date: c.prc_date,
+        invoice_date: c.invoice_date,
+        claim_date: c.claim_date,
+      })));
+    }
   }, []);
 
   useEffect(() => {
@@ -392,6 +420,7 @@ export default function ClaimsPivot() {
           setChaseTab={setChaseTab}
           certRows={certRows}
           payRows={payRows}
+          pendingRows={pendingRows}
           onRefresh={fetchChase}
         />
       )}
@@ -881,7 +910,7 @@ function VOSection({ projectId, voValue, contractBase, totalContract }) {
 const SEND_CHASE_URL = import.meta.env.VITE_SEND_CHASE_URL || "https://threeecho.app.n8n.cloud/webhook/conplus-send-chase";
 const SEND_CHASE_TOKEN = import.meta.env.VITE_CHASE_TOKEN || "cnp_chase_8b21f4a9e6c3";
 
-function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
+function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = [], onRefresh }) {
   // Per-claim edited drafts (table chase_drafts, keyed claim_id:clock). An edit
   // on the card is saved on blur and is what Proceed & send / Log as Sent use.
   const [drafts, setDrafts] = useState({});
@@ -1438,9 +1467,10 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                         <div className="cpc-node-lbl">PRC received</div>
                         <input className="cpc-node-input" type="date" defaultValue={row.prc_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "prc_date", e.target.value)} />
                       </div>
-                      <div className="cpc-node">
+                      <div className="cpc-node" title="Enter the PRC received date and the certified amount first — the invoice is submitted against the certificate.">
                         <div className="cpc-node-lbl">Invoice submitted</div>
-                        <input className="cpc-node-input" type="date" defaultValue={row.invoice_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "invoice_date", e.target.value)} />
+                        <input className="cpc-node-input" type="date" disabled value="" readOnly />
+                        <div className="cpc-node-rel">after PRC + certified amount</div>
                       </div>
                     </>
                   ) : (
@@ -1508,7 +1538,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                     <div className="cpc-node-rel" style={{ marginTop: 4 }}>
                       {row.certified_amount != null && Number(row.certified_amount) > 0
                         ? `Certified ${fmtFull(Number(row.certified_amount))} of ${fmtFull(amt)} saved. This claim stays in the Certificate chase until the PRC received date is entered; with an invoice date it then moves to the Payment chase.`
-                        : "Saved values reload here. Entering a PRC date moves the claim to the Payment chase once an invoice date is set."}
+                        : "Enter the certified amount from the PRC, then the PRC received date. The claim then moves to \u201cCertified, invoice pending\u201d until the invoice date is entered, which starts the Payment chase."}
                     </div>
                   </div>
                 )}
@@ -1711,6 +1741,18 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               Needs action today <span className="cpc-seccount">&middot; {actionCards.length} claims &middot; drafts ready</span>
             </div>
             {actionCards.map(renderCard)}
+          </>
+        )}
+
+        {clock === "certificate" && pendingRows.length > 0 && (
+          <>
+            <div className="cpc-sechead">
+              <span className="cpc-secdot certified" />
+              Certified, invoice pending <span className="cpc-seccount">&middot; {pendingRows.length} claims &middot; PRC received, waiting for the invoice date</span>
+            </div>
+            {pendingRows.map((row) => (
+              <PendingInvoiceCard key={row.claim_id} row={row} onSave={handleDateUpdate} />
+            ))}
           </>
         )}
 
@@ -3021,6 +3063,11 @@ textarea.cpc-email-text.cpc-email-edit { color:#334155; white-space:pre-wrap; }
 .cpc-email-editrow { display:flex; align-items:center; gap:8px; margin-top:4px; font-size:11px; }
 .cpc-btn.cpc-btn-offcycle { background:#fff; color:#1d4ed8; border:1px solid #93c5fd; }
 .cpc-btn.cpc-btn-offcycle:hover { background:#eff6ff; }
+.cpc-claim.cpc-pending { border-color:#bbf7d0; }
+.cpc-secdot.certified { background:#16a34a; }
+.cpc-pending-fields { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+.cpc-pending-field { display:flex; flex-direction:column; gap:4px; }
+.cpc-node-input-suggest { background:#fef3c7; border-color:#f59e0b; }
 .cpc-email-flag { display:inline-block; padding:1px 6px; border-radius:999px; background:#fef3c7; color:#92400e; font-weight:600; }
 .cpc-empty { padding:24px; text-align:center; color:var(--c-muted); font-size:13px; border:1px dashed var(--c-border); border-radius:12px; }
 .cpc-toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--c-accent); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; z-index:60; box-shadow:0 8px 24px rgba(0,0,0,.18); }
@@ -3201,6 +3248,76 @@ function TemplatesModal({ overrides, onClose, onChange }) {
           <button className="cp-btn cp-btn-proceed" disabled={saving || !dirty} onClick={save}>{saving ? "Saving\u2026" : "Save wording"}</button>
           <button className="cp-btn cp-btn-ignore" disabled={saving || !customised} onClick={reset} title="Go back to the built-in wording">Reset to default</button>
           <button className="cp-btn cp-btn-cancel" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CERTIFIED, INVOICE PENDING — between the two chases
+// ============================================================================
+// PRC received ends the Certificate chase; the invoice date starts the Payment
+// chase. In between the claim sits here so it is never out of sight. The
+// certified amount defaults to the claim amount but is only stored once a
+// person confirms it; the invoice date unlocks after that.
+function PendingInvoiceCard({ row, onSave }) {
+  const [cert, setCert] = useState(row.certified_amount != null ? String(row.certified_amount) : row.amount != null ? String(row.amount) : "");
+  const [busy, setBusy] = useState(false);
+  const saved = row.certified_amount != null;
+  const certOk = saved && Number(row.certified_amount) > 0;
+  const confirmCert = async () => {
+    const v = Number(cert);
+    if (!(v >= 0)) return;
+    setBusy(true);
+    await onSave(row.claim_id, "certified_amount", v);
+    setBusy(false);
+  };
+  return (
+    <div className="cpc-claim cpc-pending">
+      <div className="cpc-row">
+        <div>
+          <div className="cpc-title"><strong>{row.project_code}</strong> &middot; Claim #{row.claim_no ?? row.claim_number}</div>
+          <div className="cpc-sub">{cleanName(row.client_name) || row.project_name}{row.contact_person ? ` \u00B7 ${row.contact_person}` : ""}</div>
+        </div>
+        <div className="cpc-pending-fields">
+          <label className="cpc-pending-field">
+            <span className="cpc-node-lbl">PRC received</span>
+            <input className="cpc-node-input" type="date" defaultValue={row.prc_date || ""} onChange={(e) => onSave(row.claim_id, "prc_date", e.target.value)} title="Clearing this date puts the claim back into the Certificate chase" />
+          </label>
+          <label className="cpc-pending-field">
+            <span className="cpc-node-lbl">Certified amount ($){!saved && <span className="cpc-email-flag" style={{ marginLeft: 6 }}>confirm</span>}</span>
+            <span style={{ display: "flex", gap: 6 }}>
+              <input
+                className={`cpc-node-input${saved ? "" : " cpc-node-input-suggest"}`}
+                type="number" step="0.01" min={0}
+                value={cert}
+                onChange={(e) => setCert(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") confirmCert(); }}
+                onBlur={() => { if (saved && cert !== "" && Number(cert) !== Number(row.certified_amount)) confirmCert(); }}
+                style={{ maxWidth: 140 }}
+              />
+              {!saved && (
+                <button className="cpc-btn small primary" disabled={busy || cert === ""} onClick={confirmCert} title={row.amount != null ? `Prefilled with the claim amount ${fmtFull(row.amount)} \u2014 change it if the certificate is short` : "Enter the certified amount"}>
+                  {busy ? "Saving\u2026" : "Confirm"}
+                </button>
+              )}
+            </span>
+          </label>
+          <label className="cpc-pending-field" title={certOk ? "Entering the invoice date starts the 35-day Payment chase" : "Confirm the certified amount first"}>
+            <span className="cpc-node-lbl">Invoice submitted</span>
+            <input className="cpc-node-input" type="date" disabled={!certOk} defaultValue="" onChange={(e) => { if (e.target.value) onSave(row.claim_id, "invoice_date", e.target.value); }} />
+          </label>
+        </div>
+        <div className="cpc-amount">
+          <div className="cpc-amt">{fmtFull(row.amount)}</div>
+          <div className="cpc-days warn">PRC {row.prc_date ? fmtDate(row.prc_date) : "\u2014"}</div>
+          {certOk && <div className="cpc-certified">certified {fmtFull(Number(row.certified_amount))}{Number(row.amount) > Number(row.certified_amount) ? ` \u00B7 ${fmtFull(Number(row.amount) - Number(row.certified_amount))} balance` : ""}</div>}
+        </div>
+        <div className="cpc-actions">
+          <div className="cpc-node-rel" style={{ maxWidth: 220 }}>
+            {certOk ? "Enter the invoice date to start the Payment chase." : "Confirm the certified amount to unlock the invoice date."}
+          </div>
         </div>
       </div>
     </div>
