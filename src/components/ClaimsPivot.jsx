@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { DEFAULT_TEMPLATES, TEMPLATE_META, PLACEHOLDERS, renderChaseTemplate, unknownPlaceholders } from "@/lib/chaseTemplates";
 
 /*
   ConPlus — Claims Pivot & Payment Chase (v4 — Two-clock engine)
@@ -82,84 +83,61 @@ const paySig = (row) => {
   return `\n\nBest regards,\n${name ? name + "\n" : ""}Conplus Resources Pte Ltd`;
 };
 
+// Overrides loaded from chase_templates (key → {subject, body}); null = defaults only.
+// Module-level so the draft builders below stay plain functions.
+let TEMPLATE_OVERRIDES = null;
+export function setTemplateOverrides(map) { TEMPLATE_OVERRIDES = map; }
+
+function certVars(row) {
+  return {
+    claim_no: row.claim_no || "-",
+    project: `${row.project_name} (${row.project_code})`,
+    project_name: row.project_name,
+    project_code: row.project_code,
+    submitted_on: fmtDate(row.anchor_date),
+    amount: fmtFull(row.amount),
+    due_date: fmtDate(row.due_date),
+    days_over: Math.abs(row.days_to_due || 0),
+    contact: cleanName(row.contact_person) || "Sir/Madam",
+    signature: paySig(row),
+  };
+}
+
 function getCertEmail(row) {
-  const claimNo = row.claim_no || "-";
-  const proj = `${row.project_name} (${row.project_code})`;
-  const daysOver = Math.abs(row.days_to_due || 0);
-  switch (row.stage) {
-    case "t-4":
-      return {
-        subject: `Payment Response Certificate \u2014 ${row.project_name} (Claim ${claimNo})`,
-        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due by ${fmtDate(row.due_date)}. We would appreciate it if you could arrange for the certificate to be issued by the due date.\n\nThank you.`,
-      };
-    case "due":
-      return {
-        subject: `Payment Response Certificate Due Today \u2014 ${row.project_name}`,
-        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate is due today (${fmtDate(row.due_date)}). Kindly arrange for the certificate to be issued. Please let us know if you require any further information.\n\nThank you.`,
-      };
-    case "overdue":
-      return {
-        subject: `Overdue: Payment Response Certificate \u2014 ${row.project_name} (Claim ${claimNo})`,
-        body: `Dear Sir/Madam,\n\nWe refer to our Progress Claim ${claimNo} for ${proj}, submitted on ${fmtDate(row.anchor_date)} for ${fmtFull(row.amount)}.\n\nThe Payment Response Certificate was due on ${fmtDate(row.due_date)} and is now ${daysOver} days overdue. We would be grateful if you could arrange for it to be issued at the earliest, or advise us of the expected date.\n\nThank you.`,
-      };
-    default:
-      return null; // not_due, t-7 — too early to chase
-  }
+  const key = { "t-4": "cert.t-4", due: "cert.due", overdue: "cert.overdue" }[row.stage];
+  if (!key) return null; // not_due, t-7 — too early to chase
+  return renderChaseTemplate(key, TEMPLATE_OVERRIDES, certVars(row));
+}
+
+function payVars(row) {
+  // outstanding_amount: no tax_invoices table in this build, so fall back to
+  // this claim's invoice amount. Rendered as "SGD 60,527.01".
+  return {
+    ...certVars(row),
+    days_over: Math.max(0, -(row.days_to_due || 0)),
+    deadline: payDeadline(row),
+    outstanding: `SGD ${fmtNum(row.invoice_amount)}`,
+  };
 }
 
 function getPayEmail(row) {
-  const proj = row.project_name;
-  const code = row.project_code || "";
-  const contact = cleanName(row.contact_person) || "Sir/Madam";
-  const daysOverdue = Math.max(0, -(row.days_to_due || 0));
-  const deadline = payDeadline(row);
-  // outstanding_amount: no tax_invoices table in this build, so fall back to
-  // this claim's invoice amount. Rendered as "SGD 60,527.01".
-  const outstanding = `SGD ${fmtNum(row.invoice_amount)}`;
-  const sig = paySig(row);
-  switch (row.stage) {
-    case "soa": // payment.day0 — Statement of Account with invoice
-      return {
-        subject: `Statement of Account \u2014 ${proj} (${code})`,
-        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nThank you.${sig}`,
-      };
-    case "soa_overdue": // payment.overdue — 14 / 21 / 28 days overdue
-      return {
-        subject: `OVERDUE \u2014 Statement of Account for ${proj} (${daysOverdue} days overdue)`,
-        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nMay I seek your kind assistance to check the payment status for the outstanding invoice please.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
-      };
-    case "1st": // payment.reminder1 — 35 days overdue
-      return {
-        subject: `1st REMINDER \u2014 Payment overdue for ${proj} (${daysOverdue} days)`,
-        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
-      };
-    case "2nd": // payment.reminder2 — 42 days overdue
-      return {
-        subject: `2nd REMINDER \u2014 Payment overdue for ${proj} (${daysOverdue} days)`,
-        body: `Dear ${contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by ${deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
-      };
-    case "final": // payment.legal | payment.termination — 49 days overdue, QS picks
-      return {
-        subject: `FINAL REMINDER \u2014 ${proj} (${outstanding} outstanding)`,
-        body: null,
-        variants: [
-          {
-            id: "legal",
-            label: "Legal Action",
-            subject: `FINAL REMINDER \u2014 Legal proceedings pending for ${proj} (${outstanding} outstanding)`,
-            body: `Dear ${contact},\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment ${outstanding} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of ${outstanding} is not received in full by ${deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
-          },
-          {
-            id: "termination",
-            label: "Work Termination",
-            subject: `FINAL REMINDER \u2014 Work suspension pending for ${proj} (${outstanding} outstanding)`,
-            body: `Dear ${contact},\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment ${outstanding} by ${deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of ${outstanding} is not received in full by ${deadline}, we will be unable to mobilize our manpower to provide further services. Also, we will not be responsible for all the charges due to the outstanding work.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${sig}`,
-          },
-        ],
-      };
-    default:
-      return null;
+  const vars = payVars(row);
+  const single = { soa: "pay.soa", soa_overdue: "pay.soa_overdue", "1st": "pay.1st", "2nd": "pay.2nd" }[row.stage];
+  if (single) return renderChaseTemplate(single, TEMPLATE_OVERRIDES, vars);
+  if (row.stage === "final") {
+    // payment.legal | payment.termination — 49 days overdue, QS picks
+    const legal = renderChaseTemplate("pay.final.legal", TEMPLATE_OVERRIDES, vars);
+    const term = renderChaseTemplate("pay.final.termination", TEMPLATE_OVERRIDES, vars);
+    return {
+      subject: `FINAL REMINDER \u2014 ${vars.project_name} (${vars.outstanding} outstanding)`,
+      body: null,
+      variants: [
+        { id: "legal", label: "Legal Action", subject: legal.subject, body: legal.body },
+        { id: "termination", label: "Work Termination", subject: term.subject, body: term.body },
+      ],
+    };
   }
+  return null;
 }
 
 // ============================================================================
@@ -181,6 +159,13 @@ export default function ClaimsPivot() {
   const [certRows, setCertRows] = useState([]);
   const [payRows, setPayRows] = useState([]);
 
+  // Editable templates + new-claim dialog (client asks, 2026-09-14)
+  const [tplOverrides, setTplOverrides] = useState(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showNewClaim, setShowNewClaim] = useState(false);
+  const [projectsList, setProjectsList] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const fetchChase = useCallback(async () => {
     const [certRes, payRes] = await Promise.all([
       supabase.from("certificate_chase").select("*"),
@@ -193,7 +178,7 @@ export default function ClaimsPivot() {
   useEffect(() => {
     (async () => {
       try {
-        const [claimsRes, summaryRes] = await Promise.all([
+        const [claimsRes, summaryRes, tplRes, projRes] = await Promise.all([
           supabase
             .from("claims")
             .select(
@@ -204,6 +189,8 @@ export default function ClaimsPivot() {
           supabase
             .from("project_claim_summary")
             .select("project_code, billable_contract, total_claimed, total_certified, to_claim"),
+          supabase.from("chase_templates").select("key, subject, body"),
+          supabase.from("projects").select("project_code, name, retention_pct, status").eq("status", "active").order("project_code", { ascending: false }),
         ]);
         if (claimsRes.error) throw claimsRes.error;
         if (summaryRes.error) throw summaryRes.error;
@@ -240,6 +227,12 @@ export default function ClaimsPivot() {
         }
         setSummaryMap(sMap);
 
+        const tplMap = {};
+        for (const t of tplRes.data || []) tplMap[t.key] = { subject: t.subject, body: t.body };
+        setTplOverrides(tplMap);
+        setTemplateOverrides(tplMap);
+        setProjectsList(projRes.data || []);
+
         await fetchChase();
       } catch (e) {
         setErr(e.message || String(e));
@@ -247,7 +240,7 @@ export default function ClaimsPivot() {
         setLoading(false);
       }
     })();
-  }, [fetchChase]);
+  }, [fetchChase, reloadKey]);
 
   const months = useMemo(() => {
     const set = new Set(rows.map((r) => monthKey(r.claim_date)).filter(Boolean));
@@ -352,6 +345,8 @@ export default function ClaimsPivot() {
           </a>
           <span className="cp-title">Progress Claims</span>
           <span className="cp-stats">{projects.length} projects &middot; {rows.length} claims</span>
+          <button className="cp-tab" onClick={() => setShowNewClaim(true)} title="Register a new progress claim so it enters the certificate chase">+ New claim</button>
+          <button className="cp-tab" onClick={() => setShowTemplates(true)} title="Change the wording of the reminder emails">Email templates</button>
         </div>
         <div className="cp-tabs">
           <button className={`cp-tab${view === "pivot" ? " on" : ""}`} onClick={() => setView("pivot")}>
@@ -397,6 +392,22 @@ export default function ClaimsPivot() {
           certRows={certRows}
           payRows={payRows}
           onRefresh={fetchChase}
+        />
+      )}
+
+      {showNewClaim && (
+        <NewClaimModal
+          projects={projectsList}
+          rows={rows}
+          onClose={() => setShowNewClaim(false)}
+          onCreated={() => { setShowNewClaim(false); setReloadKey((k) => k + 1); }}
+        />
+      )}
+      {showTemplates && (
+        <TemplatesModal
+          overrides={tplOverrides || {}}
+          onClose={() => setShowTemplates(false)}
+          onChange={(map) => { setTplOverrides(map); setTemplateOverrides(map); }}
         />
       )}
     </Shell>
@@ -922,11 +933,15 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
     if (!row.contact_email) { showFeedback("Add a recipient email first."); return; }
     setSendingId(row.claim_id);
     try {
+      // Send exactly what the card previews (templates are editable); n8n falls
+      // back to its own wording only if subject/body are missing.
+      const drafted = clock === "payment" ? getPayEmail(row) : getCertEmail(row);
       const res = await fetch(
         `${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}&to=${encodeURIComponent(row.contact_email)}`,
         {
           method: "POST",
-          headers: { "X-Chase-Token": SEND_CHASE_TOKEN },
+          headers: { "X-Chase-Token": SEND_CHASE_TOKEN, "Content-Type": "application/json" },
+          body: JSON.stringify({ to: row.contact_email, subject: drafted?.subject || null, body: drafted?.body || null }),
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -2787,3 +2802,176 @@ const CSS = `
   .cpc-detail-grid, .cpc-timeline { grid-template-columns:1fr; }
 }
 `;
+
+// ============================================================================
+// NEW CLAIM (header button) — RPC create_claim; the claim then enters the chase
+// ============================================================================
+function NewClaimModal({ projects, rows, onClose, onCreated }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [code, setCode] = useState(projects[0]?.project_code || "");
+  const [claimNo, setClaimNo] = useState("");
+  const [date, setDate] = useState(today);
+  const [amount, setAmount] = useState("");
+  const [retention, setRetention] = useState("");
+  const [retTouched, setRetTouched] = useState(false);
+  const [remarks, setRemarks] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const project = projects.find((p) => p.project_code === code);
+  const existing = rows.filter((r) => r.code === code);
+  const nextNo = existing.reduce((m, r) => Math.max(m, Number(r.claim_no) || 0), 0) + 1;
+  useEffect(() => { setClaimNo(String(nextNo)); }, [code, nextNo]);
+  // retention defaults to the project's retention % of the claim amount until edited
+  useEffect(() => {
+    if (retTouched) return;
+    const pct = project?.retention_pct == null ? null : Number(project.retention_pct);
+    const amt = Number(amount);
+    setRetention(pct != null && amt > 0 ? (Math.round(amt * pct) / 100).toFixed(2) : "");
+  }, [amount, project, retTouched]);
+
+  const save = async () => {
+    setErr("");
+    const amt = Number(amount);
+    if (!code) return setErr("Choose a project.");
+    if (!Number(claimNo) || Number(claimNo) <= 0) return setErr("Claim number must be a positive whole number.");
+    if (!(amt >= 0)) return setErr("Enter the claim amount.");
+    setSaving(true);
+    const { data, error } = await supabase.rpc("create_claim", {
+      p_project_code: code,
+      p_claim_no: Number(claimNo),
+      p_claim_date: date || today,
+      p_amount: amt,
+      p_certified_amount: null,
+      p_retention_amount: retention === "" ? null : Number(retention),
+      p_remarks: remarks.trim() || null,
+      p_status: "submitted",
+    });
+    setSaving(false);
+    if (error || !data?.ok) return setErr(data?.error || error?.message || "Could not create the claim.");
+    onCreated(data);
+  };
+
+  const inp = { width: "100%", padding: "8px 10px", border: "1px solid var(--border-lt, #ddd)", borderRadius: 8, fontSize: 13, background: "#fff" };
+  const lbl = { display: "block", fontSize: 11, color: "var(--c-muted, #666)", marginBottom: 4, fontWeight: 600 };
+
+  return (
+    <div className="cp-overlay" onClick={onClose}>
+      <div className="cp-modal cp-modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="cp-modal-head">
+          <h3 className="cp-modal-title">New progress claim</h3>
+          <button className="cp-modal-x" onClick={onClose}>&times;</button>
+        </div>
+        <div className="cp-modal-content">
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <label style={lbl}>Project</label>
+              <select style={inp} value={code} onChange={(e) => { setCode(e.target.value); setRetTouched(false); }}>
+                {projects.map((p) => <option key={p.project_code} value={p.project_code}>{p.project_code}{p.name ? ` \u2014 ${cleanName(p.name)}` : ""}</option>)}
+              </select>
+              {existing.length > 0 && <div style={{ fontSize: 11, color: "var(--c-muted, #666)", marginTop: 4 }}>{existing.length} claim{existing.length === 1 ? "" : "s"} on this project so far; next is #{nextNo}.</div>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={lbl}>Claim no.</label><input style={inp} type="number" min={1} step={1} value={claimNo} onChange={(e) => setClaimNo(e.target.value)} /></div>
+              <div><label style={lbl}>Claim date</label><input style={inp} type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={lbl}>Claim amount (before GST)</label><input style={inp} type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></div>
+              <div>
+                <label style={lbl}>Retention{project?.retention_pct != null ? ` (default ${Number(project.retention_pct)}%)` : ""}</label>
+                <input style={inp} type="number" min={0} step="0.01" value={retention} onChange={(e) => { setRetTouched(true); setRetention(e.target.value); }} />
+              </div>
+            </div>
+            <div><label style={lbl}>Remarks</label><input style={inp} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="optional" /></div>
+            {err && <div style={{ color: "#b91c1c", fontSize: 12 }}>{err}</div>}
+            <div className="cp-modal-hint">
+              The claim is registered as <strong>submitted</strong> today, which starts the 21-day certificate clock. Line items, the PDF and Excel are produced from the claim on the Live View page.
+            </div>
+          </div>
+        </div>
+        <div className="cp-modal-actions">
+          <button className="cp-btn cp-btn-proceed" disabled={saving} onClick={save}>{saving ? "Saving\u2026" : "Create claim"}</button>
+          <button className="cp-btn cp-btn-cancel" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// EMAIL TEMPLATES (header button) — edit wording per reminder stage
+// ============================================================================
+function TemplatesModal({ overrides, onClose, onChange }) {
+  const [key, setKey] = useState(TEMPLATE_META[0].key);
+  const current = overrides[key] || DEFAULT_TEMPLATES[key];
+  const [subject, setSubject] = useState(current.subject);
+  const [body, setBody] = useState(current.body);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => { const t = overrides[key] || DEFAULT_TEMPLATES[key]; setSubject(t.subject); setBody(t.body); setMsg(""); }, [key, overrides]);
+
+  const meta = TEMPLATE_META.find((m) => m.key === key);
+  const customised = !!overrides[key];
+  const dirty = subject !== current.subject || body !== current.body;
+  const unknown = unknownPlaceholders(subject + body);
+  const actor = (() => { try { return localStorage.getItem("conplus_store_approver") || null; } catch { return null; } })();
+
+  const save = async () => {
+    setSaving(true); setMsg("");
+    const { data, error } = await supabase.rpc("save_chase_template", { p_key: key, p_subject: subject, p_body: body, p_actor: actor });
+    setSaving(false);
+    if (error || !data?.ok) return setMsg(data?.error || error?.message || "Could not save.");
+    onChange({ ...overrides, [key]: { subject, body } });
+    setMsg("Saved. New drafts use this wording from now on.");
+  };
+  const reset = async () => {
+    setSaving(true); setMsg("");
+    const { data, error } = await supabase.rpc("reset_chase_template", { p_key: key });
+    setSaving(false);
+    if (error || !data?.ok) return setMsg(data?.error || error?.message || "Could not reset.");
+    const next = { ...overrides }; delete next[key]; onChange(next);
+    setMsg("Back to the built-in wording.");
+  };
+
+  const inp = { width: "100%", padding: "8px 10px", border: "1px solid var(--border-lt, #ddd)", borderRadius: 8, fontSize: 13, background: "#fff" };
+
+  return (
+    <div className="cp-overlay" onClick={onClose}>
+      <div className="cp-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="cp-modal-head">
+          <h3 className="cp-modal-title">Email templates</h3>
+          <button className="cp-modal-x" onClick={onClose}>&times;</button>
+        </div>
+        <div className="cp-modal-content">
+          <div className="cp-modal-field">
+            <div className="cp-modal-flabel"><span>Template</span>{customised && <span className="cp-pill cp-pill-submitted">customised</span>}</div>
+            <select style={inp} value={key} onChange={(e) => setKey(e.target.value)}>
+              {TEMPLATE_META.map((m) => <option key={m.key} value={m.key}>{m.label}{overrides[m.key] ? " \u2022" : ""}</option>)}
+            </select>
+            {meta && <div style={{ fontSize: 11, color: "var(--c-muted, #666)", marginTop: 4 }}>Sent: {meta.when}.</div>}
+          </div>
+          <div className="cp-modal-field">
+            <div className="cp-modal-flabel"><span>Subject</span></div>
+            <input className="cp-modal-edit" style={inp} value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+          <div className="cp-modal-field">
+            <div className="cp-modal-flabel"><span>Body</span></div>
+            <textarea className="cp-modal-body cp-modal-edit" rows={12} value={body} onChange={(e) => setBody(e.target.value)} />
+          </div>
+          {unknown.length > 0 && <div style={{ color: "#b45309", fontSize: 12, marginBottom: 8 }}>Unknown placeholder{unknown.length === 1 ? "" : "s"}: {unknown.join(", ")} \u2014 these will appear as typed in the email.</div>}
+          <div className="cp-modal-hint">
+            <strong>Placeholders</strong> are filled in per claim when the draft is made:{" "}
+            {PLACEHOLDERS.map((p, i) => <span key={p.name}>{i > 0 ? " \u00b7 " : ""}<code>{p.name}</code> {p.means}</span>)}
+            <br />Changes apply to every future draft and to &ldquo;Proceed &amp; send&rdquo;. Reminders already logged keep the wording that was sent.
+          </div>
+          {msg && <div style={{ fontSize: 12, marginTop: 8, color: msg.startsWith("Saved") || msg.startsWith("Back") ? "#15803d" : "#b91c1c" }}>{msg}</div>}
+        </div>
+        <div className="cp-modal-actions">
+          <button className="cp-btn cp-btn-proceed" disabled={saving || !dirty} onClick={save}>{saving ? "Saving\u2026" : "Save wording"}</button>
+          <button className="cp-btn cp-btn-ignore" disabled={saving || !customised} onClick={reset} title="Go back to the built-in wording">Reset to default</button>
+          <button className="cp-btn cp-btn-cancel" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
