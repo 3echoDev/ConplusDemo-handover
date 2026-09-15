@@ -4,7 +4,7 @@ One line per request, in the order the client sent them. Status as of 16 Sep 202
 
 Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ waiting on the client · ☐ not started
 
-Tally (16 Sep): 38 numbered items — 27 ✅ done · 4 ◐ partly · 5 ⏳ client · 2 ☐ not started (items 18/26 site form, 9 watchlist-by-supplier).
+Tally (16 Sep): 41 numbered items — 30 ✅ done · 4 ◐ partly · 5 ⏳ client · 2 ☐ not started (items 18/26 site form, 9 watchlist-by-supplier). Items 39–41 were added by a parallel session on 16 Sep (claim Excel alignment, letterhead, homepage claims card).
 
 ---
 
