@@ -128,6 +128,9 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 37. **Entering an invoice or PRC date switched the claim to the Payment chase even with nothing else filled; a PRC-received claim without an invoice date showed on neither tab.**
     ✅ Fixed 16 Sep (`6a00e14`). Order enforced: certified amount → PRC received → invoice submitted. On the Certificate card the invoice date is locked. After the PRC date the claim sits in a new "Certified, invoice pending" section: certified amount prefilled with the claim amount but stored only on Confirm, then the invoice date unlocks and starts the Payment chase. Clearing the PRC date moves it back.
 
+38. **Test send worked, but the R3 marker did not move and the history still said "No reminders logged yet".**
+    ✅ Fixed 16 Sep (`8120b2c`). The certificate stepper now fills one segment per reminder actually sent and puts the marker on the next one, which is the client's own numbering rule; the history reloads right after a send. Test data reverted: the F25060 #1 reminder and the test recipient emails on F25060 and F23012 removed.
+
 ---
 
 ## Next, in order
