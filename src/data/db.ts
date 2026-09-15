@@ -55,6 +55,7 @@ export interface ProjectRow {
 }
 
 export interface MaterialRow {
+  stock_unit?: string | null;
   id: string;
   item_code: string;
   name: string;
@@ -422,6 +423,7 @@ export function mapMaterial(row: MaterialRow, allocations: AllocationRow[]): Inv
     supplier: row.supplier_name ?? "—",
     totalQty: row.qty_on_hand,
     unit: row.unit,
+    stockUnit: row.stock_unit ?? null,
     value: (row.estimated_unit_value ?? 0) * row.qty_on_hand,
     unitValue: row.estimated_unit_value ?? 0,
     stockLevel,
@@ -817,7 +819,9 @@ export interface CreatePOInput {
   paymentTerms: string;
   requestedBy: string;
   remarks: string;
-  items: { material: string; qty: number; unitPrice: number }[];
+  items: { material: string; materialId?: string | null; unit?: string; qty: number; unitPrice: number; discPerUnit?: number }[];
+  /** Lump-sum discount off the order total (purchase_orders.discount_amount). */
+  discountAmount?: number;
 }
 
 // CP02 — approval requests reach the boss by email via n8n. Fire-and-forget:
@@ -837,8 +841,11 @@ export function notifyPoApproval(poId: string, submittedBy: string | null): void
 
 export async function dbCreatePO(input: CreatePOInput): Promise<string> {
   const poNumber = await nextPONumber();
-  const subtotal = input.items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const gst = Math.round(subtotal * 0.09 * 100) / 100;
+  // amount per line = qty × (unit price − disc/unit); order total = Σ lines − lump-sum discount
+  const subtotal = input.items.reduce((s, i) => s + i.qty * Math.max(0, i.unitPrice - (i.discPerUnit ?? 0)), 0);
+  const discount = Math.max(0, input.discountAmount ?? 0);
+  const net = Math.max(0, subtotal - discount);
+  const gst = Math.round(net * 0.09 * 100) / 100;
 
   const base = {
     po_number: poNumber,
@@ -848,8 +855,9 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
     works_order: input.worksOrder || null,
     supplier_name: input.supplierName,
     status: "pending",
-    total_amount: subtotal,
+    total_amount: net,
     gst_amount: gst,
+    discount_amount: discount || null,
     remarks: input.remarks || null,
     created_date: today(),
     delivery_date: input.deliveryDate,
@@ -873,9 +881,12 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
   const { error: lineErr } = await supabase.from("po_line_items").insert(
     input.items.map((i) => ({
       po_id: po.id,
+      material_id: i.materialId || null,
       description: i.material,
+      unit: i.unit?.trim() || null,
       qty: i.qty,
       unit_price: i.unitPrice,
+      disc_per_unit: i.discPerUnit ? i.discPerUnit : null,
       qty_balance: i.qty,
     }))
   );

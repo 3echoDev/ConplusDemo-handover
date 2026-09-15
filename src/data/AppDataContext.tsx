@@ -77,7 +77,8 @@ const POLL_MS = 7000;
 interface NewPOData {
   supplier: string;
   projectId: string;
-  items: { material: string; qty: number; unitPrice: number }[];
+  items: { material: string; materialId?: string | null; unit?: string; qty: number; unitPrice: number; discPerUnit?: number }[];
+  discountAmount?: number;
   deliveryDate: string;
   worksOrder: string;
   shipTo: string;
@@ -317,6 +318,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             requestedBy: data.requestedBy,
             remarks: data.remarks,
             items: data.items,
+            discountAmount: data.discountAmount,
           }),
         "Purchase order created — pending approval",
         ["pos", "poLines", "alerts", "documents"]

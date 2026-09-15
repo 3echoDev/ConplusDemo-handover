@@ -1449,6 +1449,7 @@ export default function LiveViewPage() {
                 { href: "/store/deliveries", label: "Deliveries", Icon: Truck },
                 { href: "/store/import", label: "Stock Import", Icon: FileSpreadsheet },
                 { href: "/store/reservations", label: "Reservations", Icon: Bookmark },
+                { href: "/reports/project-reference", label: "Project Refs", Icon: ClipboardList },
               ].map(({ href, label, Icon }) => (
                 <a
                   key={href}

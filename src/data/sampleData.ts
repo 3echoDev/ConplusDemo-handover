@@ -118,6 +118,8 @@ export interface InventoryItem {
   supplier: string;
   totalQty: number;
   unit: string;
+  /** Packing size the client prints on POs, e.g. "30kg/set" (materials.stock_unit). */
+  stockUnit: string | null;
   value: number;
   unitValue: number;
   stockLevel: number;
