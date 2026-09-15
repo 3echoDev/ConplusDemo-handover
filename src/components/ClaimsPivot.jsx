@@ -989,7 +989,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
         {
           method: "POST",
           headers: { "X-Chase-Token": SEND_CHASE_TOKEN, "Content-Type": "application/json" },
-          body: JSON.stringify({ to: row.contact_email, subject: drafted?.subject || null, body: drafted?.body || null }),
+          body: JSON.stringify({ to: row.contact_email, subject: drafted?.subject || null, body: drafted?.body || null, manual: !row.needs_action_today }),
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -1336,14 +1336,20 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 
           <div className="cpc-actions">
             <div className="cpc-actrow">
-              {row.needs_action_today && !held && email && (
+              {!held && email && (
                 <button
-                  className="cpc-btn primary"
+                  className={`cpc-btn primary${row.needs_action_today ? "" : " cpc-btn-offcycle"}`}
                   onClick={() => handleSend(row)}
                   disabled={sendingId === row.claim_id || !row.contact_email}
-                  title={row.contact_email ? "Send the reminder email now via n8n" : "Add a recipient email first"}
+                  title={
+                    !row.contact_email
+                      ? "Add a recipient email first"
+                      : row.needs_action_today
+                        ? "Send this cycle's reminder email now via n8n"
+                        : "Not a scheduled day for this claim: sends now and is logged as a manual reminder (counts in the sequence, does not move the cadence)"
+                  }
                 >
-                  {sendingId === row.claim_id ? "Sending\u2026" : "Proceed & send"}
+                  {sendingId === row.claim_id ? "Sending\u2026" : row.needs_action_today ? "Proceed & send" : "Send now"}
                 </button>
               )}
               {row.needs_action_today && !held && (
@@ -2990,6 +2996,8 @@ input.cpc-email-subj.cpc-email-edit { font-weight:600; margin-bottom:6px; }
 textarea.cpc-email-text.cpc-email-edit { color:#334155; white-space:pre-wrap; }
 .cpc-email-edited { border-color:#f59e0b; }
 .cpc-email-editrow { display:flex; align-items:center; gap:8px; margin-top:4px; font-size:11px; }
+.cpc-btn.cpc-btn-offcycle { background:#fff; color:#1d4ed8; border:1px solid #93c5fd; }
+.cpc-btn.cpc-btn-offcycle:hover { background:#eff6ff; }
 .cpc-email-flag { display:inline-block; padding:1px 6px; border-radius:999px; background:#fef3c7; color:#92400e; font-weight:600; }
 .cpc-empty { padding:24px; text-align:center; color:var(--c-muted); font-size:13px; border:1px dashed var(--c-border); border-radius:12px; }
 .cpc-toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--c-accent); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; z-index:60; box-shadow:0 8px 24px rgba(0,0,0,.18); }
