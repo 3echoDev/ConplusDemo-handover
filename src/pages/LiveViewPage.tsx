@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck, Send, Bookmark,
 } from "lucide-react";
@@ -1692,7 +1693,18 @@ export default function LiveViewPage() {
             icon={<DollarSign className="h-4 w-4" />}
             action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={progressClaims} columns={COLS.claims} title="Progress Claims" /></div>}
           >
-            <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No progress claims on record yet." />
+            {/* Cap the visible height so a long list scrolls inside the card
+                instead of stretching the whole homepage. Every row is still
+                reachable; footer names the total and links to the full tab. */}
+            <div className="max-h-[460px] overflow-y-auto">
+              <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No progress claims on record yet." />
+            </div>
+            {progressClaims.length > 0 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+                <span>{progressClaims.length} progress {progressClaims.length === 1 ? "claim" : "claims"}</span>
+                <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
+              </div>
+            )}
           </Section>
 
           {/* Conplus Invoices — small jobs billed once, no retention */}
@@ -1701,7 +1713,15 @@ export default function LiveViewPage() {
             icon={<FileText className="h-4 w-4" />}
             action={<ExportMenu rows={conplusInvoices} columns={COLS.claims} title="Conplus Invoices" />}
           >
-            <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No Conplus invoices on record yet." />
+            <div className="max-h-[460px] overflow-y-auto">
+              <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No Conplus invoices on record yet." />
+            </div>
+            {conplusInvoices.length > 0 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+                <span>{conplusInvoices.length} {conplusInvoices.length === 1 ? "invoice" : "invoices"}</span>
+                <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
+              </div>
+            )}
           </Section>
 
           {/* Alerts */}
