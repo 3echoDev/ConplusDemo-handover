@@ -89,10 +89,11 @@ let TEMPLATE_OVERRIDES = null;
 export function setTemplateOverrides(map) { TEMPLATE_OVERRIDES = map; }
 
 function certVars(row) {
+  const name = row.project_name || row.client_name || row.project_code || "";
   return {
     claim_no: row.claim_no || "-",
-    project: `${row.project_name} (${row.project_code})`,
-    project_name: row.project_name,
+    project: `${name} (${row.project_code})`,
+    project_name: name,
     project_code: row.project_code,
     submitted_on: fmtDate(row.anchor_date),
     amount: fmtFull(row.amount),
@@ -1223,6 +1224,12 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               {daysLabel}
               {overdue && row.overdue_weeks != null ? ` \u00B7 ${row.overdue_weeks} wks` : ""}
             </div>
+            {row.certified_amount != null && Number(row.certified_amount) > 0 && (
+              <div className="cpc-certified" title="Certified amount saved on this claim; the difference is still outstanding">
+                certified {fmtFull(Number(row.certified_amount))}
+                {Number(amt) > Number(row.certified_amount) ? ` \u00B7 ${fmtFull(Number(amt) - Number(row.certified_amount))} balance` : ""}
+              </div>
+            )}
           </div>
 
           <div className="cpc-actions">
@@ -1325,12 +1332,15 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                       type="number"
                       placeholder="Certified amount ($)"
                       style={{ maxWidth: 200 }}
+                      key={`cert-${row.claim_id}-${row.certified_amount ?? ""}`}
                       defaultValue={row.certified_amount ?? ""}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v !== "" && Number(v) !== Number(row.certified_amount ?? NaN)) handleDateUpdate(row.claim_id, "certified_amount", parseFloat(v)); }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
                     />
                     <div className="cpc-node-rel" style={{ marginTop: 4 }}>
-                      Saved values reload here. Entering a PRC date moves the claim to the Payment chase once an invoice date is set.
+                      {row.certified_amount != null && Number(row.certified_amount) > 0
+                        ? `Certified ${fmtFull(Number(row.certified_amount))} of ${fmtFull(amt)} saved. This claim stays in the Certificate chase until the PRC received date is entered; with an invoice date it then moves to the Payment chase.`
+                        : "Saved values reload here. Entering a PRC date moves the claim to the Payment chase once an invoice date is set."}
                     </div>
                   </div>
                 )}
@@ -2748,6 +2758,7 @@ const CSS = `
 
 .cpc-amount { text-align:right; }
 .cpc-amt { font-size:17px; font-weight:700; letter-spacing:-.01em; }
+.cpc-certified { margin-top:3px; font-size:11px; font-weight:600; color:#15803d; }
 .cpc-days { font-size:12px; font-weight:500; margin-top:2px; }
 .cpc-days.over { color:var(--c-over); }
 .cpc-days.warn { color:var(--c-warn); }
