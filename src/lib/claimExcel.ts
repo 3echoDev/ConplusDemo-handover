@@ -338,18 +338,36 @@ function writeDetails(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext)
   borderRange(ws, `B${totalRow}:AA${totalRow}`);
   ws.getRow(totalRow).height = 21;
 
-  ws.views = [{ state: "frozen", xSplit: 2, ySplit: 12 }];
+  // Hide the sheet gridlines so the empty cells around the form read as clean
+  // white space, matching the master workbook.
+  ws.views = [{ state: "frozen", xSplit: 2, ySplit: 12, showGridLines: false }];
   ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printArea: `B13:Q${totalRow}`, paperSize: 9 };
   return { secA, secB, totalRow };
 }
 
-function writeCover(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext, det: ReturnType<typeof writeDetails>) {
+function writeCover(
+  ws: ExcelJS.Worksheet,
+  claim: Claim,
+  ctx: ClaimDocContext,
+  det: ReturnType<typeof writeDetails>,
+  letterhead?: { buffer: ArrayBuffer; extension: "jpeg" | "png" },
+) {
   const widths: Record<string, number> = { A: 3, B: 5.2, C: 45.6, D: 20.1, E: 18.4, F: 15.3, G: 15.4, H: 14.5, I: 8.5, J: 11.2 };
   for (const [k, w] of Object.entries(widths)) ws.getColumn(k).width = w;
+  // Hide gridlines here too — every empty cell is background, not a bordered box.
+  ws.views = [{ showGridLines: false }];
   const t = computeClaimTotals(claim, ctx);
   const claimDate = parseDate(claim.claimDate) ?? parseDate(claim.submittedDate);
 
-  mergeBox(ws, "B2:D3", "[ Company Logo ]", { font: F_NOTE, fill: GREY, align: { horizontal: "center", vertical: "middle" } });
+  if (letterhead) {
+    // Embed the Conplus letterhead across the top of the sheet in place of the
+    // [Company Logo] placeholder. The image scales to fit the B2:J7 range,
+    // matching the header area in the client's corrected master.
+    const imageId = ws.workbook.addImage({ buffer: letterhead.buffer, extension: letterhead.extension });
+    ws.addImage(imageId, "B2:J7");
+  } else {
+    mergeBox(ws, "B2:D3", "[ Company Logo ]", { font: F_NOTE, fill: GREY, align: { horizontal: "center", vertical: "middle" } });
+  }
   ws.mergeCells("B8:J8");
   setCell(ws, "B8", "PROGRESS CLAIM", { font: F_TITLE, align: { horizontal: "center", vertical: "middle" }, border: false });
   ws.getRow(8).height = 25.5;
@@ -526,14 +544,18 @@ function writeInstructions(ws: ExcelJS.Worksheet) {
   });
 }
 
-export function buildClaimWorkbook(claim: Claim, ctx: ClaimDocContext): ExcelJS.Workbook {
+export interface BuildClaimOptions {
+  letterhead?: { buffer: ArrayBuffer; extension: "jpeg" | "png" };
+}
+
+export function buildClaimWorkbook(claim: Claim, ctx: ClaimDocContext, opts: BuildClaimOptions = {}): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Conplus Resources Pte Ltd";
   writeInstructions(wb.addWorksheet("Instructions"));
   const cover = wb.addWorksheet(CLAIM_SHEET_COVER);
   const details = wb.addWorksheet(CLAIM_SHEET_DETAILS);
   const det = writeDetails(details, claim, ctx);
-  writeCover(cover, claim, ctx, det);
+  writeCover(cover, claim, ctx, det, opts.letterhead);
   return wb;
 }
 
@@ -542,10 +564,25 @@ export function claimExcelFileName(claim: Claim): string {
   return `${claim.projectCode || "Claim"}_Progress_Claim_${no}.xlsx`;
 }
 
+/** Fetch the Conplus letterhead served from /public. Falls back silently if the
+ * asset is missing (offline test builds, first-load flake) so the export still
+ * ships with the [Company Logo] placeholder rather than failing outright. */
+async function loadLetterhead(): Promise<BuildClaimOptions["letterhead"]> {
+  if (typeof fetch !== "function") return undefined;
+  try {
+    const res = await fetch("/company-letterhead.jpg", { cache: "force-cache" });
+    if (!res.ok) return undefined;
+    return { buffer: await res.arrayBuffer(), extension: "jpeg" };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Browser entry point: build, then download. */
 export async function exportClaimToExcel(claim: Claim, ctx: ClaimDocContext): Promise<void> {
   if (!confirmClaimExport(claim, ctx)) return;
-  const wb = buildClaimWorkbook(claim, ctx);
+  const letterhead = await loadLetterhead();
+  const wb = buildClaimWorkbook(claim, ctx, { letterhead });
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
