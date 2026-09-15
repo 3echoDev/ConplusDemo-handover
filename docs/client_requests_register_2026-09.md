@@ -19,17 +19,17 @@ Referenced files pulled from the thread are in this folder (`Desktop/Changes/thr
 | Request | Status | Evidence |
 |---|---|---|
 | Keep **Disc/Unit** (per-unit discount) and add a second **Discount** field = lump sum off the total. Example: 47 sets × $270 − $20/unit = $11,750 | **Done** | Commit `176ed1d` "PO: add lump-sum Discount field (subtracts from Total)"; `po_line_items.disc_per_unit` + PO-level discount in `src/lib/poDocument.ts` (Excel + print). |
-| Caveat | **Partial** | The in-app **Create PO** dialog still only takes material, qty, unit price. Disc/Unit, Discount, Unit and WO No. are rendered from the database but cannot be typed in that dialog yet (they come in via the Claude procurement skill / Excel). |
+| Caveat | **Done 15 Sep** (`35a04c3`) | Create PO dialog now has per line: stock-linked material picker, Unit, Qty, Unit Price, Disc/Unit, Amount; plus Subtotal → lump-sum Discount → GST → Total. |
 
 ### Fri 4 Sep, 17:31 — Wendy: Project Reference Report (Epoxy only)
 | Request | Status | Evidence |
 |---|---|---|
-| Asking the AI for an Epoxy-only Project Reference Report returned only a few projects. Source must be the **Project Ref – Standardized** sheet (all projects, ongoing + completed), filtered on **STANDARDIZED TYPE OF WORK** (Epoxy vs MISC colour bands), not the Prog Claims sheet (current-period claims only). | **Open** | Attached `Epoxy_Project_References.xlsx` (115 projects) and screenshot of the Standardized sheet are in this folder. Root cause: the app's `projects` table holds **184** projects (63 with claims) vs **~2,000 rows** in Project Ref – Standardized; `work_type_code` is empty on 112 of the 184. The Standardized sheet was never imported, so neither the skill nor the app can produce this report. Fix = import that sheet as the project master (code, type of work, standardized code) and add a "Project Reference Report" export with a type-of-work filter. |
+| Asking the AI for an Epoxy-only Project Reference Report returned only a few projects. Source must be the **Project Ref – Standardized** sheet (all projects, ongoing + completed), filtered on **STANDARDIZED TYPE OF WORK** (Epoxy vs MISC colour bands), not the Prog Claims sheet (current-period claims only). | **Done 15 Sep** (`35a04c3`) — /reports/project-reference: the Standardized tab (1,014 entries) is now the project master in the app, consolidated to 668 projects, Epoxy / MISC / All bands + type chips + rep + year + search, Excel export in her report layout, drop-zone to re-upload the Claim Summary workbook. | Attached `Epoxy_Project_References.xlsx` (115 projects) and screenshot of the Standardized sheet are in this folder. Root cause: the app's `projects` table holds **184** projects (63 with claims) vs **~2,000 rows** in Project Ref – Standardized; `work_type_code` is empty on 112 of the 184. The Standardized sheet was never imported, so neither the skill nor the app can produce this report. Fix = import that sheet as the project master (code, type of work, standardized code) and add a "Project Reference Report" export with a type-of-work filter. |
 
 ### Sat 5 Sep, 10:05 — Wendy: PO unit = packing size
 | Request | Status | Evidence |
 |---|---|---|
-| PO **Unit** column must show the packing size, e.g. `25 KG/SET`, `5 L/BAG`, `5.5 KG/PAIL` (see `PO 2608-0014 Sto (Coway - Seletar Factory).pdf`, units `30kg/set`, `10kg/set`) | **Partial** | Existing PO lines already use that convention (top values in DB: `12kg/set`, `40kg/bag`, `30kg/set`, `20kg/set`, `18L/tin`) and the PO document prints the Unit column. Gap: the Create PO dialog has no Unit field, and 135 of 365 materials now carry `stock_unit` (e.g. `10kg/set`) from the 9 Sep Material sheet that could default it. |
+| PO **Unit** column must show the packing size, e.g. `25 KG/SET`, `5 L/BAG`, `5.5 KG/PAIL` (see `PO 2608-0014 Sto (Coway - Seletar Factory).pdf`, units `30kg/set`, `10kg/set`) | **Done 15 Sep** (`35a04c3`) — Unit field on every PO line, defaulting to the material's packing size from the inventory master (e.g. 10kg/set) when the material is picked from stock; editable. | Existing PO lines already use that convention (top values in DB: `12kg/set`, `40kg/bag`, `30kg/set`, `20kg/set`, `18L/tin`) and the PO document prints the Unit column. Gap: the Create PO dialog has no Unit field, and 135 of 365 materials now carry `stock_unit` (e.g. `10kg/set`) from the 9 Sep Material sheet that could default it. |
 
 ### Mon 7 Sep, 16:00 + Wed 9 Sep, 13:33 — Lynn: daily site report form
 | Request | Status | Evidence |
@@ -82,8 +82,8 @@ Referenced files pulled from the thread are in this folder (`Desktop/Changes/thr
 ## 3. What is left, in priority order
 
 1. **Daily site report form** (Lynn, 7/9/14 Sep) — open; meeting with the freelancer's template first.
-2. **Project Reference Report** (Wendy, 4 Sep) — import Project Ref – Standardized as project master, add type-of-work filter + export.
-3. **Create PO dialog** — add Unit (default from `materials.stock_unit`), Disc/Unit, Discount, WO No. so POs typed in the app carry the fields the template prints.
+2. ~~Project Reference Report~~ — done 15 Sep.
+3. ~~Create PO dialog fields~~ — done 15 Sep.
 4. **GO_LIVE** for PO approval email and chase sends (needs the client's go-ahead); claims@ mailbox credentials optional.
 5. **Stock Watchlist** — expand-by-supplier as originally asked.
 6. Delivery-tracking leftovers: site-return / direct-to-site movement types, auto stock-in on receipt, 5 clarify items.
