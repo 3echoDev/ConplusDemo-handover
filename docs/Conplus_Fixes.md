@@ -4,6 +4,8 @@ One line per request, in the order the client sent them. Status as of 16 Sep 202
 
 Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ waiting on the client · ☐ not started
 
+Tally (16 Sep): 38 numbered items — 27 ✅ done · 4 ◐ partly · 5 ⏳ client · 2 ☐ not started (items 18/26 site form, 9 watchlist-by-supplier).
+
 ---
 
 ## 31 Aug 2026 — Wendy (contract@)
@@ -111,6 +113,14 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 - ✅ Chase card shows certified amount and balance; 144 claims with blank project names filled (`ec0c945`).
 - ✅ Partial payments stay on the claim and it chases the remainder; payment receipts with a running balance (`d311880`).
 
+## 16 Sep 2026 — from our side, arising from their earlier asks
+
+- ✅ Project Reference Report also lists projects that exist in the app but not yet in the Standardized master, flagged "app", typed from their scope / coating text (`30fe7e8`, `cacda3b`). 45 such projects today.
+- ✅ Progress Claim Print / PDF now renders the Excel master page for page — cover page, then claim details with the repeating header — matching Wendy's `E25077_HPC_STA_Progress_Claim_01_with_WDR.pdf` pages 1–3 (`bcb459d`). The WDR scans (pages 4–5) are still appended by hand.
+- ✅ Verified the project master in the app equals the Standardized sheet: 1,014 of 1,014 entries identical.
+- ⏳ The three supplier invoice + DO PDFs (2608-0009 Sparco, 2609-0003 Alliance, 2607-0006 Sto) arrived; scanner read all three correctly. Cannot be logged until the PO register is imported (item 27).
+- ✅ F25060 claim #1 restored after the end-to-end test (certified amount, PRC and invoice dates cleared; back in the Certificate chase).
+
 ## 16 Sep 2026 — Muhsin (from the client's review of the Chase page)
 
 33. **"Reminder draft · ready to send" box: can we edit the text there and send?**
@@ -130,6 +140,15 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 
 38. **Test send worked, but the R3 marker did not move and the history still said "No reminders logged yet".**
     ✅ Fixed 16 Sep (`8120b2c`). The certificate stepper now fills one segment per reminder actually sent and puts the marker on the next one, which is the client's own numbering rule; the history reloads right after a send. Test data reverted: the F25060 #1 reminder and the test recipient emails on F25060 and F23012 removed.
+
+39. **Progress Claim Excel export "not the same" as the corrected E25077 master.**
+    ✅ Fixed 16 Sep (`fa5b9d7`). Aligned the workbook to the corrected master cell-by-cell: numFmt uses the master's `_(\$* … \-??)` accounting tokens; dates written with `Date.UTC` so the Excel serial no longer shifts a day in SGT; cover row 10 gets the missing `B10:D10` and `G10:H10` label merges; "From" Company Name and Email widen to E:H to match the master; ladder rows 4–11 leave blank D/E cells fully unstyled (no border, no numFmt, no PEACH fill); Details section band drops the extra S:Z merge but keeps the grey tint on each cell; empty Variation item reserves two work-done sub-rows so the SUMIFs and the B50/B52 subtotal land where the cover formulas reference; quotation-ref row has a single top edge across the row so the item grid reads as one bordered box. Cell diff dropped 830 → ~570 (rest are cosmetic merged-cell borders that render identically). Reference Period of Claim now defaults to `claim_date − 1 month`, To = From (single-month), matching the master where a Sep submission shows Aug 2026 — needs client confirmation of the general rule.
+
+40. **Progress Claim Excel: letterhead missing and empty cells look bordered.**
+    ✅ Fixed 16 Sep (`053dea5`). Embedded the Conplus letterhead (`public/company-letterhead.jpg`, 740×111) across `B2:J7` on the Cover Page in place of the grey `[ Company Logo ]` placeholder; served from `/public` and fetched at export time (falls back to the placeholder if the fetch fails). Both sheets set `showGridLines: false` so the whitespace around the form is really white, not the faint default grid. `buildClaimWorkbook` gained an optional `{ letterhead }` arg; Node/vitest still passes without the image.
+
+41. **Homepage Progress Claims card was capped at 5, then too long when uncapped.**
+    ✅ Fixed 16 Sep (`f59ee40`, superseding `7cbd3fd` and `6bf7d90`). The Live View Progress Claims and Conplus Invoices sections show the first 5 rows with a "Show all N" toggle that expands the list in place and a "Show fewer" to collapse it back; the footer says "Showing X of Y" and carries a "View in Claims tab →" link. Export still exports the whole filtered list, not just the preview. Two entry points ("+ New Claim" on the homepage / Documents page and "+ New claim" on `/claims`) both hit the same `create_claim` RPC — a claim entered on either page shows on the other after the next fetch; neither creates line items, and the front-page dialog only captures project + amount + description (the `/claims` modal captures claim no, date, retention as well). Follow-up worth doing: unify the two dialogs, or invalidate the AppData `claims` cache when `ClaimsPivot` creates one so the homepage refetches immediately.
 
 ---
 
