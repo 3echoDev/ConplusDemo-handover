@@ -29,7 +29,9 @@ const F_TITLE = ARIAL({ bold: true, size: 16 });
 const F_BAND = ARIAL({ bold: true, size: 11 });
 const F_NOTE = ARIAL({ italic: true, size: 9, color: { argb: "FF7F7F7F" } });
 
-const NF_MONEY = '_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)';
+// Match the master's accounting numFmt exactly (backslash-escaped $ and hyphen)
+// so ExcelJS writes the same tokens the corrected workbook does.
+const NF_MONEY = '_(\\$* #,##0.00_);_(\\$* \\(#,##0.00\\);_(\\$* \\-??_);_(@_)';
 const NF_QTY = "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \\-??_);_(@_)";
 const NF_PCT = "0.00%";
 const NF_DATE = "dd/mmm/yyyy";
@@ -79,8 +81,15 @@ const parseDate = (s: string | undefined | null): Date | null => {
   const d = new Date(s + (s.length === 10 ? "T00:00:00" : ""));
   return Number.isNaN(d.getTime()) ? null : d;
 };
-const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-const monthEnd = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+// Build dates as UTC so ExcelJS' serial matches the intended calendar day
+// regardless of the JS runtime's local timezone (SGT builds were shifting a day).
+const utcDate = (d: Date) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+const monthStart = (d: Date) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
+const monthEnd = (d: Date) => new Date(Date.UTC(d.getFullYear(), d.getMonth() + 1, 0));
+// The Reference Period on the cover reflects the WORK month (the month before the
+// claim was submitted), matching the corrected master.
+const workMonthStart = (d: Date) => new Date(Date.UTC(d.getFullYear(), d.getMonth() - 1, 1));
+const workMonthEnd = (d: Date) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), 0));
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const fx = (formula: string, result: number | string | Date | null) => ({ formula, result: result ?? undefined }) as ExcelJS.CellFormulaValue;
 
@@ -111,22 +120,30 @@ function writeSection(
   subtotalLabel: string,
 ): SectionLayout {
   let r = startRow;
-  // Section band
+  // Section band — one wide merge B..Q for the label, then the S..Z cells
+  // stay unmerged but keep the band's grey fill (the corrected master does not
+  // merge the right-hand block, it just tints each cell).
   ws.mergeCells(`B${r}:Q${r}`);
   setCell(ws, `B${r}`, title, { font: F_BAND, fill: BAND, align: { horizontal: "left", vertical: "middle" } });
   borderRange(ws, `B${r}:Q${r}`);
-  ws.mergeCells(`S${r}:Z${r}`);
-  setCell(ws, `S${r}`, "", { fill: BAND });
-  borderRange(ws, `S${r}:AA${r}`);
+  for (const col of ["S", "T", "U", "V", "W", "X", "Y", "Z"]) {
+    setCell(ws, `${col}${r}`, "", { font: F_BAND, fill: BAND });
+  }
   ws.getRow(r).height = 20.5;
   r++;
 
-  // Quotation ref
+  // Quotation ref row — box the merged label, then extend a thin top edge across
+  // the full row so the item grid below reads as one bordered area.
   ws.mergeCells(`C${r}:G${r}`);
   setCell(ws, `C${r}`, quotationRef ? `QUOTATION REF: ${quotationRef}` : emptyNote, {
-    font: F_BAND, align: { horizontal: "left", vertical: "middle", wrapText: true },
+    font: F_BAND, align: { horizontal: "left", vertical: "middle", wrapText: true }, border: false,
   });
-  borderRange(ws, `B${r}:AA${r}`);
+  borderRange(ws, `C${r}:G${r}`);
+  for (let col = 2; col <= 27; col++) { // B..AA
+    const cell = ws.getCell(r, col);
+    const existing = cell.border ?? {};
+    cell.border = { top: { style: "thin" }, left: existing.left, right: existing.right, bottom: existing.bottom };
+  }
   ws.getRow(r).height = 21;
   r++;
 
@@ -148,7 +165,12 @@ function writeSection(
       r++;
     }
     const item = r;
+    // Empty template rows (variation section with no line items) reserve two
+    // sub-rows to match the corrected master's B/O/Y SUMIF ranges and put the
+    // subtotal on the same row the cover formulas reference.
+    const subCount = l ? 1 : 2;
     const sub = r + 1;
+    const subLast = r + subCount;
     const rate = l?.rate ?? 0;
     const qty = l?.qty ?? 0;
     const pq = l?.prevQty ?? 0;
@@ -158,7 +180,7 @@ function writeSection(
     const vRate = 0, vPq = 0, vCq = 0;
     contract += amount; prev += pAmt; curr += cAmt; cum += pAmt + cAmt;
 
-    // Item row — bold; qty/rate/prev-curr are formulas over the work-done sub-row.
+    // Item row — bold; qty/rate/prev-curr are formulas over the work-done sub-row(s).
     setCell(ws, `B${item}`, l?.pgRef || "", { font: F_LABEL, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `C${item}`, l?.description ?? "", { font: F_LABEL, align: { horizontal: "left", vertical: "middle", wrapText: true } });
     setCell(ws, `D${item}`, l?.unit ?? "", { font: F_LABEL, align: { horizontal: "center", vertical: "middle" } });
@@ -166,8 +188,8 @@ function writeSection(
     setCell(ws, `F${item}`, l ? rate : null, { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `G${item}`, fx(`E${item}*F${item}`, amount), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     setCell(ws, `I${item}`, l ? rate : null, { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `J${item}`, fx(`SUM(J${sub}:J${sub})`, pq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `K${item}`, fx(`SUM(K${sub}:K${sub})`, cq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `J${item}`, fx(`SUM(J${sub}:J${subLast})`, pq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `K${item}`, fx(`SUM(K${sub}:K${subLast})`, cq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `L${item}`, fx(`J${item}+K${item}`, pq + cq), { font: F_LABEL, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `M${item}`, fx(`J${item}*I${item}`, pAmt), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     setCell(ws, `N${item}`, fx(`K${item}*I${item}`, cAmt), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
@@ -175,8 +197,8 @@ function writeSection(
     setCell(ws, `P${item}`, fx(`IF(G${item}=0,0,O${item}/G${item})`, amount ? (pAmt + cAmt) / amount : 0), { font: F_LABEL, fill: YELLOW, nf: "0.0%", align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `Q${item}`, "", { font: F_NOTE, align: { horizontal: "left", vertical: "middle", wrapText: true } });
     setCell(ws, `S${item}`, vRate, { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `T${item}`, fx(`SUM(T${sub}:T${sub})`, vPq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `U${item}`, fx(`SUM(U${sub}:U${sub})`, vCq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `T${item}`, fx(`SUM(T${sub}:T${subLast})`, vPq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `U${item}`, fx(`SUM(U${sub}:U${subLast})`, vCq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `V${item}`, fx(`T${item}+U${item}`, 0), { font: F_LABEL, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `W${item}`, fx(`T${item}*S${item}`, 0), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     setCell(ws, `X${item}`, fx(`U${item}*S${item}`, 0), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
@@ -187,34 +209,42 @@ function writeSection(
     const descLines = (l?.description ?? "").split("\n").length;
     ws.getRow(item).height = Math.max(21, 17 * descLines + 6);
 
-    // Work-done sub-row — the yellow input cells for this claim's quantities.
-    setCell(ws, `B${sub}`, l ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `C${sub}`, l?.remarks ?? "", { fill: YELLOW, align: { vertical: "middle" } });
-    for (const col of ["D", "E", "F"]) setCell(ws, `${col}${sub}`, "", { fill: YELLOW });
-    setCell(ws, `G${sub}`, "", { nf: NF_MONEY });
-    setCell(ws, `I${sub}`, "", { fill: YELLOW, nf: NF_MONEY });
-    setCell(ws, `J${sub}`, pq, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `K${sub}`, cq, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `L${sub}`, fx(`J${sub}+K${sub}`, pq + cq), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `M${sub}`, fx(`J${sub}*I${item}`, pAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `N${sub}`, fx(`K${sub}*I${item}`, cAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `O${sub}`, fx(`M${sub}+N${sub}`, pAmt + cAmt), { nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `P${sub}`, "", { fill: YELLOW, nf: "0.0%" });
-    setCell(ws, `Q${sub}`, "", {});
-    setCell(ws, `S${sub}`, "", { fill: YELLOW, nf: NF_MONEY });
-    setCell(ws, `T${sub}`, vPq, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `U${sub}`, vCq, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `V${sub}`, fx(`T${sub}+U${sub}`, 0), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `W${sub}`, fx(`T${sub}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
-    setCell(ws, `X${sub}`, fx(`U${sub}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
-    setCell(ws, `Y${sub}`, fx(`W${sub}+X${sub}`, 0), { nf: NF_MONEY });
-    setCell(ws, `Z${sub}`, "", { nf: "0.0%" });
-    setCell(ws, `AA${sub}`, fx(`Y${sub}-O${sub}`, -(pAmt + cAmt)), { nf: NF_MONEY });
-    borderRange(ws, `B${sub}:AA${sub}`);
-    ws.getRow(sub).height = 21;
+    // Work-done sub-row(s) — the yellow input cells for this claim's quantities.
+    // The first sub-row carries any values from the line; further slots stay blank
+    // (empty variation templates keep two so the layout matches the master).
+    for (let s = sub; s <= subLast; s++) {
+      const first = s === sub;
+      const jVal = first ? pq : 0, kVal = first ? cq : 0;
+      const tVal = first ? vPq : 0, uVal = first ? vCq : 0;
+      const jAmt = first ? pAmt : 0, kAmt = first ? cAmt : 0;
+      setCell(ws, `B${s}`, l && first ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `C${s}`, first ? l?.remarks ?? "" : "", { fill: YELLOW, align: { vertical: "middle" } });
+      for (const col of ["D", "E", "F"]) setCell(ws, `${col}${s}`, "", { fill: YELLOW });
+      setCell(ws, `G${s}`, "", { nf: NF_MONEY });
+      setCell(ws, `I${s}`, "", { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `J${s}`, jVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `K${s}`, kVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `L${s}`, fx(`J${s}+K${s}`, jVal + kVal), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `M${s}`, fx(`J${s}*I${item}`, jAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `N${s}`, fx(`K${s}*I${item}`, kAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `O${s}`, fx(`M${s}+N${s}`, jAmt + kAmt), { nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `P${s}`, "", { fill: YELLOW, nf: "0.0%" });
+      setCell(ws, `Q${s}`, "", {});
+      setCell(ws, `S${s}`, "", { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `T${s}`, tVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `U${s}`, uVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `V${s}`, fx(`T${s}+U${s}`, 0), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `W${s}`, fx(`T${s}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `X${s}`, fx(`U${s}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `Y${s}`, fx(`W${s}+X${s}`, 0), { nf: NF_MONEY });
+      setCell(ws, `Z${s}`, "", { nf: "0.0%" });
+      setCell(ws, `AA${s}`, fx(`Y${s}-O${s}`, first ? -(pAmt + cAmt) : 0), { nf: NF_MONEY });
+      borderRange(ws, `B${s}:AA${s}`);
+      ws.getRow(s).height = 21;
+    }
 
     itemRows.push(item);
-    r = sub + 1;
+    r = subLast + 1;
   }
   const lastRow = r - 1;
   r++; // blank row before subtotal
@@ -266,7 +296,7 @@ function writeDetails(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext)
   mergeBox(ws, "J7:K7", fx(`IF('${CLAIM_SHEET_COVER}'!E39="","",'${CLAIM_SHEET_COVER}'!E39)`, "NIL"));
   ws.mergeCells("M7:P7");
   setCell(ws, "M7", "For WORK executed up to month ending:", { font: F_LABEL, border: false });
-  mergeBox(ws, "M8:N8", fx(`IF('${CLAIM_SHEET_COVER}'!I38="","",'${CLAIM_SHEET_COVER}'!I38)`, claimDate ? monthEnd(claimDate) : null), { nf: NF_MONTH, align: { horizontal: "center", vertical: "middle" } });
+  mergeBox(ws, "M8:N8", fx(`IF('${CLAIM_SHEET_COVER}'!I38="","",'${CLAIM_SHEET_COVER}'!I38)`, claimDate ? workMonthEnd(claimDate) : null), { nf: NF_MONTH, align: { horizontal: "center", vertical: "middle" } });
 
   // Column header block (rows 10–12)
   const head = (range: string, text: string) =>
@@ -324,10 +354,12 @@ function writeCover(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext, d
   setCell(ws, "B8", "PROGRESS CLAIM", { font: F_TITLE, align: { horizontal: "center", vertical: "middle" }, border: false });
   ws.getRow(8).height = 25.5;
 
+  ws.mergeCells("B10:D10");
   setCell(ws, "B10", "Progress Claim Ref. No.:", { font: F_LABEL, border: false });
   mergeBox(ws, "E10:F10", claim.claimNo ?? claimNumberDisplay(claim), { fill: YELLOW, align: { horizontal: "left" } });
+  ws.mergeCells("G10:H10");
   setCell(ws, "G10", "Progress Claim Date:", { font: F_LABEL, border: false });
-  mergeBox(ws, "I10:J10", claimDate, { fill: YELLOW, nf: NF_DATE, align: { horizontal: "left" } });
+  mergeBox(ws, "I10:J10", claimDate ? utcDate(claimDate) : null, { fill: YELLOW, nf: NF_DATE, align: { horizontal: "left" } });
 
   const party = (
     startRow: number,
@@ -337,22 +369,27 @@ function writeCover(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext, d
   ) => {
     ws.mergeCells(`B${startRow}:J${startRow}`);
     setCell(ws, `B${startRow}`, heading, { font: F_LABEL, border: false });
+    // Master merges the "From" Company Name and Email across E:H (the "To" block
+    // keeps them at E:F). Address, Tel, Fax use the same width in both blocks.
+    const wideName = heading.startsWith("From");
     const rows: [string, ExcelJS.CellValue, string][] = [
-      ["Company Name:", p.name, `E${startRow + 1}:F${startRow + 1}`],
+      ["Company Name:", p.name, wideName ? `E${startRow + 1}:H${startRow + 1}` : `E${startRow + 1}:F${startRow + 1}`],
       ["Address:", p.address, `E${startRow + 2}:H${startRow + 4}`],
       ["Tel:", p.tel, `E${startRow + 5}:F${startRow + 5}`],
       ["Fax:", p.fax, `E${startRow + 6}:F${startRow + 6}`],
-      ["Email:", p.email, `E${startRow + 7}:F${startRow + 7}`],
+      ["Email:", p.email, wideName ? `E${startRow + 7}:H${startRow + 7}` : `E${startRow + 7}:F${startRow + 7}`],
       ["Person-in-charge (Respondent):", p.pic, `E${startRow + 8}:H${startRow + 8}`],
     ];
-    if (heading.startsWith("From")) rows[5][0] = "Person-in-charge (Claimant):";
+    if (wideName) rows[5][0] = "Person-in-charge (Claimant):";
     rows.forEach(([label, value, range], i) => {
       const row = startRow + 1 + (i >= 2 ? i + 2 : i);
       ws.mergeCells(`B${row}:D${row}`);
       setCell(ws, `B${row}`, label, { font: F_LABEL, border: false });
       mergeBox(ws, range, value, {
         fill: yellow || label.startsWith("Person") ? YELLOW : undefined,
-        align: { horizontal: "left", vertical: i === 1 ? "top" : "middle", wrapText: i === 1 },
+        // Address block wraps three rows and is vertically centered in the master,
+        // not top-aligned — otherwise the middle line rides against the top border.
+        align: { horizontal: "left", vertical: "middle", wrapText: i === 1 },
       });
     });
     for (let r = startRow + 1; r <= startRow + 8; r++) ws.getRow(r).height = 15;
@@ -383,9 +420,12 @@ function writeCover(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext, d
   mergeBox(ws, "D37:F37", claim.woRef || claim.poRef ? "" : "NIL — LOA pending", { fill: YELLOW, align: { horizontal: "left" } });
   setCell(ws, "B38", "Reference Period of Claim:", { font: F_LABEL, border: false });
   setCell(ws, "E38", "From:", { font: ARIAL({ bold: true, italic: true }) });
-  setCell(ws, "F38", claimDate ? monthStart(claimDate) : null, { font: ARIAL({ bold: true, italic: true, size: 11 }), fill: YELLOW, nf: NF_MONTH });
+  // Reference Period tracks the WORK month (the month before the claim submission),
+  // matching the client-corrected master where a September claim shows Aug 2026.
+  setCell(ws, "F38", claimDate ? workMonthStart(claimDate) : null, { font: ARIAL({ bold: true, italic: true, size: 11 }), fill: YELLOW, nf: NF_MONTH });
   mergeBox(ws, "G38:H38", "To:", { font: ARIAL({ bold: true, italic: true }) });
-  mergeBox(ws, "I38:J38", claimDate ? monthEnd(claimDate) : null, { font: ARIAL({ bold: true, italic: true, size: 11 }), fill: YELLOW, nf: NF_MONTH, align: { horizontal: "left" } });
+  // Single-month claim: To == From (both show the work month as mm/yyyy).
+  mergeBox(ws, "I38:J38", claimDate ? workMonthStart(claimDate) : null, { font: ARIAL({ bold: true, italic: true, size: 11 }), fill: YELLOW, nf: NF_MONTH, align: { horizontal: "left" } });
   setCell(ws, "B39", "Monthly Claim Cut-off Date:", { font: F_LABEL, border: false });
   mergeBox(ws, "E39:F39", "NIL", { fill: YELLOW });
   for (let r = 33; r <= 39; r++) ws.getRow(r).height = 15;
@@ -421,10 +461,23 @@ function writeCover(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext, d
     const r = 45 + i;
     const strong = row.strong ? ARIAL({ bold: true }) : ARIAL();
     const sfill = row.strong ? PEACH : undefined;
+    const hasD = row.D !== undefined;
+    const hasE = row.E !== undefined;
     setCell(ws, `B${r}`, row.sn, { align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `C${r}`, row.desc, { font: strong, align: { vertical: "middle" } });
-    setCell(ws, `D${r}`, row.D ?? "", { font: strong, fill: sfill, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `E${r}`, row.E ?? "", { font: strong, fill: row.yellowE ? YELLOW : sfill, nf: row.pctE ? NF_PCT : undefined, align: { horizontal: "center", vertical: "middle" } });
+    // Master leaves D/E blank cells unstyled (no border, no numFmt) so the
+    // Payment Claim Particulars box shows a clean pair of empty columns from
+    // "Add: Advance Payment" downward.
+    if (hasD) {
+      setCell(ws, `D${r}`, row.D as ExcelJS.CellValue, { font: strong, fill: sfill, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+    } else {
+      setCell(ws, `D${r}`, "", { border: false });
+    }
+    if (hasE) {
+      setCell(ws, `E${r}`, row.E as ExcelJS.CellValue, { font: strong, fill: row.yellowE ? YELLOW : sfill, nf: row.pctE ? NF_PCT : undefined, align: { horizontal: "center", vertical: "middle" } });
+    } else {
+      setCell(ws, `E${r}`, "", { border: false });
+    }
     setCell(ws, `F${r}`, row.F, { font: strong, fill: row.yellowF ? YELLOW : sfill, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     setCell(ws, `G${r}`, row.G, { font: strong, fill: sfill, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     ws.getRow(r).height = 21;
