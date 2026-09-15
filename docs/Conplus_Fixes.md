@@ -116,6 +116,12 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 33. **"Reminder draft · ready to send" box: can we edit the text there and send?**
     ✅ Built 16 Sep (`2b5e0ec`). The subject and body on the card are editable in place; the edit is saved per claim, survives a refresh, shows "edited by …" with Reset to template, and is exactly what Proceed & send, Edit draft and Log as Sent use. Sending or skipping clears it. Also fixed the "Claim -" in drafts for the five imported claims that had no sequence number.
 
+34. **No send button on a claim that is 55 days overdue.**
+    ✅ Fixed 16 Sep (`053dea5`, `13736c3`). The button only appeared on the 7-day marks. Every card with a draft now shows "Proceed & send" on a scheduled day and "Send now" on any other day; an off-cycle send is logged as a manual reminder (counts in the sequence, does not move the cadence), which is the client's own rule from 25 Aug.
+
+35. **Revert the claims moved into the Payment chase during testing.**
+    ✅ Done 16 Sep. Invoice / PRC dates cleared on E25056 #1, E25057 #1, F23012 #24, F25040 #3, F25060 #1; all five are back in the Certificate chase. F25040 #3 still carries the test certified amount of $140 (original $5,811.80) — say if that should go back too.
+
 ---
 
 ## Next, in order
