@@ -152,7 +152,7 @@ export default function ProjectReferencePage() {
     // Projects that live in the app (e.g. set up through LOA intake) but are not in the master yet.
     const prj = await supabase
       .from("projects")
-      .select("project_code,name,client_name,contract_value,total_contract_value,vo_value,work_type_code,start_date,end_date,sales_manager,scope,location,status")
+      .select("project_code,name,client_name,contract_value,total_contract_value,vo_value,work_type_code,start_date,end_date,sales_manager,scope,location,status,coating_system")
       .order("created_at", { ascending: false });
     if (prj.error) toast.error(prj.error.message);
     setAppProjects((prj.data ?? []) as AppProject[]);
@@ -336,7 +336,7 @@ export default function ProjectReferencePage() {
             <strong className="text-foreground">${fmtMoney(totalValue)}</strong>. Epoxy works = any entry whose type of work includes EPOXY; MISC = everything else. Pick type chips to narrow further (all chosen must apply).
             {appLines.length > 0 && (
               <>
-                {" "}Projects created in the app that are not in the master yet are included and marked <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold uppercase text-warning">app</span>; their type of work comes from the code assigned in the app, so some show under All only until a code is set.
+                {" "}Projects created in the app that are not in the master yet are included and marked <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold uppercase text-warning">app</span>; their type of work comes from the code assigned in the app, or is read from the scope / coating system text when there is none.
               </>
             )}
           </p>

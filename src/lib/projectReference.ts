@@ -255,6 +255,36 @@ export interface AppProject {
   scope: string | null;
   location: string | null;
   status: string | null;
+  coating_system?: string | null;
+}
+
+/** Keyword → type-of-work token, in the master's own vocabulary; used when an app project has no code. */
+const TEXT_TOKENS: [RegExp, string][] = [
+  [/epoxy|\bep\b|stopox|epocem|ucrete\s*ud/i, "EPOXY"],
+  [/polyurethane|\bpu\b|stopur|ucrete\s*mf|traffic deck|\bpac\b/i, "PU"],
+  [/hardener/i, "HARDENER"],
+  [/power float|powerfloat/i, "POWER FLOAT"],
+  [/screed/i, "SCREEDING"],
+  [/mortar|eps-gp|eps gp/i, "MORTAR"],
+  [/marking|car ?park line/i, "MARKING"],
+  [/coving|cove/i, "COVING"],
+  [/anti-?static|\besd\b/i, "ANTI-STATIC"],
+  [/self-?level/i, "SELF-LEVELING"],
+  [/tiling|\btiles?\b/i, "TILING"],
+  [/plaster/i, "PLASTER"],
+  [/waterproof/i, "WATERPROOFING"],
+  [/repair|making good|make good/i, "REPAIR"],
+  [/grind/i, "GRINDING"],
+  [/joint|sealant/i, "SEALANT"],
+];
+
+/** "Supply And Apply Of Epoxy Floor Coating Including Floor Hardener" → "EPOXY / HARDENER". */
+export function inferTypeFromText(...texts: (string | null | undefined)[]): string | null {
+  const hay = texts.filter(Boolean).join(" ");
+  if (!hay.trim()) return null;
+  const found: string[] = [];
+  for (const [re, tok] of TEXT_TOKENS) if (re.test(hay) && !found.includes(tok)) found.push(tok);
+  return found.length ? found.join(" / ") : null;
 }
 
 /** Learn "CP01-EP-MR" → "EPOXY / MORTAR" from the master itself (most frequent wording wins). */
@@ -289,7 +319,7 @@ export function appOnlyLines(projects: AppProject[], masterLines: ReportLine[], 
     if (!key || inMaster.has(key) || out.some((l) => l.key === key)) continue;
     if (/^ZZ|TEST/i.test(p.project_code)) continue; // demo / mock projects
     const code = p.work_type_code?.trim().toUpperCase() ?? null;
-    const type = code ? types.get(code) ?? null : null;
+    const type = (code ? types.get(code) ?? null : null) ?? inferTypeFromText(p.scope, p.coating_system, p.name);
     const cv = num(p.contract_value);
     const tcv = num(p.total_contract_value) || cv + num(p.vo_value);
     out.push({
