@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck, Send,
+  Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck, Send, Bookmark,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/UIComponents";
 import ExportMenu from "@/components/ExportMenu";
@@ -1448,6 +1448,7 @@ export default function LiveViewPage() {
                 { href: "/store/health", label: "Store Health", Icon: Activity },
                 { href: "/store/deliveries", label: "Deliveries", Icon: Truck },
                 { href: "/store/import", label: "Stock Import", Icon: FileSpreadsheet },
+                { href: "/store/reservations", label: "Reservations", Icon: Bookmark },
               ].map(({ href, label, Icon }) => (
                 <a
                   key={href}

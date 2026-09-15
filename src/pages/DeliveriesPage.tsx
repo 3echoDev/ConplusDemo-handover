@@ -9,9 +9,12 @@ import {
   RefreshCw,
   Truck,
   X,
+  Camera,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { applyScanResult, buildScanRequest, downscaleImage, requestDoScan } from "@/lib/doScan";
 import { cn } from "@/lib/utils";
 
 /*
@@ -148,6 +151,9 @@ export default function DeliveriesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [poLines, setPoLines] = useState<POLine[] | null>(null); // null = loading
   const [receiving, setReceiving] = useState<Record<string, string>>({});
+  const scanInput = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanNotes, setScanNotes] = useState<string[] | null>(null);
 
   // inline DO-number edit
   const [editId, setEditId] = useState<string | null>(null);
@@ -313,6 +319,35 @@ export default function DeliveriesPage() {
     setLogFor(null);
     setPoLines(null);
     setReceiving({});
+    setScanNotes(null);
+  };
+
+  // Photo of the supplier DO → n8n vision webhook → prefilled form (PO-16..PO-20).
+  // The person still checks every figure; nothing is written until Log.
+  const scanDo = async (file: File) => {
+    if (!logFor || !poLines) return;
+    setScanning(true);
+    setScanNotes(null);
+    try {
+      const image = await downscaleImage(file);
+      const result = await requestDoScan(buildScanRequest(logFor, poLines, image));
+      const applied = applyScanResult(result, poLines, receiving);
+      if (!result.ok) {
+        toast.error(applied.notes[0] ?? "Scan failed.");
+        return;
+      }
+      if (applied.doNumber) setDoNumber(applied.doNumber);
+      if (applied.deliveryDate) setDeliveryDate(applied.deliveryDate);
+      setReceiving(applied.receiving);
+      setScanNotes(applied.notes);
+      toast.success(`Read DO ${applied.doNumber ?? ""} — ${applied.matchedLines} of ${poLines.length} lines filled`, {
+        description: "Check every quantity against the paper before logging.",
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not scan the DO.");
+    } finally {
+      setScanning(false);
+    }
   };
 
   const receivingTotal = useMemo(
@@ -650,6 +685,44 @@ export default function DeliveriesPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {/* scan the paper DO to prefill */}
+            {poLines && poLines.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <input
+                  ref={scanInput}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void scanDo(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => scanInput.current?.click()}
+                  disabled={scanning}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60"
+                >
+                  {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                  {scanning ? "Reading the DO…" : "Scan DO photo to prefill"}
+                </button>
+                <span className="text-[11px] text-muted-foreground">Take a photo of the supplier's DO. Quantities are prefilled for you to check, not logged.</span>
+              </div>
+            )}
+            {scanNotes && scanNotes.length > 0 && (
+              <ul className="mt-2 space-y-0.5 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-foreground">
+                {scanNotes.map((n, i) => (
+                  <li key={i} className="flex gap-1.5">
+                    <ScanLine className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                    <span>{n}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {/* per-line receipt */}
             <div className="mt-4 overflow-x-auto rounded-lg border border-border">

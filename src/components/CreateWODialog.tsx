@@ -4,6 +4,8 @@ import { useAppData } from "@/data/AppDataContext";
 import { calcRequiredQty } from "@/data/db";
 import { cn } from "@/lib/utils";
 import MaterialPicker from "@/components/MaterialPicker";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 interface Props {
   open: boolean;
@@ -61,6 +63,7 @@ const num = (v: string): number | null => {
 
 export default function CreateWODialog({ open, onClose }: Props) {
   const { projects, teamMembers, createWorksOrder, getNextWONumber } = useAppData();
+  const [reserveStock, setReserveStock] = useState(true);
 
   const [woNumber, setWoNumber] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -186,6 +189,41 @@ export default function CreateWODialog({ open, onClose }: Props) {
             };
           }),
       });
+      // Reserve store stock for every line that resolved to a material (MM-26..29).
+      // Partial reservations are allowed: the shortfall is the balance to purchase.
+      if (reserveStock && project?.code) {
+        const wanted = new Map<string, number>();
+        for (const a of areas) {
+          for (const l of a.lines) {
+            if (!l.materialId || l.description.trim() === "") continue;
+            const q = l.overrideQty.trim() === "" ? num(l.orderQty) : num(l.overrideQty);
+            if (q > 0) wanted.set(l.materialId, (wanted.get(l.materialId) ?? 0) + q);
+          }
+        }
+        let reserved = 0;
+        const short: string[] = [];
+        for (const [materialId, q] of wanted) {
+          const { data } = await supabase.rpc("reserve_material", {
+            p_material_id: materialId,
+            p_project_code: project.code,
+            p_qty: q,
+            p_wo_number: woNumber.trim(),
+            p_notes: null,
+            p_actor: null,
+            p_allow_partial: true,
+          });
+          const res = data as { ok: boolean; error?: string; material?: string; reserved?: number; shortfall?: number } | null;
+          if (res?.ok) {
+            reserved += 1;
+            if ((res.shortfall ?? 0) > 0) short.push(`${res.material}: ${res.shortfall} short`);
+          } else if (res?.error) short.push(res.error);
+        }
+        if (wanted.size > 0) {
+          toast.message(`Reserved stock for ${reserved} of ${wanted.size} materials`, {
+            description: short.length ? short.slice(0, 4).join(" · ") + (short.length > 4 ? ` · +${short.length - 4} more` : "") : "Everything is available in store.",
+          });
+        }
+      }
       onClose();
       setAreas([emptyArea()]);
       setWoNumber("");
@@ -469,6 +507,10 @@ export default function CreateWODialog({ open, onClose }: Props) {
             <span className="text-muted-foreground">Total to order</span>
             <span className="font-semibold">{totalSets} sets</span>
           </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={reserveStock} onChange={(e) => setReserveStock(e.target.checked)} className="h-3.5 w-3.5 rounded border-input" />
+            Reserve store stock for this WO
+          </label>
           <div className="flex gap-2">
             <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
               Cancel

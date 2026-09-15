@@ -17,6 +17,7 @@ import StorePage from "@/pages/StorePage";
 import StoreHealthPage from "@/pages/StoreHealthPage";
 import DeliveriesPage from "@/pages/DeliveriesPage";
 import StockImportPage from "@/pages/StockImportPage";
+import ReservationsPage from "@/pages/ReservationsPage";
 import LiveViewPage from "@/pages/LiveViewPage";
 import { lazy, Suspense } from "react";
 const ClaimsPivot = lazy(() => import("@/components/ClaimsPivot"));
@@ -47,6 +48,7 @@ const App = () => (
               <Route path="/store/health" element={<StoreHealthPage />} />
               <Route path="/store/deliveries" element={<DeliveriesPage />} />
               <Route path="/store/import" element={<StockImportPage />} />
+              <Route path="/store/reservations" element={<ReservationsPage />} />
               <Route path="*" element={<LiveViewPage />} />
             </Routes>
           ) : (
@@ -71,6 +73,7 @@ const App = () => (
                       <Route path="/store/health" element={<StoreHealthPage />} />
                       <Route path="/store/deliveries" element={<DeliveriesPage />} />
                       <Route path="/store/import" element={<StockImportPage />} />
+                      <Route path="/store/reservations" element={<ReservationsPage />} />
                       <Route path="/documents" element={<DocumentsPage />} />
                       <Route path="/claims" element={<Suspense fallback={<div>Loading…</div>}><ClaimsPivot /></Suspense>} />
                       <Route path="/pivot-summary" element={<Suspense fallback={<div>Loading…</div>}><PortfolioPivot /></Suspense>} />

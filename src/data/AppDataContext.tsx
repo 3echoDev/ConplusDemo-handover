@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useCallback, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type {
@@ -49,7 +50,6 @@ import {
   dbUpdateInvoiceStatus,
   dbUpdateStock,
   dbAddMaterial,
-  dbAllocateMaterial,
   dbCreateClaim,
   dbUpdateClaimStatus,
   dbUpdateClaimFields,
@@ -366,18 +366,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const item = inventory.find((i) => i.id === materialId);
       const project = projects.find((p) => p.id === projectId);
       if (!item || !project) return;
+      // Reservation only (allocation, not a stock-out): stock leaves the store
+      // through the Store form, which consumes the reservation. This used to
+      // subtract qty_on_hand directly, which the recompute trigger later undid.
       await run(
-        () =>
-          dbAllocateMaterial({
-            materialId,
-            currentQty: item.totalQty,
-            threshold: item.alertThreshold,
-            projectId,
-            projectCode: project.code,
-            projectName: project.name,
-            qty,
-          }),
-        `Transferred ${qty} ${item.unit} of ${item.name} to ${project.code}`,
+        async () => {
+          const { data, error } = await supabase.rpc("reserve_material", {
+            p_material_id: materialId,
+            p_project_code: project.code,
+            p_qty: qty,
+            p_wo_number: null,
+            p_notes: "Reserved from Inventory",
+            p_actor: null,
+            p_allow_partial: false,
+          });
+          const res = data as { ok: boolean; error?: string } | null;
+          if (error || !res?.ok) throw new Error(res?.error || error?.message || "Could not reserve");
+        },
+        `Reserved ${qty} ${item.unit} of ${item.name} for ${project.code}`,
         ["materials", "allocations"]
       );
     },

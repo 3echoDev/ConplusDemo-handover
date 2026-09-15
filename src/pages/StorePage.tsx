@@ -35,6 +35,8 @@ interface Material {
   name: string;
   unit: string;
   qty_on_hand: number;
+  reserved_qty: number;
+  available_qty: number;
 }
 
 interface ProjectOption {
@@ -80,6 +82,9 @@ interface RpcResult {
   direction?: "in" | "out";
   qty?: number;
   new_balance?: number;
+  reservation_consumed?: number;
+  reserved_after?: number;
+  available_after?: number;
   error?: string;
 }
 
@@ -149,12 +154,23 @@ export default function StorePage() {
   }, [materials]);
 
   const loadMaterials = useCallback(async () => {
+    // material_stock_position = active materials + reserved / available (view)
     const { data } = await supabase
-      .from("materials")
-      .select("id,item_code,name,unit,qty_on_hand")
-      .eq("is_active", true)
+      .from("material_stock_position")
+      .select("id,item_code,name,unit,physical_qty,reserved_qty,available_qty")
       .order("name");
-    setMaterials((data as Material[]) ?? []);
+    type PosRow = { id: string; item_code: string; name: string; unit: string; physical_qty: number | string; reserved_qty: number | string; available_qty: number | string };
+    setMaterials(
+      ((data as PosRow[]) ?? []).map((m) => ({
+        id: m.id,
+        item_code: m.item_code,
+        name: m.name,
+        unit: m.unit,
+        qty_on_hand: Number(m.physical_qty ?? 0),
+        reserved_qty: Number(m.reserved_qty ?? 0),
+        available_qty: Number(m.available_qty ?? 0),
+      })),
+    );
   }, []);
 
   const loadToday = useCallback(async () => {
@@ -259,7 +275,10 @@ export default function StorePage() {
     setRecents(pushRecent(material.id));
     const dirWord = res.direction === "in" ? "in" : "out";
     toast.success(`${res.material} — now ${res.new_balance} in store`, {
-      description: `Logged ${res.qty} ${dirWord} · #${res.sno}`,
+      description:
+        `Logged ${res.qty} ${dirWord} · #${res.sno}` +
+        ((res.reservation_consumed ?? 0) > 0 ? ` · ${res.reservation_consumed} taken from ${projectRef}'s reservation` : "") +
+        ((res.reserved_after ?? 0) > 0 ? ` · ${res.available_after} available (${res.reserved_after} reserved)` : ""),
     });
     resetForm(direction);
     await Promise.all([loadMaterials(), loadToday()]);
@@ -376,6 +395,9 @@ export default function StorePage() {
                 <div className="truncate font-semibold text-foreground">{material.name}</div>
                 <div className="text-xs text-muted-foreground">
                   {material.item_code} · {material.qty_on_hand} {material.unit} in store
+                  {material.reserved_qty > 0 && (
+                    <span className="text-warning"> · {material.reserved_qty} reserved · {material.available_qty} available</span>
+                  )}
                 </div>
               </div>
               <button
@@ -419,8 +441,9 @@ export default function StorePage() {
                           <span className="block truncate font-medium text-foreground">{m.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">{m.item_code}</span>
                         </span>
-                        <span className="shrink-0 text-sm text-muted-foreground">
+                        <span className="shrink-0 text-right text-sm text-muted-foreground">
                           {m.qty_on_hand} {m.unit}
+                          {m.reserved_qty > 0 && <span className="block text-[11px] text-warning">{m.available_qty} avail</span>}
                         </span>
                       </button>
                     </li>
