@@ -137,6 +137,8 @@ export interface ReportLine {
   standardized_code: string | null;
   band: "EPOXY" | "MISC" | "UNCLASSIFIED";
   rows: number;
+  /** "master" = from the Standardized sheet; "app" = exists only in the app's projects table. */
+  source: "master" | "app";
 }
 
 /** Date columns hold "TBA" and free text as often as dates; the DB column is a date. */
@@ -180,6 +182,7 @@ export function consolidate(rows: ReferenceRow[]): ReportLine[] {
         standardized_code: r.standardized_code,
         band: workBand(r.type_of_work),
         rows: 1,
+        source: "master",
       });
       continue;
     }
@@ -235,3 +238,80 @@ export function tokenCounts(lines: ReportLine[]): { token: string; count: number
   for (const l of lines) for (const t of new Set(workTokens(l.type_of_work))) c.set(t, (c.get(t) ?? 0) + 1);
   return [...c.entries()].map(([token, count]) => ({ token, count })).sort((a, b) => b.count - a.count || a.token.localeCompare(b.token));
 }
+
+// ---------------------------------------------------------------- app projects not yet in the master
+
+export interface AppProject {
+  project_code: string;
+  name: string | null;
+  client_name: string | null;
+  contract_value: number | string | null;
+  total_contract_value: number | string | null;
+  vo_value: number | string | null;
+  work_type_code: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  sales_manager: string | null;
+  scope: string | null;
+  location: string | null;
+  status: string | null;
+}
+
+/** Learn "CP01-EP-MR" → "EPOXY / MORTAR" from the master itself (most frequent wording wins). */
+export function codeTypeMap(rows: ReferenceRow[]): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!r.standardized_code || !r.type_of_work) continue;
+    const code = r.standardized_code.trim().toUpperCase();
+    const m = counts.get(code) ?? new Map<string, number>();
+    const t = workTokens(r.type_of_work).join(" / ");
+    m.set(t, (m.get(t) ?? 0) + 1);
+    counts.set(code, m);
+  }
+  const out = new Map<string, string>();
+  for (const [code, m] of counts) out.set(code, [...m.entries()].sort((a, b) => b[1] - a[1])[0][0]);
+  return out;
+}
+
+const num = (v: number | string | null | undefined) => (v == null || v === "" ? 0 : Number(v) || 0);
+
+/**
+ * App projects whose base code is not in the master become extra report lines,
+ * flagged source = "app", so a project set up in the app last week is listed
+ * even before the client re-uploads their workbook.
+ */
+export function appOnlyLines(projects: AppProject[], masterLines: ReportLine[], masterRows: ReferenceRow[]): ReportLine[] {
+  const inMaster = new Set(masterLines.map((l) => l.key));
+  const types = codeTypeMap(masterRows);
+  const out: ReportLine[] = [];
+  for (const p of projects) {
+    const key = baseCode(p.project_code);
+    if (!key || inMaster.has(key) || out.some((l) => l.key === key)) continue;
+    if (/^ZZ|TEST/i.test(p.project_code)) continue; // demo / mock projects
+    const code = p.work_type_code?.trim().toUpperCase() ?? null;
+    const type = code ? types.get(code) ?? null : null;
+    const cv = num(p.contract_value);
+    const tcv = num(p.total_contract_value) || cv + num(p.vo_value);
+    out.push({
+      key,
+      codes: [p.project_code],
+      project_name: p.name ?? "",
+      client: clientShort(p.client_name),
+      scope: p.scope ?? "",
+      contract_value: cv,
+      total_contract_value: tcv,
+      progress_pct: null,
+      start_date: p.start_date,
+      end_date: p.end_date,
+      location: p.location,
+      sales_rep: p.sales_manager,
+      type_of_work: type,
+      standardized_code: code,
+      band: workBand(type),
+      rows: 1,
+      source: "app",
+    });
+  }
+  return out;
+}
+

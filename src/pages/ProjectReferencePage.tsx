@@ -23,11 +23,13 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { RawCell } from "@/lib/inventoryImport";
 import {
+  appOnlyLines,
   consolidate,
   filterReport,
   parseReferenceSheet,
   tokenCounts,
   workTokens,
+  type AppProject,
   type ReferenceRow,
   type ReportFilter,
   type ReportLine,
@@ -62,6 +64,7 @@ async function exportReport(lines: ReportLine[], title: string) {
     { key: "start", width: 12 },
     { key: "end", width: 12 },
     { key: "loc", width: 24 },
+    { key: "note", width: 22 },
   ];
   ws.getCell("A1").value = "Conplus Resources Pte Ltd";
   ws.getCell("A1").font = { bold: true, size: 14 };
@@ -70,7 +73,7 @@ async function exportReport(lines: ReportLine[], title: string) {
   ws.getCell("A3").value = `Consolidated by project (VOs and duplicate entries merged) — ${lines.length} projects · generated ${new Date().toLocaleDateString("en-SG")}`;
   ws.getCell("A3").font = { italic: true, color: { argb: "FF666666" } };
   const hdr = ws.getRow(5);
-  hdr.values = ["S/N", "Project Code(s)", "Project Name", "Client", "Scope of Works", "Contract Value (S$)", "Total Contract Value incl. VO (S$)", "Progress (%)", "Start Date", "End Date", "Location"];
+  hdr.values = ["S/N", "Project Code(s)", "Project Name", "Client", "Scope of Works", "Contract Value (S$)", "Total Contract Value incl. VO (S$)", "Progress (%)", "Start Date", "End Date", "Location", "Note"];
   hdr.font = { bold: true, color: { argb: "FFFFFFFF" } };
   hdr.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E78" } };
   hdr.alignment = { vertical: "middle", wrapText: true };
@@ -88,6 +91,7 @@ async function exportReport(lines: ReportLine[], title: string) {
       l.start_date ? new Date(`${l.start_date}T00:00:00`) : null,
       l.end_date ? new Date(`${l.end_date}T00:00:00`) : null,
       l.location ?? "",
+      l.source === "app" ? "In app, not yet in Project Ref master" : "",
     ]);
     row.alignment = { vertical: "top", wrapText: true };
     row.getCell(6).numFmt = "#,##0.00";
@@ -109,6 +113,7 @@ export default function ProjectReferencePage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ReferenceRow[]>([]);
+  const [appProjects, setAppProjects] = useState<AppProject[]>([]);
   const [importedAt, setImportedAt] = useState<string | null>(null);
   const [band, setBand] = useState<"ALL" | "EPOXY" | "MISC">("EPOXY");
   const [tokens, setTokens] = useState<string[]>([]);
@@ -144,6 +149,13 @@ export default function ProjectReferencePage() {
     }));
     setRows(list);
     setImportedAt(data[0]?.imported_at ?? null);
+    // Projects that live in the app (e.g. set up through LOA intake) but are not in the master yet.
+    const prj = await supabase
+      .from("projects")
+      .select("project_code,name,client_name,contract_value,total_contract_value,vo_value,work_type_code,start_date,end_date,sales_manager,scope,location,status")
+      .order("created_at", { ascending: false });
+    if (prj.error) toast.error(prj.error.message);
+    setAppProjects((prj.data ?? []) as AppProject[]);
     setLoading(false);
   }, []);
 
@@ -151,7 +163,9 @@ export default function ProjectReferencePage() {
     void load();
   }, [load]);
 
-  const lines = useMemo(() => consolidate(rows), [rows]);
+  const masterLines = useMemo(() => consolidate(rows), [rows]);
+  const appLines = useMemo(() => appOnlyLines(appProjects, masterLines, rows), [appProjects, masterLines, rows]);
+  const lines = useMemo(() => [...masterLines, ...appLines], [masterLines, appLines]);
   const allTokens = useMemo(() => tokenCounts(lines), [lines]);
   const reps = useMemo(() => [...new Set(lines.map((l) => l.sales_rep).filter((x): x is string => !!x))].sort(), [lines]);
   const filter: ReportFilter = { band, tokens, salesRep: salesRep || null, yearFrom: yearFrom ? Number(yearFrom) : null, yearTo: yearTo ? Number(yearTo) : null, search };
@@ -208,7 +222,8 @@ export default function ProjectReferencePage() {
           <div className="mr-auto leading-tight">
             <h1 className="font-heading text-base font-bold tracking-tight text-foreground">Project Reference Report</h1>
             <p className="text-xs text-muted-foreground">
-              From the Project Ref – Standardized master · {rows.length} entries · {lines.length} projects
+              From the Project Ref – Standardized master · {rows.length} entries · {masterLines.length} projects
+              {appLines.length > 0 ? ` · +${appLines.length} from the app not yet in the master` : ""}
               {importedAt ? ` · loaded ${new Date(importedAt).toLocaleDateString("en-SG")}` : ""}
             </p>
           </div>
@@ -319,6 +334,11 @@ export default function ProjectReferencePage() {
           <p className="text-xs text-muted-foreground">
             <strong className="text-foreground">{shown.length}</strong> projects · total contract value incl. VO{" "}
             <strong className="text-foreground">${fmtMoney(totalValue)}</strong>. Epoxy works = any entry whose type of work includes EPOXY; MISC = everything else. Pick type chips to narrow further (all chosen must apply).
+            {appLines.length > 0 && (
+              <>
+                {" "}Projects created in the app that are not in the master yet are included and marked <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold uppercase text-warning">app</span>; their type of work comes from the code assigned in the app, so some show under All only until a code is set.
+              </>
+            )}
           </p>
         </section>
 
@@ -355,7 +375,12 @@ export default function ProjectReferencePage() {
                 shown.slice(0, 500).map((l, i) => (
                   <tr key={l.key} className="border-t border-border align-top">
                     <td className="px-3 py-2 tabular-nums text-muted-foreground">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium text-foreground">{l.codes.join(", ") || "—"}</td>
+                    <td className="px-3 py-2 font-medium text-foreground">
+                      {l.codes.join(", ") || "—"}
+                      {l.source === "app" && (
+                        <span className="ml-1.5 rounded bg-warning/15 px-1 py-0.5 text-[10px] font-semibold uppercase text-warning" title="Exists in the app but not in the Project Ref master yet">app</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="text-foreground">{l.project_name}</div>
                       <div className="line-clamp-2 text-xs text-muted-foreground" title={l.scope}>

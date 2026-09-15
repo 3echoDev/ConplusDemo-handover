@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseCode, clientShort, consolidate, filterReport, parseReferenceSheet, tokenCounts, workBand, workTokens } from "@/lib/projectReference";
+import { appOnlyLines, baseCode, clientShort, consolidate, filterReport, parseReferenceSheet, tokenCounts, workBand, workTokens } from "@/lib/projectReference";
 import type { RawCell } from "@/lib/inventoryImport";
 
 const HEADER: RawCell[] = [
@@ -81,6 +81,22 @@ describe("parseReferenceSheet + consolidate", () => {
     expect(filterReport(lines, { band: "ALL", yearFrom: 2026 }).map((l) => l.key)).toEqual(["E25077"]);
     expect(filterReport(lines, { band: "ALL", search: "yokogawa" }).map((l) => l.key)).toEqual(["F25074"]);
     expect(tokenCounts(lines).map((t) => t.token)).toEqual(["EPOXY", "HARDENER", "SCREEDING"]);
+  });
+
+  it("adds app projects that are not in the master, typed from the code, and skips mocks", () => {
+    const lines = consolidate(rows);
+    const extra = appOnlyLines(
+      [
+        { project_code: "E26001", name: "New site from LOA intake", client_name: "Woh Hup (Pte) Ltd\n8 Kim Chuan Rd", contract_value: "12000", total_contract_value: null, vo_value: "500", work_type_code: "CP01-EP", start_date: "2026-09-10", end_date: null, sales_manager: "JENSEN", scope: "Epoxy floor", location: "Kim Chuan", status: "active" },
+        { project_code: "E25077 (VO)", name: "already in master", client_name: null, contract_value: 1, total_contract_value: null, vo_value: null, work_type_code: null, start_date: null, end_date: null, sales_manager: null, scope: null, location: null, status: "active" },
+        { project_code: "ZZTEST", name: "mock", client_name: null, contract_value: 1, total_contract_value: null, vo_value: null, work_type_code: null, start_date: null, end_date: null, sales_manager: null, scope: null, location: null, status: "active" },
+      ],
+      lines,
+      rows,
+    );
+    expect(extra).toHaveLength(1);
+    expect(extra[0]).toMatchObject({ key: "E26001", source: "app", client: "Woh Hup (Pte) Ltd", type_of_work: "EPOXY", band: "EPOXY", contract_value: 12000, total_contract_value: 12500 });
+    expect(filterReport([...lines, ...extra], { band: "EPOXY" }).map((l) => l.key).sort()).toEqual(["E25077", "E26001"]);
   });
 
   it("throws a readable error without the header", () => {
