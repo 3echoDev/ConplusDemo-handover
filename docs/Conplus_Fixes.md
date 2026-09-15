@@ -122,6 +122,12 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 35. **Revert the claims moved into the Payment chase during testing.**
     ✅ Done 16 Sep. Invoice / PRC dates cleared on E25056 #1, E25057 #1, F23012 #24, F25040 #3, F25060 #1; all five are back in the Certificate chase. F25040 #3 still carries the test certified amount of $140 (original $5,811.80) — say if that should go back too.
 
+36. **Send ahead of the schedule: prompt first, then log it as the next reminder.**
+    ✅ Built 16 Sep (`c3ffcff`). "Send now" on a non-scheduled day asks "next scheduled reminder is in N days — send ahead of schedule? It will be logged as reminder #K"; Yes sends and numbers it in the sequence like any reminder.
+
+37. **Entering an invoice or PRC date switched the claim to the Payment chase even with nothing else filled; a PRC-received claim without an invoice date showed on neither tab.**
+    ✅ Fixed 16 Sep (`6a00e14`). Order enforced: certified amount → PRC received → invoice submitted. On the Certificate card the invoice date is locked. After the PRC date the claim sits in a new "Certified, invoice pending" section: certified amount prefilled with the claim amount but stored only on Confirm, then the invoice date unlocks and starts the Payment chase. Clearing the PRC date moves it back.
+
 ---
 
 ## Next, in order
