@@ -309,7 +309,18 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
   return html;
 }
 
-export function printClaim(claim: Claim, ctx: ClaimDocContext): void {
+/**
+ * Print / PDF = the Excel master, page for page (client, 9 Sep: the claim must
+ * look exactly like the corrected E25077 workbook / its printed PDF). The same
+ * workbook the Excel export writes is rendered to HTML cell-by-cell
+ * (src/lib/sheetToHtml.ts): page 1 the Cover Page & Claim Summary, then the
+ * Claim Details with rows 1–12 repeated as print titles. Columns S onward
+ * (internal verification) stay out, as in the sheet's print area.
+ *
+ * The old hand-built layout (buildClaimHtml) is kept only as a fallback if the
+ * workbook cannot be built.
+ */
+export async function printClaim(claim: Claim, ctx: ClaimDocContext): Promise<void> {
   const warnings = claimExportWarnings(claim, ctx);
   if (
     warnings.length &&
@@ -318,8 +329,41 @@ export function printClaim(claim: Claim, ctx: ClaimDocContext): void {
     return;
   const w = window.open("", "_blank", "width=900,height=1000");
   if (!w) return;
-  w.document.write(buildClaimHtml(claim, ctx));
+  let html: string;
+  try {
+    html = await buildClaimPrintHtml(claim, ctx);
+  } catch (e) {
+    console.error("claim print: workbook render failed, using fallback layout", e);
+    html = buildClaimHtml(claim, ctx);
+  }
+  w.document.write(html);
   w.document.close();
   w.focus();
-  setTimeout(() => w.print(), 250);
+  setTimeout(() => w.print(), 400);
+}
+
+/** The Excel master rendered as print HTML (cover page + claim details). */
+export async function buildClaimPrintHtml(claim: Claim, ctx: ClaimDocContext): Promise<string> {
+  // dynamic imports: claimExcel imports this module, so a static import would be circular
+  const [{ buildClaimWorkbook, CLAIM_SHEET_COVER, CLAIM_SHEET_DETAILS }, { worksheetToHtml, SHEET_PRINT_CSS }] = await Promise.all([
+    import("@/lib/claimExcel"),
+    import("@/lib/sheetToHtml"),
+  ]);
+  const wb = buildClaimWorkbook(claim, ctx);
+  const cover = wb.getWorksheet(CLAIM_SHEET_COVER)!;
+  const details = wb.getWorksheet(CLAIM_SHEET_DETAILS)!;
+  const detailArea = (details.pageSetup?.printArea ?? "B13:Q80").split(":");
+  const lastRow = detailArea[1].replace(/^[A-Z]+/i, "");
+  const coverHtml = worksheetToHtml(cover, { range: "A1:J63", replace: { "[ Company Logo ]": "" }, pxPerChar: 7 });
+  const detailsHtml = worksheetToHtml(details, { range: `B1:Q${lastRow}`, titleRows: "1:12", pxPerChar: 6.2 });
+  const title = `Progress Claim ${claimNumberDisplay(claim)} — ${claim.projectCode}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/</g, "")}</title>
+<style>${SHEET_PRINT_CSS}
+  .cover table.sheet { margin: 0 auto; }
+  .details table.sheet { width: 100% !important; }
+</style></head>
+<body>
+  <div class="page cover"><img class="letterhead" src="/conplus-header.png" alt="Conplus Resources Pte Ltd" onerror="this.style.display='none'">${coverHtml}</div>
+  <div class="page details">${detailsHtml}</div>
+</body></html>`;
 }
