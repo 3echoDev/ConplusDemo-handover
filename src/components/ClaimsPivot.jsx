@@ -117,7 +117,7 @@ function payVars(row) {
     ...certVars(row),
     days_over: Math.max(0, -(row.days_to_due || 0)),
     deadline: payDeadline(row),
-    outstanding: `SGD ${fmtNum(row.invoice_amount)}`,
+    outstanding: `SGD ${fmtNum(row.outstanding_amount != null ? row.outstanding_amount : row.invoice_amount)}`,
   };
 }
 
@@ -1048,11 +1048,9 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   };
 
   // Expand a card: lazily load its reminder history (+ active hold, if paused).
-  const toggleExpand = async (row) => {
-    if (expandedId === row.claim_id) { setExpandedId(null); return; }
-    setExpandedId(row.claim_id);
-    if (!detailMap[row.claim_id]) {
-      const [histRes, holdRes] = await Promise.all([
+  const loadDetail = async (row) => {
+    {
+      const [histRes, holdRes, rcptRes] = await Promise.all([
         supabase
           .from("chase_reminders")
           .select("reminder_no, decision, stage, is_manual, sent_at, created_at, created_by")
@@ -1068,12 +1066,63 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               .eq("active", true)
               .maybeSingle()
           : Promise.resolve({ data: null }),
+        supabase
+          .from("claim_receipts")
+          .select("id, received_date, amount, reference, notes, created_by")
+          .eq("claim_id", row.claim_id)
+          .order("received_date", { ascending: false }),
       ]);
       setDetailMap((m) => ({
         ...m,
-        [row.claim_id]: { history: histRes.data || [], hold: holdRes.data || null },
+        [row.claim_id]: { history: histRes.data || [], hold: holdRes.data || null, receipts: rcptRes.data || [] },
       }));
     }
+  };
+  const toggleExpand = async (row) => {
+    if (expandedId === row.claim_id) { setExpandedId(null); return; }
+    setExpandedId(row.claim_id);
+    if (!detailMap[row.claim_id]) await loadDetail(row);
+  };
+
+  // Partial payments stay on the claim: each receipt is a claim_receipts row and
+  // the claim keeps chasing the outstanding balance until receipts cover the
+  // certified (else invoiced) amount — then paid_date is stamped by the trigger.
+  const [rcpt, setRcpt] = useState({}); // claim_id -> { amount, date, ref }
+  const rcptFor = (row) => rcpt[row.claim_id] || {
+    amount: row.outstanding_amount != null ? String(Number(row.outstanding_amount)) : "",
+    date: new Date().toISOString().slice(0, 10),
+    ref: "",
+  };
+  const setRcptFor = (row, patch) => setRcpt((m) => ({ ...m, [row.claim_id]: { ...rcptFor(row), ...patch } }));
+  const handleReceipt = async (row) => {
+    const f = rcptFor(row);
+    const amt = Number(f.amount);
+    if (!(amt > 0)) { showFeedback("Enter the amount received."); return; }
+    try {
+      const { data, error } = await supabase.rpc("log_claim_receipt", {
+        p_claim_id: row.claim_id,
+        p_amount: amt,
+        p_received_date: f.date || null,
+        p_reference: f.ref || null,
+        p_notes: null,
+        p_actor: (() => { try { return localStorage.getItem("conplus_store_approver") || null; } catch { return null; } })(),
+      });
+      if (error || !data?.ok) { showFeedback("Error: " + (error?.message || data?.error || "not saved")); }
+      else if (data.fully_paid) { showFeedback(`${fmtFull(amt)} received \u2014 ${row.claim_number} is now fully paid and leaves the Payment chase.`); }
+      else { showFeedback(`${fmtFull(amt)} received \u2014 ${fmtFull(Number(data.outstanding))} still outstanding on ${row.claim_number}; the chase continues.`); }
+    } catch (e) { showFeedback("Error: " + e.message); }
+    setRcpt((m) => { const n = { ...m }; delete n[row.claim_id]; return n; });
+    await onRefresh();
+    await loadDetail(row);
+  };
+  const handleDeleteReceipt = async (row, receiptId) => {
+    try {
+      const { data, error } = await supabase.rpc("delete_claim_receipt", { p_receipt_id: receiptId });
+      if (error || !data?.ok) showFeedback("Error: " + (error?.message || data?.error || "not removed"));
+      else showFeedback("Payment removed.");
+    } catch (e) { showFeedback("Error: " + e.message); }
+    await onRefresh();
+    await loadDetail(row);
   };
 
   // Summary
@@ -1224,7 +1273,13 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               {daysLabel}
               {overdue && row.overdue_weeks != null ? ` \u00B7 ${row.overdue_weeks} wks` : ""}
             </div>
-            {row.certified_amount != null && Number(row.certified_amount) > 0 && (
+            {clock === "payment" && row.paid_amount != null && Number(row.paid_amount) > 0 && (
+              <div className="cpc-certified" title="Payments received so far on this claim; the rest is still chased">
+                paid {fmtFull(Number(row.paid_amount))}
+                {row.outstanding_amount != null ? ` \u00B7 ${fmtFull(Number(row.outstanding_amount))} outstanding` : ""}
+              </div>
+            )}
+            {clock === "certificate" && row.certified_amount != null && Number(row.certified_amount) > 0 && (
               <div className="cpc-certified" title="Certified amount saved on this claim; the difference is still outstanding">
                 certified {fmtFull(Number(row.certified_amount))}
                 {Number(amt) > Number(row.certified_amount) ? ` \u00B7 ${fmtFull(Number(amt) - Number(row.certified_amount))} balance` : ""}
@@ -1318,13 +1373,50 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
                         <div className="cpc-node-lbl">PRC received</div>
                         <div className="cpc-node-val">{row.prc_date ? fmtDate(row.prc_date) : "—"}</div>
                       </div>
-                      <div className="cpc-node">
-                        <div className="cpc-node-lbl">Payment received</div>
-                        <input className="cpc-node-input" type="date" defaultValue={row.paid_date || ""} onChange={(e) => handleDateUpdate(row.claim_id, "paid_date", e.target.value)} />
+                      <div className={`cpc-node ${Number(row.paid_amount || 0) > 0 ? "done" : ""}`}>
+                        <div className="cpc-node-lbl">Paid so far</div>
+                        <div className="cpc-node-val">{fmtFull(Number(row.paid_amount || 0))}</div>
+                        <div className="cpc-node-rel">
+                          {row.outstanding_amount != null ? `${fmtFull(Number(row.outstanding_amount))} outstanding of ${fmtFull(Number(row.certified_amount != null ? row.certified_amount : row.invoice_amount))}` : ""}
+                        </div>
                       </div>
                     </>
                   )}
                 </div>
+                {clock === "payment" && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="cpc-node-lbl" style={{ marginBottom: 4 }}>Record a payment received</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                      <input className="cpc-node-input" type="number" min={0} step="0.01" placeholder="Amount ($)" style={{ maxWidth: 130 }}
+                        value={rcptFor(row).amount} onChange={(e) => setRcptFor(row, { amount: e.target.value })} />
+                      <input className="cpc-node-input" type="date" style={{ maxWidth: 150 }}
+                        value={rcptFor(row).date} onChange={(e) => setRcptFor(row, { date: e.target.value })} />
+                      <input className="cpc-node-input" placeholder="Reference (cheque / PayNow / TT)" style={{ maxWidth: 200 }}
+                        value={rcptFor(row).ref} onChange={(e) => setRcptFor(row, { ref: e.target.value })} />
+                      <button className="cpc-btn small" onClick={() => handleReceipt(row)}>Save payment</button>
+                    </div>
+                    <div className="cpc-node-rel" style={{ marginTop: 4 }}>
+                      A partial payment stays on this claim: the outstanding balance keeps being chased and the reminder&rsquo;s {"{outstanding}"} shows it. The claim leaves the Payment chase once receipts cover the {row.certified_amount != null ? "certified" : "invoiced"} amount.
+                    </div>
+                    {detail && detail.receipts && detail.receipts.length > 0 && (
+                      <div className="cpc-history" style={{ marginTop: 8 }}>
+                        {detail.receipts.map((r) => (
+                          <div key={r.id} className="cpc-hist sent">
+                            <span className="cpc-hist-dot" />
+                            <span>
+                              <strong>{fmtFull(Number(r.amount))} received</strong>
+                              {` \u00B7 ${fmtDate(String(r.received_date).slice(0, 10))}`}
+                              {r.reference ? ` \u00B7 ${r.reference}` : ""}
+                              {r.created_by ? ` \u00B7 ${r.created_by}` : ""}
+                              {" "}
+                              <button className="cp-btn-copy" title="Remove this payment" onClick={() => handleDeleteReceipt(row, r.id)}>remove</button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {clock === "certificate" && (
                   <div style={{ marginTop: 8 }}>
                     <input
