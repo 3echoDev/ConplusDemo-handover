@@ -111,6 +111,11 @@ Legend: ✅ done and live · ◐ partly done (what is missing is stated) · ⏳ 
 - ✅ Chase card shows certified amount and balance; 144 claims with blank project names filled (`ec0c945`).
 - ✅ Partial payments stay on the claim and it chases the remainder; payment receipts with a running balance (`d311880`).
 
+## 16 Sep 2026 — Muhsin (from the client's review of the Chase page)
+
+33. **"Reminder draft · ready to send" box: can we edit the text there and send?**
+    ✅ Built 16 Sep (`2b5e0ec`). The subject and body on the card are editable in place; the edit is saved per claim, survives a refresh, shows "edited by …" with Reset to template, and is exactly what Proceed & send, Edit draft and Log as Sent use. Sending or skipping clears it. Also fixed the "Claim -" in drafts for the five imported claims that had no sequence number.
+
 ---
 
 ## Next, in order
