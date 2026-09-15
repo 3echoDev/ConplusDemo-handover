@@ -1381,14 +1381,15 @@ export default function LiveViewPage() {
     return base.slice(0, filtering ? 40 : 6);
   }, [purchaseOrders, poSearch, poStatus, poFrom, poTo]);
 
+  // Show every claim on the homepage (was capped at 5 default / 40 filtered).
+  // The Progress Claims and Conplus Invoices sections split it below.
   const recentClaims = useMemo(() => {
     const base = claimSearch
       ? claims.filter((c) => has(c.claimNumber, claimSearch) || has(c.projectName, claimSearch) || has(c.description, claimSearch))
       : claims;
     let scoped = claimFilter === "outstanding" ? base.filter((c) => c.status !== "paid") : base;
     if (claimFrom || claimTo) scoped = scoped.filter((c) => inRange(c.submittedDate, claimFrom, claimTo));
-    const filtering = claimSearch !== "" || claimFilter !== "all" || claimFrom !== "" || claimTo !== "";
-    return scoped.slice(0, filtering ? 40 : 5);
+    return scoped;
   }, [claims, claimSearch, claimFilter, claimFrom, claimTo]);
 
   const progressClaims = useMemo(() => recentClaims.filter((c) => !isInternalInvoice(c)), [recentClaims]);
