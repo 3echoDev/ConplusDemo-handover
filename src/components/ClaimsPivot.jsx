@@ -91,7 +91,7 @@ export function setTemplateOverrides(map) { TEMPLATE_OVERRIDES = map; }
 function certVars(row) {
   const name = row.project_name || row.client_name || row.project_code || "";
   return {
-    claim_no: row.claim_no || "-",
+    claim_no: row.claim_no || (row.claim_number ? String(row.claim_number).replace(/^CLM-[A-Z0-9]+-/i, "") : "-"),
     project: `${name} (${row.project_code})`,
     project_name: name,
     project_code: row.project_code,
@@ -882,6 +882,18 @@ const SEND_CHASE_URL = import.meta.env.VITE_SEND_CHASE_URL || "https://threeecho
 const SEND_CHASE_TOKEN = import.meta.env.VITE_CHASE_TOKEN || "cnp_chase_8b21f4a9e6c3";
 
 function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
+  // Per-claim edited drafts (table chase_drafts, keyed claim_id:clock). An edit
+  // on the card is saved on blur and is what Proceed & send / Log as Sent use.
+  const [drafts, setDrafts] = useState({});
+  const [draftEdit, setDraftEdit] = useState({}); // claim_id -> { subject, body } while typing
+  const loadDrafts = useCallback(async () => {
+    const { data } = await supabase.from("chase_drafts").select("claim_id, clock, subject, body, updated_by, updated_at");
+    const m = {};
+    for (const d of data || []) m[`${d.claim_id}:${d.clock}`] = d;
+    setDrafts(m);
+  }, []);
+  useEffect(() => { void loadDrafts(); }, [loadDrafts, certRows, payRows]);
+
   const [emailModal, setEmailModal] = useState(null);
   const [holdModal, setHoldModal] = useState(null);
   const [feedback, setFeedback] = useState(null);
@@ -895,6 +907,41 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   const [savingEmail, setSavingEmail] = useState(null); // project_id currently saving
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
+
+  const templateEmail = (row) => (clock === "certificate" ? getCertEmail(row) : getPayEmail(row));
+  /** Template wording with this claim's saved edit applied (edited=true when it differs). */
+  const effectiveEmail = (row) => {
+    const base = templateEmail(row);
+    if (!base) return null;
+    const d = drafts[`${row.claim_id}:${clock}`];
+    if (!d) return base;
+    return { ...base, subject: d.subject, body: base.body == null ? base.body : d.body, edited: true, editedBy: d.updated_by, editedAt: d.updated_at };
+  };
+  const actorName = () => { try { return localStorage.getItem("conplus_store_approver") || null; } catch { return null; } };
+  const saveDraft = async (row, subject, body) => {
+    const base = templateEmail(row);
+    const same = base && subject === base.subject && body === (base.body ?? "");
+    if (same) {
+      if (drafts[`${row.claim_id}:${clock}`]) await supabase.rpc("clear_chase_draft", { p_claim_id: row.claim_id, p_clock: clock });
+    } else {
+      const { data, error } = await supabase.rpc("save_chase_draft", { p_claim_id: row.claim_id, p_clock: clock, p_subject: subject, p_body: body, p_actor: actorName() });
+      if (error || !data?.ok) showFeedback("Draft not saved: " + (error?.message || data?.error || "unknown error"));
+    }
+    setDraftEdit((m) => { const n = { ...m }; delete n[row.claim_id]; return n; });
+    await loadDrafts();
+  };
+  const resetDraft = async (row) => {
+    await supabase.rpc("clear_chase_draft", { p_claim_id: row.claim_id, p_clock: clock });
+    setDraftEdit((m) => { const n = { ...m }; delete n[row.claim_id]; return n; });
+    await loadDrafts();
+    showFeedback("Back to the template wording.");
+  };
+  const clearDraftAfterSend = async (row) => {
+    if (drafts[`${row.claim_id}:${clock}`]) {
+      await supabase.rpc("clear_chase_draft", { p_claim_id: row.claim_id, p_clock: clock });
+      await loadDrafts();
+    }
+  };
   const rows = chaseTab === "certificate" ? certRows : payRows;
 
   const isCertOverdue = (row) => row.stage === "overdue";
@@ -921,7 +968,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
       if (isManual) params.p_is_manual = true;
       const { data, error } = await supabase.rpc("log_chase_reminder", params);
       if (error) { showFeedback("Error: " + error.message); }
-      else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); }
+      else { showFeedback(`Logged as reminder #${data?.reminder_no ?? "?"}`); await clearDraftAfterSend(row); }
     } catch (e) { showFeedback("Error: " + e.message); }
     setEmailModal(null);
     await onRefresh();
@@ -936,7 +983,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
     try {
       // Send exactly what the card previews (templates are editable); n8n falls
       // back to its own wording only if subject/body are missing.
-      const drafted = clock === "payment" ? getPayEmail(row) : getCertEmail(row);
+      const drafted = effectiveEmail(row);
       const res = await fetch(
         `${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}&to=${encodeURIComponent(row.contact_email)}`,
         {
@@ -946,7 +993,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (data.ok) showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`);
+      if (data.ok) { showFeedback(`Email sent \u2014 reminder #${data.reminder_no}`); await clearDraftAfterSend(row); }
       else showFeedback("Send failed: " + (data.reason || `HTTP ${res.status}`));
     } catch (e) { showFeedback("Send failed: " + e.message); }
     setSendingId(null);
@@ -1034,14 +1081,14 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
   };
 
   const openDraft = (row, isManual) => {
-    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    const email = effectiveEmail(row);
     if (!email) return;
     setEmailModal({ row, clock, email, isManual });
   };
 
   // Skip this cycle directly (logs decision=ignore with the default draft text).
   const handleQuickIgnore = async (row) => {
-    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    const email = effectiveEmail(row);
     const subject = email?.subject || `Chase ${row.claim_number || row.claim_no}`;
     const body = email?.body || email?.variants?.[0]?.body || "";
     await handleIgnore(row, subject, body);
@@ -1193,7 +1240,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
 
   const renderCard = (row) => {
     const held = row.on_hold;
-    const email = clock === "certificate" ? getCertEmail(row) : getPayEmail(row);
+    const email = effectiveEmail(row);
     const amt = clock === "certificate" ? row.amount : row.invoice_amount;
     const meta = chaseStageMeta(row);
     const { steps, labels } = buildStepper(row, meta.tone);
@@ -1465,16 +1512,58 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, onRefresh }) {
               <div className="cpc-detail-block">
                 <h4>{email ? "Reminder draft \u00B7 ready to send" : "No draft at this stage"}</h4>
                 {email ? (
-                  <div className="cpc-email">
+                  <div className={`cpc-email${email.edited ? " cpc-email-edited" : ""}`}>
                     <div className="cpc-email-head">
                       <div><strong>To:</strong> {row.contact_email || <span className="cp-muted">no recipient email &mdash; add one above</span>}</div>
                       {row.contact_person ? <div><strong>Attn:</strong> {row.contact_person}</div> : null}
+                      <div className="cpc-email-editrow">
+                        {email.edited ? (
+                          <>
+                            <span className="cpc-email-flag">edited{email.editedBy ? ` by ${email.editedBy}` : ""}</span>
+                            <button className="cp-btn-copy" onClick={() => resetDraft(row)} title="Discard the edit and go back to the template wording">Reset to template</button>
+                          </>
+                        ) : (
+                          <span className="cp-muted">Click the subject or body to edit &mdash; the edit is kept on this claim until it is sent.</span>
+                        )}
+                      </div>
                     </div>
                     <div className="cpc-email-body">
-                      <div className="cpc-email-subj">{email.subject}</div>
-                      <div className="cpc-email-text">
-                        {emailBody.split("\n").map((p, i) => (<p key={i}>{p}</p>))}
-                      </div>
+                      {(() => {
+                        const ed = draftEdit[row.claim_id];
+                        const subj = ed ? ed.subject : email.subject;
+                        const body = ed ? ed.body : emailBody;
+                        const canEditBody = email.body != null; // final-reminder variants are picked in the modal
+                        const start = () => { if (!ed) setDraftEdit((m) => ({ ...m, [row.claim_id]: { subject: email.subject, body: emailBody } })); };
+                        const commit = () => { const cur = draftEdit[row.claim_id]; if (cur) void saveDraft(row, cur.subject, cur.body); };
+                        return (
+                          <>
+                            <input
+                              className="cpc-email-subj cpc-email-edit"
+                              value={subj}
+                              onFocus={start}
+                              onChange={(e) => setDraftEdit((m) => ({ ...m, [row.claim_id]: { ...(m[row.claim_id] || { subject: email.subject, body: emailBody }), subject: e.target.value } }))}
+                              onBlur={commit}
+                              aria-label="Reminder subject"
+                            />
+                            {canEditBody ? (
+                              <textarea
+                                className="cpc-email-text cpc-email-edit"
+                                value={body}
+                                rows={Math.max(4, body.split("\n").length + 1)}
+                                onFocus={start}
+                                onChange={(e) => setDraftEdit((m) => ({ ...m, [row.claim_id]: { ...(m[row.claim_id] || { subject: email.subject, body: emailBody }), body: e.target.value } }))}
+                                onBlur={commit}
+                                aria-label="Reminder body"
+                              />
+                            ) : (
+                              <div className="cpc-email-text">
+                                {emailBody.split("\n").map((p, i) => (<p key={i}>{p}</p>))}
+                                <p className="cp-muted">Final reminder: pick Legal Action or Work Termination in Edit draft.</p>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : (
@@ -2894,6 +2983,14 @@ const CSS = `
 .cpc-email-subj { font-weight:600; margin-bottom:8px; }
 .cpc-email-text { color:#334155; }
 .cpc-email-text p { margin:0 0 6px; }
+.cpc-email-edit { display:block; width:100%; box-sizing:border-box; border:1px solid transparent; border-radius:6px; background:transparent; padding:4px 6px; font:inherit; color:inherit; line-height:1.55; resize:vertical; }
+.cpc-email-edit:hover { border-color:var(--c-border); }
+.cpc-email-edit:focus { outline:none; border-color:#2563eb; background:#fff; box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+input.cpc-email-subj.cpc-email-edit { font-weight:600; margin-bottom:6px; }
+textarea.cpc-email-text.cpc-email-edit { color:#334155; white-space:pre-wrap; }
+.cpc-email-edited { border-color:#f59e0b; }
+.cpc-email-editrow { display:flex; align-items:center; gap:8px; margin-top:4px; font-size:11px; }
+.cpc-email-flag { display:inline-block; padding:1px 6px; border-radius:999px; background:#fef3c7; color:#92400e; font-weight:600; }
 .cpc-empty { padding:24px; text-align:center; color:var(--c-muted); font-size:13px; border:1px dashed var(--c-border); border-radius:12px; }
 .cpc-toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--c-accent); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; z-index:60; box-shadow:0 8px 24px rgba(0,0,0,.18); }
 @media (max-width:900px) {
