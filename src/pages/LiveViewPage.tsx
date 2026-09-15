@@ -1329,6 +1329,12 @@ export default function LiveViewPage() {
   const [claimFilter, setClaimFilter] = useState<"all" | "outstanding">("all");
   const [invFilter, setInvFilter] = useState<"all" | "open">("all");
   const [stockCounts, setStockCounts] = useState({ out: 0, critical: 0, low: 0 });
+  // Homepage lists show the first CLAIM_PREVIEW rows; clicking "Show all"
+  // expands them in place so the full table is reachable without leaving the
+  // page (Export still exports the whole filtered list either way).
+  const CLAIM_PREVIEW = 5;
+  const [showAllProgress, setShowAllProgress] = useState(false);
+  const [showAllConplus, setShowAllConplus] = useState(false);
   const [poFrom, setPoFrom] = useState("");
   const [poTo, setPoTo] = useState("");
   const [claimFrom, setClaimFrom] = useState(MONTH_FROM);
@@ -1688,41 +1694,59 @@ export default function LiveViewPage() {
           <StockWatchlist onCounts={setStockCounts} />
 
           {/* Progress Claims — contract work, claimed monthly, retention held */}
-          <Section
-            title="Progress Claims"
-            icon={<DollarSign className="h-4 w-4" />}
-            action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={progressClaims} columns={COLS.claims} title="Progress Claims" /></div>}
-          >
-            {/* Cap the visible height so a long list scrolls inside the card
-                instead of stretching the whole homepage. Every row is still
-                reachable; footer names the total and links to the full tab. */}
-            <div className="max-h-[460px] overflow-y-auto">
-              <ClaimRows rows={progressClaims} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No progress claims on record yet." />
-            </div>
-            {progressClaims.length > 0 && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
-                <span>{progressClaims.length} progress {progressClaims.length === 1 ? "claim" : "claims"}</span>
-                <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
-              </div>
-            )}
-          </Section>
+          {(() => {
+            const visibleProgress = showAllProgress ? progressClaims : progressClaims.slice(0, CLAIM_PREVIEW);
+            const hiddenProgress = progressClaims.length - visibleProgress.length;
+            return (
+              <Section
+                title="Progress Claims"
+                icon={<DollarSign className="h-4 w-4" />}
+                action={<div className="flex flex-wrap items-center gap-1.5">{claimFilter === "outstanding" && <ClearChip onClick={() => setClaimFilter("all")} />}<DateRange from={claimFrom} to={claimTo} onFrom={setClaimFrom} onTo={setClaimTo} label="Claim date" /><SearchBox value={claimSearch} onChange={setClaimSearch} placeholder="Search claims..." /><ExportMenu rows={progressClaims} columns={COLS.claims} title="Progress Claims" /></div>}
+              >
+                <ClaimRows rows={visibleProgress} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No progress claims on record yet." />
+                {progressClaims.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+                    <span>Showing {visibleProgress.length} of {progressClaims.length} {progressClaims.length === 1 ? "claim" : "claims"}</span>
+                    <div className="flex items-center gap-3">
+                      {progressClaims.length > CLAIM_PREVIEW && (
+                        <button onClick={() => setShowAllProgress((v) => !v)} className="text-primary hover:underline">
+                          {showAllProgress ? "Show fewer" : `Show all ${progressClaims.length}`}
+                        </button>
+                      )}
+                      <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
+                    </div>
+                  </div>
+                )}
+              </Section>
+            );
+          })()}
 
           {/* Conplus Invoices — small jobs billed once, no retention */}
-          <Section
-            title="Conplus Invoices"
-            icon={<FileText className="h-4 w-4" />}
-            action={<ExportMenu rows={conplusInvoices} columns={COLS.claims} title="Conplus Invoices" />}
-          >
-            <div className="max-h-[460px] overflow-y-auto">
-              <ClaimRows rows={conplusInvoices} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No Conplus invoices on record yet." />
-            </div>
-            {conplusInvoices.length > 0 && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
-                <span>{conplusInvoices.length} {conplusInvoices.length === 1 ? "invoice" : "invoices"}</span>
-                <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
-              </div>
-            )}
-          </Section>
+          {(() => {
+            const visibleConplus = showAllConplus ? conplusInvoices : conplusInvoices.slice(0, CLAIM_PREVIEW);
+            return (
+              <Section
+                title="Conplus Invoices"
+                icon={<FileText className="h-4 w-4" />}
+                action={<ExportMenu rows={conplusInvoices} columns={COLS.claims} title="Conplus Invoices" />}
+              >
+                <ClaimRows rows={visibleConplus} onOpen={(c) => setDetail({ type: "claim", item: c })} onEdit={(c) => setDetail({ type: "claim", item: c, editing: true })} empty="No Conplus invoices on record yet." />
+                {conplusInvoices.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+                    <span>Showing {visibleConplus.length} of {conplusInvoices.length} {conplusInvoices.length === 1 ? "invoice" : "invoices"}</span>
+                    <div className="flex items-center gap-3">
+                      {conplusInvoices.length > CLAIM_PREVIEW && (
+                        <button onClick={() => setShowAllConplus((v) => !v)} className="text-primary hover:underline">
+                          {showAllConplus ? "Show fewer" : `Show all ${conplusInvoices.length}`}
+                        </button>
+                      )}
+                      <Link to="/claims" className="text-primary hover:underline">View in Claims tab →</Link>
+                    </div>
+                  </div>
+                )}
+              </Section>
+            );
+          })()}
 
           {/* Alerts */}
           <Section title="Active Alerts" icon={<AlertTriangle className="h-4 w-4" />}>
