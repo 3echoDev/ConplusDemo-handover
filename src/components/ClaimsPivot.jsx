@@ -664,8 +664,10 @@ function ClaimDetail({ project }) {
           {project.claims.map((c, i) => {
             const cert = c.certified ?? 0;
             const amt = c.amount ?? 0;
-            const balance = c.amount != null && c.certified != null ? amt - cert : null;
-            const balanceRet = c.amount != null && c.certified != null ? amt + c.retention - cert : null;
+            // Not yet certified counts as 0 certified: the whole claim is still outstanding
+            // (client master: Claim 2 pending → Bal (+Ret) 12,500 / Balance 11,250).
+            const balance = c.amount != null ? amt - cert : null;
+            const balanceRet = c.amount != null ? amt + c.retention - cert : null;
             const isCurrentMonth = monthKey(c.claim_date) === CURRENT_MONTH;
             const isEditing = editIdx === i;
 

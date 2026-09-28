@@ -18,6 +18,9 @@ export interface ClaimDocContext {
   retentionPct: number | null; // projects.retention_pct (e.g. 10)
   retentionCapPct: number | null; // projects.retention_cap_pct (e.g. 5)
   gstPct?: number; // default 9
+  // Net certified on this project's earlier claims (Σ certified_amount, claim_no < this).
+  // The client master's cover row 8 uses this, not the lines' previous claimed amount.
+  previouslyCertified?: number | null;
   projectSite?: string; // cover "Project Site:" — project name when the claim only has a code
   clientEmail?: string; // projects.contact_email
   preparedBy?: string; // signature block, left
@@ -34,7 +37,7 @@ export interface ClaimTotals {
   firstRelease: number;
   secondRelease: number;
   netAfterRetention: number;
-  previouslyCertified: number; // sum of prev_amount across lines
+  previouslyCertified: number; // ctx.previouslyCertified, else sum of prev_amount across lines
   claimAmount: number; // this period's claim (net - previous)
   gst: number;
   claimInclGst: number;
@@ -53,7 +56,10 @@ export function computeClaimTotals(claim: Claim, ctx: ClaimDocContext): ClaimTot
   const workDone = hasLines
     ? lines.reduce((s, l) => s + (l.cumAmount ?? 0), 0)
     : claim.totalClaim ?? claim.amount + (claim.retentionAmount ?? 0);
-  const previouslyCertified = hasLines ? lines.reduce((s, l) => s + (l.prevAmount ?? 0), 0) : 0;
+  const previouslyCertified =
+    ctx.previouslyCertified != null
+      ? ctx.previouslyCertified
+      : hasLines ? lines.reduce((s, l) => s + (l.prevAmount ?? 0), 0) : 0;
 
   const retPct = ctx.retentionPct ?? claim.retentionPct ?? 10;
   const capPct = ctx.retentionCapPct ?? 5;

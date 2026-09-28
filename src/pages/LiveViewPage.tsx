@@ -775,8 +775,15 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
   const [editing, setEditing] = useState(startEditing);
   const [saving, setSaving] = useState(false);
 
-  const { projects } = useAppData();
+  const { projects, claims } = useAppData();
   const project = projects.find((p) => p.id === claim.projectId || p.code === claim.projectCode);
+  // Cover row 8 "Less: Amounts Previously Certified" = net certified on this project's earlier claims.
+  const previouslyCertified = claim.claimNo != null
+    ? claims
+        .filter((c) => c.id !== claim.id && (c.projectId === claim.projectId || c.projectCode === claim.projectCode)
+          && c.claimNo != null && c.claimNo < claim.claimNo!)
+        .reduce((s, c) => s + (c.certifiedAmount ?? 0), 0)
+    : null;
   const clientName = claim.clientName || project?.client || "—";
 
   // Load this claim's lines on open (lazy — not part of the list fetch)
@@ -795,6 +802,7 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
     retentionPct: project?.retentionPct ?? null,
     retentionCapPct: project?.retentionCapPct ?? null,
     gstPct: 9,
+    previouslyCertified,
     projectSite: project?.name,
     preparedBy: "Hnin (QS)",
     authorisedBy: project?.manager && project.manager !== "—" ? project.manager : "",

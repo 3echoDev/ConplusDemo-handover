@@ -51,3 +51,25 @@ describe("computeClaimTotals — retention rule", () => {
     expect(t.retentionSource).toBe("lines");
   });
 });
+
+describe("computeClaimTotals — amounts previously certified", () => {
+  // E25077 Claim 02 (client master, 19 Sep): cumulative work 17,882, previously claimed 5,382,
+  // Claim 1 certified 4,500 net → Claim Amount 11,593.80.
+  const claim2 = baseClaim({
+    claimNo: 2,
+    lines: [line({ prevQty: 107.64, prevAmount: 5382, currQty: 250, currAmount: 12500, cumQty: 357.64, cumAmount: 17882 })],
+  });
+
+  it("uses the net certified on earlier claims when the context supplies it", () => {
+    const t = computeClaimTotals(claim2, { ...ctx, previouslyCertified: 4500 });
+    expect(t.netAfterRetention).toBeCloseTo(16093.8, 2);
+    expect(t.previouslyCertified).toBe(4500);
+    expect(t.claimAmount).toBeCloseTo(11593.8, 2);
+    expect(t.claimInclGst).toBeCloseTo(12637.24, 2);
+  });
+
+  it("falls back to the lines' previous amount without context", () => {
+    const t = computeClaimTotals(claim2, ctx);
+    expect(t.previouslyCertified).toBe(5382);
+  });
+});
