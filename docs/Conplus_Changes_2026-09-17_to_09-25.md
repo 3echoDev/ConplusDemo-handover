@@ -20,13 +20,13 @@ Status legend: **TODO** = not started · **Q** = question back to the client · 
 
 ## A. Quick fixes
 
-### A1. Project page: PIC vs Sales Mgr is wrong. TODO
+### A1. Project page: PIC vs Sales Mgr is wrong. DONE 2026-09-28 (a301a88)
 - Ask (17 Sep, #2): on project E25073 Coway the record is correct as **PIC: Brandan, Sales Mgr: Meredith**. The page shows "Sales Mgr: Brandan".
 - Cause: `src/pages/LiveViewPage.tsx:394` renders `project.manager` (the PIC) under the label "Sales Mgr". The activity log shows the sales manager is stored separately (WAN FERN → MEREDITH).
 - Fix: show two fields, `PIC: <manager>` and `Sales Mgr: <sales manager field>`.
 - Screenshot: `20260917_1543_inline1_769x859.png`.
 
-### A2. Skip the PO approval step. TODO
+### A2. Skip the PO approval step. DONE in app 2026-09-28 (a301a88) + procurement skill 2026-09-28; open: 6 July pending POs, po-draft/purchase skills
 - Ask (17 Sep, #3): "Skip the PO approval step. No PO approval is required."
 - New flow: Jensen approves the WO → Wendy uploads the WO to Claude → Claude prepares the PO template → Wendy clicks **Proceed** to create or update the PO.
 - Impact:
@@ -46,7 +46,7 @@ Status legend: **TODO** = not started · **Q** = question back to the client · 
   - Show it in the PO view, Excel and PDF.
 - Screenshot: `20260917_1543_inline2_768x868.png` (PO 2609-0001, Sto).
 
-### A4. Claim Excel still has an "Instructions" sheet. TODO
+### A4. Claim Excel still has an "Instructions" sheet. DONE 2026-09-28 (a301a88)
 - Ask (19 Sep): "I have deleted the *Instructions* sheet from the Excel file, but it is still shown in the system."
 - Her Claims 01–03 have only `Cover Page & Claim Summary` + `Claim Details`.
 - Cause: `src/lib/claimExcel.ts:554` always adds `writeInstructions(wb.addWorksheet("Instructions"))`.
@@ -54,7 +54,7 @@ Status legend: **TODO** = not started · **Q** = question back to the client · 
 
 ---
 
-## B. Progress Claims: dashboard must match the Excel (19 Sep). TODO, high priority
+## B. Progress Claims: dashboard must match the Excel (19 Sep). DONE 2026-09-28 (b70b205 + E25077 claim 2 data corrected + to_claim view); verified live against the annotated screenshot
 
 Project **E25077** STA Singapore Phase 1 at Tuas South Ave 12 (HPC Builders), contract $111,696.00.
 
@@ -100,7 +100,7 @@ The Claim 02 PDF from the main contractor, `20260919_1309_(AI)E25077 HPC - STA T
 
 Also shown: the E25077-2 export warns "Payment terms are empty" (`20260919_1309_inline1_780x914.png`). Payment terms list is still BLOCKED on the client.
 
-### B1. Certified figures come from the updated Progress Claim. TODO
+### B1. Certified figures come from the updated Progress Claim. PARTLY DONE: billing skill 2026-09-28 (re-upload updates the claim) written, not yet sent to Wendy; not yet tested with a real re-upload
 - Wendy fills **Main Contractor's Cumulative Verified** (rate / qty / amount per line) and **Payment Certified** on the cover page of the same claim workbook.
 - She then re-uploads the updated Claim 02 together with the Payment Certificate so Accounts can invoice.
 - After re-upload, Claim 02 on the dashboard must equal the Excel, including certified figures and per-line verified quantities and differences.
@@ -214,7 +214,7 @@ Build implication: this is the "daily site report form" deferred from 14 Sep, no
 
 ---
 
-## Replies owed to the client
+## Replies owed to the client (ARCHIVED 2026-09-28: handled on WhatsApp)
 1. **Wendy (18 Sep):** feasibility of the claims@ / Payment Certificate workflow (C2 who-sent answer, C4 plan).
 2. **Wendy (19 Sep):** acknowledge the Claim 02 mismatch and give a fix ETA (B).
 3. **Lynn (18 + 25 Sep):** acknowledge the planning workflow R1 + inventory enhancements; confirm the scope in D and E.
