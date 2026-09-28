@@ -25,7 +25,7 @@ import { printPO, exportPOToExcel } from "@/lib/poDocument";
 import { printWO, woOrderTotal } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import { printClaim, computeClaimTotals, type ClaimDocContext } from "@/lib/claimDocument";
-import { exportClaimToExcel } from "@/lib/claimExcel";
+import { exportClaimToExcel, lineKey } from "@/lib/claimExcel";
 import { fetchClaimLines } from "@/data/db";
 import ClaimLinesEditor from "@/components/ClaimLinesEditor";
 import StockWatchlist from "@/components/StockWatchlist";
@@ -797,6 +797,29 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
     return () => { alive = false; };
   }, [claim.id]);
 
+  // Previous claim's cumulative verified qty per line, so the Excel can split the
+  // Main Contractor's Cumulative Verified block into Previous / Current.
+  const prevClaimId = claim.claimNo != null
+    ? claims
+        .filter((c) => c.id !== claim.id && (c.projectId === claim.projectId || c.projectCode === claim.projectCode)
+          && c.claimNo != null && c.claimNo < claim.claimNo!)
+        .sort((a, b) => (b.claimNo ?? 0) - (a.claimNo ?? 0))[0]?.id ?? null
+    : null;
+  const [previousVerified, setPreviousVerified] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let alive = true;
+    if (!prevClaimId) { setPreviousVerified({}); return; }
+    fetchClaimLines(prevClaimId)
+      .then((ls) => {
+        if (!alive) return;
+        const map: Record<string, number> = {};
+        for (const l of ls) map[lineKey(l)] = l.verifiedQty ?? 0;
+        setPreviousVerified(map);
+      })
+      .catch(() => { if (alive) setPreviousVerified({}); });
+    return () => { alive = false; };
+  }, [prevClaimId]);
+
   // Retention terms live on the project; build the generator context from it.
   const docCtx: ClaimDocContext = {
     subContractSum: project?.budget ?? null,
@@ -804,6 +827,7 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
     retentionCapPct: project?.retentionCapPct ?? null,
     gstPct: 9,
     previouslyCertified,
+    previousVerified,
     projectSite: project?.name,
     preparedBy: "Hnin (QS)",
     authorisedBy: project?.manager && project.manager !== "—" ? project.manager : "",

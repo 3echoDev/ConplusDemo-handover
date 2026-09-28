@@ -21,6 +21,9 @@ export interface ClaimDocContext {
   // Net certified on this project's earlier claims (Σ certified_amount, claim_no < this).
   // The client master's cover row 8 uses this, not the lines' previous claimed amount.
   previouslyCertified?: number | null;
+  // Previous claim's cumulative verified qty per line (claimExcel lineKey → qty), so the
+  // Excel splits Main Contractor's Cumulative Verified into Previous / Current.
+  previousVerified?: Record<string, number>;
   projectSite?: string; // cover "Project Site:" — project name when the claim only has a code
   clientEmail?: string; // projects.contact_email
   preparedBy?: string; // signature block, left

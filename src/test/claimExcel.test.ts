@@ -152,3 +152,47 @@ describe("claim workbook vs corrected master", () => {
     expect(val(det, `G${subtotalRow}`)).toBeCloseTo(items.reduce((s, i) => s + i.qty * i.rate, 0), 2);
   });
 });
+
+describe("claim 02: main contractor's cumulative verified (client Excel, 19 Sep)", () => {
+  // Claim 02: A1 claimed 107.64 before + 250 now; main-con verified 100 m2 on Claim 01, nothing new yet.
+  const lines2: ClaimLine[] = lines.map((l) => l.pgRef === "A1"
+    ? { ...l, claimId: "c2", prevQty: 107.64, prevAmount: 5382, currQty: 250, currAmount: 12500, cumQty: 357.64, cumAmount: 17882, verifiedQty: 100, verifiedAmount: 5000 }
+    : { ...l, claimId: "c2", prevQty: 0, prevAmount: 0, currQty: 0, currAmount: 0, cumQty: 0, cumAmount: 0, verifiedQty: 0, verifiedAmount: 0 });
+  const claim2: Claim = { ...claim, id: "c2", claimNumber: "CLM-E25077-2", claimNo: 2, lines: lines2 };
+  let d2: ExcelJS.Worksheet;
+  let c2: ExcelJS.Worksheet;
+  let a1 = 0;
+  // ExcelJS drops a cached formula result of 0 on write; Excel recalculates it on open.
+  const num = (sheet: ExcelJS.Worksheet, addr: string) => val(sheet, addr) ?? 0;
+
+  beforeAll(async () => {
+    const built = buildClaimWorkbook(claim2, { ...ctx, previouslyCertified: 4500, previousVerified: { "A|A1": 100 } });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await built.xlsx.writeBuffer()) as ArrayBuffer);
+    d2 = book.getWorksheet(CLAIM_SHEET_DETAILS)!;
+    c2 = book.getWorksheet(CLAIM_SHEET_COVER)!;
+    d2.eachRow((row, n) => { if (!a1 && String(row.getCell("B").value ?? "") === "A1") a1 = n; });
+  });
+
+  it("splits A1 verified into previous 100 m2 / $5,000 and current 0", () => {
+    expect(a1).toBeGreaterThan(0);
+    expect(num(d2, `S${a1}`)).toBe(50);
+    expect(num(d2, `T${a1}`)).toBe(100);
+    expect(num(d2, `U${a1}`)).toBe(0);
+    expect(num(d2, `V${a1}`)).toBe(100);
+    expect(num(d2, `W${a1}`)).toBe(5000);
+    expect(num(d2, `X${a1}`)).toBe(0);
+    expect(num(d2, `Y${a1}`)).toBe(5000);
+    expect(num(d2, `AA${a1}`)).toBeCloseTo(5000 - 17882, 2);
+  });
+
+  it("carries the verified total into the cover's Payment Certified column", () => {
+    expect(num(c2, "G45")).toBe(5000);
+    expect(num(c2, "G47")).toBe(5000);
+    expect(num(c2, "G50")).toBe(-500);
+    expect(num(c2, "G53")).toBe(4500);
+    expect(num(c2, "G54")).toBe(4500);
+    expect(num(c2, "G55")).toBe(0);
+    expect(num(c2, "F55")).toBeCloseTo(11593.8, 2);
+  });
+});

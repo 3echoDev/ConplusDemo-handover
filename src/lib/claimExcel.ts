@@ -98,6 +98,10 @@ const fx = (formula: string, result: number | string | Date | null) => ({ formul
 // I Rate, J Prev qty, K Curr qty, L Total qty, M Prev $, N Curr $, O Total $, P % claimed, Q Remarks,
 // S Rate, T Prev qty, U Curr qty, V Total qty, W Prev $, X Curr $, Y Total $, Z % verified, AA Difference.
 
+/** Previous claim's cumulative verified qty per line, keyed by lineKey(). */
+export type PrevVerified = Record<string, number>;
+export const lineKey = (l: Pick<ClaimLine, "section" | "pgRef" | "seq">) => `${l.section}|${l.pgRef || l.seq}`;
+
 interface SectionLayout {
   firstRow: number;
   lastRow: number;
@@ -107,6 +111,8 @@ interface SectionLayout {
   prev: number;
   curr: number;
   cum: number;
+  vPrev: number;
+  vCurr: number;
   verified: number;
 }
 
@@ -118,6 +124,7 @@ function writeSection(
   lines: ClaimLine[],
   emptyNote: string,
   subtotalLabel: string,
+  prevVerified: PrevVerified = {},
 ): SectionLayout {
   let r = startRow;
   // Section band — one wide merge B..Q for the label, then the S..Z cells
@@ -150,7 +157,9 @@ function writeSection(
   const firstRow = r;
   const itemRows: number[] = [];
   let contract = 0, prev = 0, curr = 0, cum = 0;
-  const verified = 0; // main contractor's verified figures are keyed in after certification
+  // Main contractor's cumulative verified: claim_lines.verified_qty is cumulative, so
+  // Previous = the previous claim's verified qty on the same line, Current = the rest.
+  let vPrev = 0, vCurr = 0, verified = 0;
   let lastZone: string | null = null;
 
   const rows = lines.length ? lines : [null];
@@ -177,8 +186,13 @@ function writeSection(
     const cq = l?.currQty ?? 0;
     const amount = round2(qty * rate);
     const pAmt = round2(pq * rate), cAmt = round2(cq * rate);
-    const vRate = 0, vPq = 0, vCq = 0;
+    const vRate = l ? rate : 0;
+    const vCum = l?.verifiedQty ?? 0;
+    const vPq = l ? Math.min(vCum, prevVerified[lineKey(l)] ?? 0) : 0;
+    const vCq = round2(vCum - vPq);
+    const vpAmt = round2(vPq * vRate), vcAmt = round2(vCq * vRate), vAmt = round2(vpAmt + vcAmt);
     contract += amount; prev += pAmt; curr += cAmt; cum += pAmt + cAmt;
+    vPrev += vpAmt; vCurr += vcAmt; verified += vAmt;
 
     // Item row — bold; qty/rate/prev-curr are formulas over the work-done sub-row(s).
     setCell(ws, `B${item}`, l?.pgRef || "", { font: F_LABEL, align: { horizontal: "center", vertical: "middle" } });
@@ -196,15 +210,15 @@ function writeSection(
     setCell(ws, `O${item}`, fx(`M${item}+N${item}`, pAmt + cAmt), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     setCell(ws, `P${item}`, fx(`IF(G${item}=0,0,O${item}/G${item})`, amount ? (pAmt + cAmt) / amount : 0), { font: F_LABEL, fill: YELLOW, nf: "0.0%", align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `Q${item}`, "", { font: F_NOTE, align: { horizontal: "left", vertical: "middle", wrapText: true } });
-    setCell(ws, `S${item}`, vRate, { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `S${item}`, l ? vRate : null, { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `T${item}`, fx(`SUM(T${sub}:T${subLast})`, vPq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
     setCell(ws, `U${item}`, fx(`SUM(U${sub}:U${subLast})`, vCq), { font: F_LABEL, fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `V${item}`, fx(`T${item}+U${item}`, 0), { font: F_LABEL, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `W${item}`, fx(`T${item}*S${item}`, 0), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `X${item}`, fx(`U${item}*S${item}`, 0), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `Y${item}`, fx(`W${item}+X${item}`, 0), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-    setCell(ws, `Z${item}`, fx(`IF(G${item}=0,0,Y${item}/G${item})`, 0), { font: F_LABEL, nf: "0.0%", align: { horizontal: "center", vertical: "middle" } });
-    setCell(ws, `AA${item}`, fx(`Y${item}-O${item}`, -(pAmt + cAmt)), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+    setCell(ws, `V${item}`, fx(`T${item}+U${item}`, vCum), { font: F_LABEL, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `W${item}`, fx(`T${item}*S${item}`, vpAmt), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+    setCell(ws, `X${item}`, fx(`U${item}*S${item}`, vcAmt), { font: F_LABEL, fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+    setCell(ws, `Y${item}`, fx(`W${item}+X${item}`, vAmt), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+    setCell(ws, `Z${item}`, fx(`IF(G${item}=0,0,Y${item}/G${item})`, amount ? vAmt / amount : 0), { font: F_LABEL, nf: "0.0%", align: { horizontal: "center", vertical: "middle" } });
+    setCell(ws, `AA${item}`, fx(`Y${item}-O${item}`, round2(vAmt - (pAmt + cAmt))), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
     borderRange(ws, `B${item}:AA${item}`);
     const descLines = (l?.description ?? "").split("\n").length;
     ws.getRow(item).height = Math.max(21, 17 * descLines + 6);
@@ -217,6 +231,7 @@ function writeSection(
       const jVal = first ? pq : 0, kVal = first ? cq : 0;
       const tVal = first ? vPq : 0, uVal = first ? vCq : 0;
       const jAmt = first ? pAmt : 0, kAmt = first ? cAmt : 0;
+      const tAmt = first ? vpAmt : 0, uAmt = first ? vcAmt : 0;
       setCell(ws, `B${s}`, l && first ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
       setCell(ws, `C${s}`, first ? l?.remarks ?? "" : "", { fill: YELLOW, align: { vertical: "middle" } });
       for (const col of ["D", "E", "F"]) setCell(ws, `${col}${s}`, "", { fill: YELLOW });
@@ -233,12 +248,12 @@ function writeSection(
       setCell(ws, `S${s}`, "", { fill: YELLOW, nf: NF_MONEY });
       setCell(ws, `T${s}`, tVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
       setCell(ws, `U${s}`, uVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `V${s}`, fx(`T${s}+U${s}`, 0), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `W${s}`, fx(`T${s}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
-      setCell(ws, `X${s}`, fx(`U${s}*S${item}`, 0), { fill: YELLOW, nf: NF_MONEY });
-      setCell(ws, `Y${s}`, fx(`W${s}+X${s}`, 0), { nf: NF_MONEY });
+      setCell(ws, `V${s}`, fx(`T${s}+U${s}`, tVal + uVal), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `W${s}`, fx(`T${s}*S${item}`, tAmt), { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `X${s}`, fx(`U${s}*S${item}`, uAmt), { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `Y${s}`, fx(`W${s}+X${s}`, tAmt + uAmt), { nf: NF_MONEY });
       setCell(ws, `Z${s}`, "", { nf: "0.0%" });
-      setCell(ws, `AA${s}`, fx(`Y${s}-O${s}`, first ? -(pAmt + cAmt) : 0), { nf: NF_MONEY });
+      setCell(ws, `AA${s}`, fx(`Y${s}-O${s}`, first ? round2(vAmt - (pAmt + cAmt)) : 0), { nf: NF_MONEY });
       borderRange(ws, `B${s}:AA${s}`);
       ws.getRow(s).height = 21;
     }
@@ -259,15 +274,15 @@ function writeSection(
   // Total claimed sums only item rows (F non-empty), like the master's SUMIF.
   setCell(ws, `O${r}`, fx(`SUMIF(F${firstRow}:F${lastRow},"<>",O${firstRow}:O${lastRow})`, round2(cum)), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
   setCell(ws, `P${r}`, fx(`IF(G${r}=0,0,O${r}/G${r})`, contract ? cum / contract : 0), { font: F_LABEL, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
-  sumCol("W", 0);
-  sumCol("X", 0);
-  setCell(ws, `Y${r}`, fx(`SUMIF(P${firstRow}:P${lastRow},"<>",Y${firstRow}:Y${lastRow})`, verified), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-  setCell(ws, `Z${r}`, fx(`IF(G${r}=0,0,Y${r}/G${r})`, 0), { font: F_LABEL, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
+  sumCol("W", vPrev);
+  sumCol("X", vCurr);
+  setCell(ws, `Y${r}`, fx(`SUMIF(P${firstRow}:P${lastRow},"<>",Y${firstRow}:Y${lastRow})`, round2(verified)), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+  setCell(ws, `Z${r}`, fx(`IF(G${r}=0,0,Y${r}/G${r})`, contract ? verified / contract : 0), { font: F_LABEL, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
   setCell(ws, `AA${r}`, fx(`Y${r}-O${r}`, round2(verified - cum)), { font: F_LABEL, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
   borderRange(ws, `B${r}:AA${r}`);
   ws.getRow(r).height = 21;
 
-  return { firstRow, lastRow, subtotalRow, itemRows, contract: round2(contract), prev: round2(prev), curr: round2(curr), cum: round2(cum), verified };
+  return { firstRow, lastRow, subtotalRow, itemRows, contract: round2(contract), prev: round2(prev), curr: round2(curr), cum: round2(cum), vPrev: round2(vPrev), vCurr: round2(vCurr), verified: round2(verified) };
 }
 
 function writeDetails(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext) {
@@ -318,8 +333,8 @@ function writeDetails(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext)
   const { A, B } = bySection(claim.lines ?? []);
   const aRef = A.find((l) => l.quotationRef)?.quotationRef ?? claim.woRef ?? "";
   const bRef = B.find((l) => l.quotationRef)?.quotationRef ?? "";
-  const secA = writeSection(ws, 13, "A    SUB-CONTRACT WORKS", aRef, A, "QUOTATION REF: (none)", "Subtotal — Sub-Contract Works (A)");
-  const secB = writeSection(ws, secA.subtotalRow + 2, "B    VARIATION WORKS", bRef, B, "QUOTATION REF: (none — no variations to date)", "Subtotal — Variation Works (B)");
+  const secA = writeSection(ws, 13, "A    SUB-CONTRACT WORKS", aRef, A, "QUOTATION REF: (none)", "Subtotal — Sub-Contract Works (A)", ctx.previousVerified ?? {});
+  const secB = writeSection(ws, secA.subtotalRow + 2, "B    VARIATION WORKS", bRef, B, "QUOTATION REF: (none — no variations to date)", "Subtotal — Variation Works (B)", ctx.previousVerified ?? {});
 
   const totalRow = secB.subtotalRow + 2;
   ws.mergeCells(`B${totalRow}:F${totalRow}`);
@@ -331,10 +346,11 @@ function writeDetails(ws: ExcelJS.Worksheet, claim: Claim, ctx: ClaimDocContext)
   tot("N", secA.curr + secB.curr);
   tot("O", secA.cum + secB.cum, `O${secA.subtotalRow}+O${secB.subtotalRow}`);
   setCell(ws, `P${totalRow}`, fx(`IF(G${totalRow}=0,0,O${totalRow}/G${totalRow})`, (secA.contract + secB.contract) ? (secA.cum + secB.cum) / (secA.contract + secB.contract) : 0), { font: F_LABEL, fill: PEACH, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
-  tot("W", 0); tot("X", 0);
-  tot("Y", 0, `Y${secA.subtotalRow}+Y${secB.subtotalRow}`);
-  setCell(ws, `Z${totalRow}`, fx(`IF(G${totalRow}=0,0,Y${totalRow}/G${totalRow})`, 0), { font: F_LABEL, fill: PEACH, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
-  setCell(ws, `AA${totalRow}`, fx(`Y${totalRow}-O${totalRow}`, -round2(secA.cum + secB.cum)), { font: F_LABEL, fill: PEACH, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+  const vTotal = secA.verified + secB.verified, contractTotal = secA.contract + secB.contract;
+  tot("W", secA.vPrev + secB.vPrev); tot("X", secA.vCurr + secB.vCurr);
+  tot("Y", vTotal, `Y${secA.subtotalRow}+Y${secB.subtotalRow}`);
+  setCell(ws, `Z${totalRow}`, fx(`IF(G${totalRow}=0,0,Y${totalRow}/G${totalRow})`, contractTotal ? vTotal / contractTotal : 0), { font: F_LABEL, fill: PEACH, nf: NF_PCT, align: { horizontal: "center", vertical: "middle" } });
+  setCell(ws, `AA${totalRow}`, fx(`Y${totalRow}-O${totalRow}`, round2(vTotal - (secA.cum + secB.cum))), { font: F_LABEL, fill: PEACH, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
   borderRange(ws, `B${totalRow}:AA${totalRow}`);
   ws.getRow(totalRow).height = 21;
 
@@ -460,20 +476,25 @@ function writeCover(
   const D = `'${CLAIM_SHEET_DETAILS}'`;
   const retPct = (ctx.retentionPct ?? claim.retentionPct ?? 10) / 100;
   const capPct = ctx.retentionCapPct ?? 5;
+  // Cached results for the Payment Certified column (G), so it reads right before Excel recalculates.
+  const certWork = round2(det.secA.verified + det.secB.verified);
+  const certRetention = round2((certWork + t.advancePayment - t.advanceRecovery) * retPct);
+  const certNet = round2(certWork + t.advancePayment - t.advanceRecovery - certRetention + t.firstRelease + t.secondRelease);
+  const cert = { work: certWork, retention: certRetention, net: certNet, claim: round2(certNet - t.previouslyCertified), gst: (certNet - t.previouslyCertified) * ((ctx.gstPct ?? 9) / 100) };
   const ladder: { sn: string; desc: string; D?: ExcelJS.CellValue; E?: ExcelJS.CellValue; F: ExcelJS.CellValue; G: ExcelJS.CellValue; strong?: boolean; yellowF?: boolean; yellowE?: boolean; pctE?: boolean }[] = [
-    { sn: "1", desc: "Sub-Contract Works", D: fx(`${D}!G${det.secA.subtotalRow}`, det.secA.contract), E: fx("IF(D45=0,0,F45/D45)", det.secA.contract ? det.secA.cum / det.secA.contract : 0), F: fx(`${D}!O${det.secA.subtotalRow}`, det.secA.cum), G: fx(`${D}!Y${det.secA.subtotalRow}`, 0), pctE: true },
-    { sn: "2", desc: "Variation Works", D: fx(`${D}!G${det.secB.subtotalRow}`, det.secB.contract), E: fx("IF(D46=0,0,F46/D46)", det.secB.contract ? det.secB.cum / det.secB.contract : 0), F: fx(`${D}!O${det.secB.subtotalRow}`, det.secB.cum), G: fx(`${D}!Y${det.secB.subtotalRow}`, 0), pctE: true },
-    { sn: "3", desc: "Total Value of Work Carried Out", D: fx("D45+D46", det.secA.contract + det.secB.contract), E: fx("IF(D47=0,0,F47/D47)", (det.secA.contract + det.secB.contract) ? t.workDone / (det.secA.contract + det.secB.contract) : 0), F: fx("F45+F46", t.workDone), G: fx("G45+G46", 0), strong: true, pctE: true },
+    { sn: "1", desc: "Sub-Contract Works", D: fx(`${D}!G${det.secA.subtotalRow}`, det.secA.contract), E: fx("IF(D45=0,0,F45/D45)", det.secA.contract ? det.secA.cum / det.secA.contract : 0), F: fx(`${D}!O${det.secA.subtotalRow}`, det.secA.cum), G: fx(`${D}!Y${det.secA.subtotalRow}`, det.secA.verified), pctE: true },
+    { sn: "2", desc: "Variation Works", D: fx(`${D}!G${det.secB.subtotalRow}`, det.secB.contract), E: fx("IF(D46=0,0,F46/D46)", det.secB.contract ? det.secB.cum / det.secB.contract : 0), F: fx(`${D}!O${det.secB.subtotalRow}`, det.secB.cum), G: fx(`${D}!Y${det.secB.subtotalRow}`, det.secB.verified), pctE: true },
+    { sn: "3", desc: "Total Value of Work Carried Out", D: fx("D45+D46", det.secA.contract + det.secB.contract), E: fx("IF(D47=0,0,F47/D47)", (det.secA.contract + det.secB.contract) ? t.workDone / (det.secA.contract + det.secB.contract) : 0), F: fx("F45+F46", t.workDone), G: fx("G45+G46", cert.work), strong: true, pctE: true },
     { sn: "4", desc: "Add: Advance Payment", F: t.advancePayment, G: fx("F48", t.advancePayment), yellowF: true },
     { sn: "5", desc: "Less: Recovery of Advance Payment", F: t.advanceRecovery, G: fx("F49", t.advanceRecovery), yellowF: true },
-    { sn: "6", desc: `Less: Retention (${Math.round(retPct * 100)}%) — Max ${capPct}% of Sub-Contract Sum`, E: retPct, F: fx("-ROUND((F47+F48-F49)*E50,2)", -t.retention), G: fx("-ROUND((G47+G48-G49)*E50,2)", 0), yellowE: true, pctE: true },
+    { sn: "6", desc: `Less: Retention (${Math.round(retPct * 100)}%) — Max ${capPct}% of Sub-Contract Sum`, E: retPct, F: fx("-ROUND((F47+F48-F49)*E50,2)", -t.retention), G: fx("-ROUND((G47+G48-G49)*E50,2)", -cert.retention), yellowE: true, pctE: true },
     { sn: "6.1", desc: "Add: Release of First Half Retention", F: t.firstRelease, G: fx("F51", t.firstRelease), yellowF: true },
     { sn: "6.2", desc: "Add: Release of Second Half Retention", F: t.secondRelease, G: fx("F52", t.secondRelease), yellowF: true },
-    { sn: "7", desc: "Net Amount", F: fx("F47+F48-F49+F50+F51+F52", t.netAfterRetention), G: fx("G47+G48-G49+G50+G51+G52", 0), strong: true },
+    { sn: "7", desc: "Net Amount", F: fx("F47+F48-F49+F50+F51+F52", t.netAfterRetention), G: fx("G47+G48-G49+G50+G51+G52", cert.net), strong: true },
     { sn: "8", desc: "Less: Amounts Previously Certified", F: t.previouslyCertified, G: fx("F54", t.previouslyCertified), yellowF: true },
-    { sn: "9", desc: "Claim Amount", F: fx("F53-F54", t.claimAmount), G: fx("G53-G54", 0), strong: true },
-    { sn: "10", desc: `Add: ${ctx.gstPct ?? 9}% GST`, F: fx(`F55*${(ctx.gstPct ?? 9) / 100}`, round2(t.gst)), G: fx(`G55*${(ctx.gstPct ?? 9) / 100}`, 0) },
-    { sn: "11", desc: "Claim Amount incl. GST", F: fx("F55+F56", round2(t.claimInclGst)), G: fx("G55+G56", 0), strong: true },
+    { sn: "9", desc: "Claim Amount", F: fx("F53-F54", t.claimAmount), G: fx("G53-G54", cert.claim), strong: true },
+    { sn: "10", desc: `Add: ${ctx.gstPct ?? 9}% GST`, F: fx(`F55*${(ctx.gstPct ?? 9) / 100}`, round2(t.gst)), G: fx(`G55*${(ctx.gstPct ?? 9) / 100}`, round2(cert.gst)) },
+    { sn: "11", desc: "Claim Amount incl. GST", F: fx("F55+F56", round2(t.claimInclGst)), G: fx("G55+G56", round2(cert.claim + cert.gst)), strong: true },
   ];
   ladder.forEach((row, i) => {
     const r = 45 + i;
