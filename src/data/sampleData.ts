@@ -24,7 +24,9 @@ export interface Project {
   startDate: string;
   endDate: string;
   scope: string;
-  manager: string;
+  manager: string; // projects.manager, falls back to sales_manager
+  pic?: string; // projects.manager only (person in charge)
+  salesManager?: string; // projects.sales_manager
   contactPerson: string;
   contactNumber: string;
 }

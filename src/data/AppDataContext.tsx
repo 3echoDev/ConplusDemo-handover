@@ -320,7 +320,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             items: data.items,
             discountAmount: data.discountAmount,
           }),
-        "Purchase order created — pending approval",
+        "Purchase order issued",
         ["pos", "poLines", "alerts", "documents"]
       );
     },

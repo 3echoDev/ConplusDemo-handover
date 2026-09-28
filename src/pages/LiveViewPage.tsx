@@ -391,7 +391,8 @@ function ProjectDetailBody({ project }: { project: Project }) {
           <div className="space-y-1.5 p-3">
             <KV label="Project Code" value={project.code} />
             <KV label="Client" value={project.client} />
-            <KV label="Sales Mgr" value={project.manager} />
+            <KV label="PIC" value={project.pic || "—"} />
+            <KV label="Sales Mgr" value={project.salesManager || "—"} />
             <KV label="Client PO" value={project.clientPo || "—"} />
           </div>
           <div className="space-y-1.5 p-3">

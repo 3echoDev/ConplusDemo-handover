@@ -595,7 +595,9 @@ export default function StoreHealthPage() {
           )}
         </section>
 
-        {/* Section 3 — pending approvals */}
+        {/* Section 3 — pending approvals. No PO approval step since 17 Sep (client);
+            shown only while POs raised before that are still pending. */}
+        {pending.length > 0 && (
         <section ref={pendingRef} className="rounded-xl border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between gap-2 border-b border-border p-4">
             <h2 className="flex items-center gap-2 text-sm font-heading font-semibold text-card-foreground">
@@ -689,6 +691,7 @@ export default function StoreHealthPage() {
             </ul>
           )}
         </section>
+        )}
 
         {/* Section 4 — movement velocity */}
         <section className="rounded-xl border border-border bg-card shadow-sm">

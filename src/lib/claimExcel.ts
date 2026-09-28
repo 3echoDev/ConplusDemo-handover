@@ -518,32 +518,6 @@ function writeCover(
   ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: "A1:J63", paperSize: 9 };
 }
 
-function writeInstructions(ws: ExcelJS.Worksheet) {
-  ws.getColumn("A").width = 3; ws.getColumn("B").width = 92;
-  const lines: [string, Partial<ExcelJS.Font>, number?][] = [
-    ["ConPlus Resources Pte Ltd — Progress Claim Template", ARIAL({ bold: true, size: 16 })],
-    ["", ARIAL()],
-    ["How this workbook is organised", ARIAL({ bold: true, size: 11 })],
-    ["1. Cover Page & Claim Summary", F_LABEL],
-    ["The full claim page in one place — company details, particulars of contract, and the Payment Claim Particulars table (Sub-Contract Works vs Variation Works, % done, amount claimed, and payment certified). Totals flow automatically from the Claim Details sheet.", ARIAL(), 36],
-    ["", ARIAL()],
-    ["2. Claim Details", F_LABEL],
-    ["The priced schedule / bill of quantities — one row per work item, with description, unit, qty, rate, sub-contract sum, cumulative claimed (previous / current / total), % claimed, remarks, and the main contractor's cumulative verified figures with their own % verified.", ARIAL(), 36],
-    ["", ARIAL()],
-    ["How to fill it in", ARIAL({ bold: true, size: 11 })],
-    ["• Yellow cells are for manual input. White cells with formulas recalculate automatically — do not overwrite them.", ARIAL()],
-    ["• Enter this month's quantity claimed in the 'Current' column of each item's work-done row; 'Previous' carries over last month's cumulative total.", ARIAL()],
-    ["• Retention %, advance payment, and previously-certified amounts on the Cover Page are manual entries — confirm against the sub-contract terms each month.", ARIAL()],
-    ["• GST is pre-set at 9% (Singapore) — update the rate cell if it changes.", ARIAL()],
-  ];
-  lines.forEach(([text, font, h], i) => {
-    const c = ws.getCell(`B${i + 2}`);
-    c.value = text; c.font = font;
-    c.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
-    if (h) ws.getRow(i + 2).height = h;
-  });
-}
-
 export interface BuildClaimOptions {
   letterhead?: { buffer: ArrayBuffer; extension: "jpeg" | "png" };
 }
@@ -551,7 +525,6 @@ export interface BuildClaimOptions {
 export function buildClaimWorkbook(claim: Claim, ctx: ClaimDocContext, opts: BuildClaimOptions = {}): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Conplus Resources Pte Ltd";
-  writeInstructions(wb.addWorksheet("Instructions"));
   const cover = wb.addWorksheet(CLAIM_SHEET_COVER);
   const details = wb.addWorksheet(CLAIM_SHEET_DETAILS);
   const det = writeDetails(details, claim, ctx);
