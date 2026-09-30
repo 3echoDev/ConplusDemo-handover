@@ -233,7 +233,7 @@ export interface Claim {
   invoiceDate?: string;
   certifiedDate?: string;
   paidDate?: string;
-  status: "submitted" | "certified" | "paid" | "pending" | "rejected";
+  status: "submitted" | "certified" | "invoiced" | "paid" | "pending" | "rejected";
   description: string;
   lines?: ClaimLine[];
 }

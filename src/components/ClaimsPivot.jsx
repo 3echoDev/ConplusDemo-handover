@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { DEFAULT_TEMPLATES, TEMPLATE_META, PLACEHOLDERS, renderChaseTemplate, unknownPlaceholders } from "@/lib/chaseTemplates";
+import ClaimInvoiceModal from "@/components/ClaimInvoiceModal";
 
 /*
   ConPlus — Claims Pivot & Payment Chase (v4 — Two-clock engine)
@@ -685,6 +686,7 @@ function ClaimDetail({ project }) {
                     <select style={inp} value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
                       <option value="submitted">submitted</option>
                       <option value="certified">certified</option>
+                      <option value="invoiced">invoiced</option>
                       <option value="paid">paid</option>
                       <option value="pending">pending</option>
                       <option value="rejected">rejected</option>
@@ -928,6 +930,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
   const [emailModal, setEmailModal] = useState(null);
   const [holdModal, setHoldModal] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [invoiceFor, setInvoiceFor] = useState(null); // claim id whose invoice modal is open
   const [sendingId, setSendingId] = useState(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("days");
@@ -1736,6 +1739,13 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
         </div>
 
         {feedback && <div className="cpc-toast">{feedback}</div>}
+        {invoiceFor && (
+          <ClaimInvoiceModal
+            claimId={invoiceFor}
+            onClose={() => setInvoiceFor(null)}
+            onIssued={(d) => { showFeedback(`Invoice ${d.invoice_number} issued. The claim moves to the Payment chase.`); onRefresh(); }}
+          />
+        )}
 
         {actionCards.length > 0 && (
           <>
@@ -1754,7 +1764,7 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
               Certified, invoice pending <span className="cpc-seccount">&middot; {pendingRows.length} claims &middot; PRC received, waiting for the invoice date</span>
             </div>
             {pendingRows.map((row) => (
-              <PendingInvoiceCard key={row.claim_id} row={row} onSave={handleDateUpdate} />
+              <PendingInvoiceCard key={row.claim_id} row={row} onSave={handleDateUpdate} onPrepareInvoice={() => setInvoiceFor(row.claim_id)} />
             ))}
           </>
         )}
@@ -2299,6 +2309,7 @@ const CSS = `
 .cp-pill-pending { background: var(--border-lt); color: var(--fg3); }
 .cp-pill-rejected { background: var(--red-50, #fde8e8); color: var(--red, #c0392b); }
 .cp-pill-paid { background: var(--green-50); color: var(--green-ink); }
+.cp-pill-invoiced { background: var(--navy-50); color: var(--navy); }
 
 /* Current month highlight */
 .cp-th-current { background: #FFF7ED !important; color: #EA580C; font-weight: 700; border-bottom: 2px solid #F97316; }
@@ -3264,7 +3275,7 @@ function TemplatesModal({ overrides, onClose, onChange }) {
 // chase. In between the claim sits here so it is never out of sight. The
 // certified amount defaults to the claim amount but is only stored once a
 // person confirms it; the invoice date unlocks after that.
-function PendingInvoiceCard({ row, onSave }) {
+function PendingInvoiceCard({ row, onSave, onPrepareInvoice }) {
   const [cert, setCert] = useState(row.certified_amount != null ? String(row.certified_amount) : row.amount != null ? String(row.amount) : "");
   const [busy, setBusy] = useState(false);
   const saved = row.certified_amount != null;
@@ -3307,8 +3318,8 @@ function PendingInvoiceCard({ row, onSave }) {
               )}
             </span>
           </label>
-          <label className="cpc-pending-field" title={certOk ? "Entering the invoice date starts the 35-day Payment chase" : "Confirm the certified amount first"}>
-            <span className="cpc-node-lbl">Invoice submitted</span>
+          <label className="cpc-pending-field" title={certOk ? "Only for an invoice issued outside the app: entering its date starts the Payment chase" : "Confirm the certified amount first"}>
+            <span className="cpc-node-lbl">Invoiced outside the app</span>
             <input className="cpc-node-input" type="date" disabled={!certOk} defaultValue="" onChange={(e) => { if (e.target.value) onSave(row.claim_id, "invoice_date", e.target.value); }} />
           </label>
         </div>
@@ -3318,8 +3329,11 @@ function PendingInvoiceCard({ row, onSave }) {
           {certOk && <div className="cpc-certified">certified {fmtFull(Number(row.certified_amount))}{Number(row.amount) > Number(row.certified_amount) ? ` \u00B7 ${fmtFull(Number(row.amount) - Number(row.certified_amount))} balance` : ""}</div>}
         </div>
         <div className="cpc-actions">
+          <button className="cpc-btn small primary" disabled={!certOk} onClick={onPrepareInvoice} title={certOk ? "Preview quotation, claim and invoice, then issue the tax invoice" : "Confirm the certified amount first"}>
+            Prepare invoice
+          </button>
           <div className="cpc-node-rel" style={{ maxWidth: 220 }}>
-            {certOk ? "Enter the invoice date to start the Payment chase." : "Confirm the certified amount to unlock the invoice date."}
+            {certOk ? "Issuing the invoice starts the Payment chase." : "Confirm the certified amount to prepare the invoice."}
           </div>
         </div>
       </div>
