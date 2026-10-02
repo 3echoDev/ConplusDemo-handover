@@ -178,7 +178,14 @@ Ties to the open "delivery tracking remainder" (movement types, receipt posts st
 
 ---
 
-## E. Project planning & tracking: Daily reports (Lynn, 18 Sep + R1 on 25 Sep). TODO
+## E. Project planning & tracking: Daily reports (Lynn, 18 Sep + R1 on 25 Sep). BUILT 2026-10-02 (Site Reports tab, not yet deployed)
+
+**Status 2026-10-02:** new tab `/site-reports` (Live View header + v1 sidebar), project picked once from a searchable dropdown, three sections:
+- **Daily report**: DAILY WORK REPORT header (crew Total counted from the worker numbers, editable) + one DAILY MATERIAL REPORT card per activity in the R1 layout (PLANNED / ACTUAL: Area, Material, Qty In Set, Coverage, Remark; DEFECT: Area, Remark). Save draft before work, finish ACTUAL at the end of the day ("Same as planned" copies it), Submit; submitted is read-only until reopened. A new day starts from that day's weekly plan rows.
+- **Weekly plan**: the Monday whiteboard as rows; a row can span days ("14-15/09 Grinding").
+- **Dashboard**: the Dashboard Report sheet (WEEKLY PLAN | PLANNED | ACTUAL per date and location), plan days with no report flagged, material planned vs used, Excel export in the sheet's layout (A2 CLIENT / SITE, A3 PROJECT REF, A4 WO, rows from 8).
+- DB: `site_weekly_plan`, `site_daily_reports`, `site_report_lines` + RPCs (migration `20261002_site_reports.sql`, applied live; writes only through the RPCs). Verified end to end on E25028 with the sheet's 14-17 Sep figures; test rows deleted.
+- Not in this build: ACTUAL posting to Site inventory (needs D1 Site/Store LOC first; `material_id` is already stored), whiteboard-photo transcription, worker roster (crew fields are free text: question for Lynn).
 
 Source: `20260918_1133_Project planning and tracking workflow.xlsx` → revised `20260925_1159_Project planning and tracking workflow (R1).xlsx`.
 
