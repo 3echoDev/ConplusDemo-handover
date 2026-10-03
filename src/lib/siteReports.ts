@@ -183,6 +183,59 @@ export function crewTotal(h: Pick<ReportHeader, "supervisor" | "safety_personnel
   );
 }
 
+// ── crew carry-over ───────────────────────────────────────────────────────────
+
+/**
+ * The crew stays from one day to the next until the site resets it: a new
+ * day's report starts with the crew of the last report, and "Reset crew"
+ * clears it. Nothing resets on its own (client, 4 Oct).
+ */
+export type Crew = Pick<ReportHeader, "supervisor" | "safety_personnel" | "men" | "supply_men">;
+
+export const CREW_FIELDS = ["supervisor", "safety_personnel", "men", "supply_men"] as const;
+
+export const emptyCrew = (): Crew => ({ supervisor: "", safety_personnel: "", men: "", supply_men: "" });
+
+export const hasCrew = (c: Crew) => CREW_FIELDS.some((f) => c[f].trim() !== "");
+
+export interface CrewSource {
+  report_date: string;
+  site_location: string;
+  supervisor: string | null;
+  safety_personnel: string | null;
+  men: string | null;
+  supply_men: string | null;
+  total_men: number | null;
+}
+
+export interface CarriedCrew {
+  crew: Crew;
+  /** A Total typed over the counted one on the source report, else null. */
+  total: number | null;
+  from: { date: string; site: string };
+}
+
+/**
+ * The crew a new report for `date` starts with: the latest earlier report with
+ * a crew at the same site location, else the latest earlier report with a crew.
+ */
+export function carryCrew(sources: CrewSource[], date: string, siteLocation: string): CarriedCrew | null {
+  const withCrew = sources
+    .filter((s) => s.report_date < date)
+    .map((s) => ({ s, crew: { supervisor: s.supervisor ?? "", safety_personnel: s.safety_personnel ?? "", men: s.men ?? "", supply_men: s.supply_men ?? "" } }))
+    .filter(({ crew }) => hasCrew(crew))
+    .sort((a, b) => (a.s.report_date < b.s.report_date ? 1 : a.s.report_date > b.s.report_date ? -1 : 0));
+  const site = norm(siteLocation);
+  const pick = (site && withCrew.find(({ s }) => norm(s.site_location) === site)) || withCrew[0];
+  if (!pick) return null;
+  const counted = crewTotal(pick.crew);
+  return {
+    crew: pick.crew,
+    total: pick.s.total_men != null && pick.s.total_men !== counted ? pick.s.total_men : null,
+    from: { date: pick.s.report_date, site: pick.s.site_location },
+  };
+}
+
 // ── lines ─────────────────────────────────────────────────────────────────────
 
 let uidSeq = 0;

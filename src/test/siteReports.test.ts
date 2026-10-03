@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDashboardRows,
+  carryCrew,
   copyPlannedToActual,
   crewTotal,
   dashboardTotals,
@@ -303,5 +304,49 @@ describe("Dashboard Report workbook", () => {
 
   it("names the file by project and range", () => {
     expect(dashboardFileName(meta)).toBe("Dashboard_Report_E25028_2026-09-14_to_2026-09-20.xlsx");
+  });
+});
+
+describe("crew carry-over", () => {
+  // 14/9 chat post: Supervisor 193, Safety 316, Men 321,317,332,336 (Total 6).
+  const src = (report_date: string, site_location: string, men: string, total_men: number | null = null) => ({
+    report_date,
+    site_location,
+    supervisor: "193",
+    safety_personnel: "316",
+    men,
+    supply_men: null,
+    total_men,
+  });
+
+  it("keeps the last report's crew for the next day", () => {
+    const c = carryCrew([src("2026-09-14", "Plantation A", "321,317,332,336", 6)], "2026-09-15", "");
+    expect(c?.crew).toEqual({ supervisor: "193", safety_personnel: "316", men: "321,317,332,336", supply_men: "" });
+    expect(c?.from).toEqual({ date: "2026-09-14", site: "Plantation A" });
+    expect(c?.total).toBeNull(); // 6 is what the crew counts to, so Total stays automatic
+  });
+
+  it("keeps a Total that was typed over the count", () => {
+    expect(carryCrew([src("2026-09-14", "Plantation A", "321,317", 7)], "2026-09-15", "")?.total).toBe(7);
+  });
+
+  it("takes the latest report before the day, not after it", () => {
+    const c = carryCrew([src("2026-09-16", "Plantation A", "999"), src("2026-09-14", "Plantation A", "321")], "2026-09-15", "");
+    expect(c?.crew.men).toBe("321");
+  });
+
+  it("prefers the same site location over a later report elsewhere", () => {
+    const c = carryCrew([src("2026-09-15", "Phase 4", "500"), src("2026-09-14", "Plantation A", "321")], "2026-09-16", "plantation a");
+    expect(c?.crew.men).toBe("321");
+  });
+
+  it("falls back to the latest crew when the site has none yet", () => {
+    expect(carryCrew([src("2026-09-15", "Phase 4", "500")], "2026-09-16", "Plantation A")?.crew.men).toBe("500");
+  });
+
+  it("skips a report whose crew was reset, and starts empty with no history", () => {
+    const reset = { ...src("2026-09-15", "Plantation A", ""), supervisor: "", safety_personnel: "" };
+    expect(carryCrew([reset, src("2026-09-14", "Plantation A", "321")], "2026-09-16", "")?.from.date).toBe("2026-09-14");
+    expect(carryCrew([], "2026-09-16", "")).toBeNull();
   });
 });

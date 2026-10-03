@@ -7,6 +7,7 @@ import {
   reportPayload,
   type ReportHeader,
   type ReportLine,
+  type CrewSource,
   type ReportStatus,
   type StoredLine,
   type StoredReport,
@@ -147,6 +148,18 @@ export async function fetchRecentReports(projectId: string, limit = 14): Promise
     .order("report_date", { ascending: false })
     .limit(limit);
   return (data as Pick<StoredReportFull, "id" | "report_date" | "site_location" | "status">[]) ?? [];
+}
+
+/** Recent reports before `date`, newest first, for the crew carried into a new day. */
+export async function fetchCrewSources(projectId: string, date: string): Promise<CrewSource[]> {
+  const { data } = await supabase
+    .from("site_daily_reports")
+    .select("report_date,site_location,supervisor,safety_personnel,men,supply_men,total_men")
+    .eq("project_id", projectId)
+    .lt("report_date", date)
+    .order("report_date", { ascending: false })
+    .limit(20);
+  return ((data as CrewSource[]) ?? []).map((r) => ({ ...r, total_men: r.total_men == null ? null : Number(r.total_men) }));
 }
 
 export function saveReport(header: ReportHeader, lines: ReportLine[]): Promise<RpcResult> {

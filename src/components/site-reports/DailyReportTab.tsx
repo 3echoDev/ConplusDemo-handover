@@ -33,8 +33,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
+  carryCrew,
   copyPlannedToActual,
+  CREW_FIELDS,
   crewTotal,
+  emptyCrew,
+  hasCrew,
   draftErrors,
   emptyHeader,
   emptyLine,
@@ -46,12 +50,14 @@ import {
   qtyDelta,
   storedToForm,
   submitWarnings,
+  type CarriedCrew,
   type ReportHeader,
   type ReportLine,
   type ValidationIssue,
 } from "@/lib/siteReports";
 import {
   deleteReport,
+  fetchCrewSources,
   fetchRecentReports,
   fetchReports,
   fetchWeeklyPlan,
@@ -124,6 +130,7 @@ export default function DailyReportTab({
   const [saved, setSaved] = useState<string>("");
   const [meta, setMeta] = useState<{ updated_at: string | null; updated_by: string | null }>({ updated_at: null, updated_by: null });
   const [fromPlan, setFromPlan] = useState(0);
+  const [crewFrom, setCrewFrom] = useState<CarriedCrew["from"] | null>(null);
   const [totalTouched, setTotalTouched] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState<null | "save" | "submit" | "reopen" | "delete">(null);
@@ -148,14 +155,21 @@ export default function DailyReportTab({
     setMeta({ updated_at: r.updated_at, updated_by: r.updated_by });
     setTotalTouched(r.total_men != null && r.total_men !== crewTotal(h));
     setFromPlan(0);
+    setCrewFrom(null);
     setShowErrors(false);
   }, []);
 
   const openNew = useCallback(
     async (siteLocation = "") => {
-      const plan = await fetchWeeklyPlan(project.id, date, date);
+      const [plan, crewSources] = await Promise.all([fetchWeeklyPlan(project.id, date, date), fetchCrewSources(project.id, date)]);
       const ls = linesFromPlan(plan, date);
-      const h = { ...emptyHeader(project.id, date, project.coating_system ?? ""), site_location: siteLocation };
+      const kept = carryCrew(crewSources, date, siteLocation);
+      const h: ReportHeader = {
+        ...emptyHeader(project.id, date, project.coating_system ?? ""),
+        site_location: siteLocation,
+        ...(kept?.crew ?? {}),
+        total_men: kept?.total != null ? String(kept.total) : "",
+      };
       const start = ls.length ? ls : [emptyLine()];
       setHeader(h);
       setLines(start);
@@ -163,7 +177,8 @@ export default function DailyReportTab({
       setSaved(snapshot(h, start));
       setMeta({ updated_at: null, updated_by: null });
       setFromPlan(ls.length);
-      setTotalTouched(false);
+      setCrewFrom(kept?.from ?? null);
+      setTotalTouched(kept?.total != null);
       setShowErrors(false);
     },
     [project.id, project.coating_system, date],
@@ -328,6 +343,25 @@ export default function DailyReportTab({
     requestAnimationFrame(() => lineRefs.current[lines.length]?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
+  /** The site decides when the crew changes: clear it, with an Undo. */
+  const resetCrew = () => {
+    const before = { header, totalTouched, crewFrom };
+    setHeader((h) => ({ ...h, ...emptyCrew(), total_men: "" }));
+    setTotalTouched(false);
+    setCrewFrom(null);
+    toast("Crew reset", {
+      description: "Enter today's crew.",
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setHeader((h) => ({ ...h, ...Object.fromEntries(CREW_FIELDS.map((f) => [f, before.header[f]])), total_men: before.header.total_men }));
+          setTotalTouched(before.totalTouched);
+          setCrewFrom(before.crewFrom);
+        },
+      },
+    });
+  };
+
   const fillAllActual = () => {
     setLines((ls) => ls.map(copyPlannedToActual));
     toast("ACTUAL filled from PLANNED", { description: "Change anything that differed on the day." });
@@ -481,11 +515,25 @@ export default function DailyReportTab({
           </div>
 
           <div className="mt-5 rounded-xl border border-border bg-secondary/40 p-4">
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
               <Users className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">Man power</h3>
               <span className="text-xs text-muted-foreground">Worker numbers, separated by commas</span>
+              {!locked && hasCrew(header) && (
+                <button
+                  type="button"
+                  onClick={resetCrew}
+                  className="ml-auto inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition-[background-color,transform] duration-150 ease-out hover:bg-secondary active:scale-[0.97] motion-reduce:active:scale-100 sm:h-8"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset crew
+                </button>
+              )}
             </div>
+            {crewFrom && !locked && (
+              <p className="-mt-1 mb-3 text-xs text-muted-foreground">
+                Kept from the {fmtDay(crewFrom.date)} report{crewFrom.site ? ` · ${crewFrom.site}` : ""}. Keep it, edit it, or reset it if the team changed.
+              </p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Supervisor">
                 {(id) => <TextInput id={id} value={header.supervisor} onChange={(e) => setH("supervisor", e.target.value)} inputMode="numeric" className="tabular-nums" />}
