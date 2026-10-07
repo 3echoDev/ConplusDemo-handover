@@ -77,6 +77,8 @@ export interface InvoiceClaimRow {
   certified_amount: number | string | null;
   payment_terms: string | null;
   po_ref: string | null;
+  wo_ref?: string | null;
+  wo_po_ref?: string | null;
 }
 
 export interface InvoiceProjectRow {
@@ -119,6 +121,11 @@ const num = (v: number | string | null | undefined): number | null => {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+};
+/** Trimmed text, or "" for blanks and placeholders such as "-", "N/A", "NIL — LOA pending". */
+const clean = (v: string | null | undefined): string => {
+  const s = (v ?? "").trim();
+  return !s || /^(-+|—|n\/?a|nil\b.*|tba)$/i.test(s) ? "" : s;
 };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -208,10 +215,18 @@ export function retentionCapAmount(d: Pick<InvoiceDraft, "retentionCapPct" | "co
   return round2((d.contractSum * d.retentionCapPct) / 100);
 }
 
-export function computeInvoiceTotals(d: InvoiceDraft): InvoiceTotals {
+/** Retention on page 1 before any override: the page-2 column total when there is a
+ * schedule (so both pages agree to the cent), else the % of certified, capped. */
+export function defaultRetention(d: InvoiceDraft): number {
+  if (d.retentionRows.length) return buildRetentionSchedule(d.retentionRows).total.retention;
   const cap = retentionCapAmount(d);
   const raw = round2((d.cumCertified * d.retentionPct) / 100);
-  const retention = d.retentionOverride != null ? round2(d.retentionOverride) : cap != null ? Math.min(raw, cap) : raw;
+  return cap != null ? Math.min(raw, cap) : raw;
+}
+
+export function computeInvoiceTotals(d: InvoiceDraft): InvoiceTotals {
+  const cap = retentionCapAmount(d);
+  const retention = d.retentionOverride != null ? round2(d.retentionOverride) : defaultRetention(d);
   const totalAmount = round2(d.cumCertified - retention - d.paymentReceived);
   const gst = round2((totalAmount * d.gstPct) / 100);
   return {
@@ -246,19 +261,15 @@ export function defaultRetentionRows(
   cap: number | null,
 ): RetentionRow[] {
   const r = retentionPct / 100;
-  let cumGross = 0;
   let cumRet = 0;
   return certifiedNet.map((c, i) => {
-    // gross such that gross - retention(gross) = net, honouring the cap
-    let gross = r < 1 ? c.net / (1 - r) : c.net;
-    let ret = gross * r;
-    if (cap != null && cumRet + ret > cap) {
-      ret = Math.max(cap - cumRet, 0);
-      gross = c.net + ret;
-    }
-    cumGross += gross;
-    cumRet += ret;
-    return { label: `Payment Certificate No.${i + 1}`, certified: round2(gross), retention: round2(ret) };
+    // gross such that gross - retention(gross) = net, honouring the cap. Rounded per
+    // row and accumulated rounded, so the column adds up to exactly the cap once it
+    // is reached and every row's payment claim equals the certified net.
+    let ret = round2(r < 1 ? (c.net / (1 - r)) * r : 0);
+    if (cap != null && round2(cumRet + ret) > cap) ret = Math.max(round2(cap - cumRet), 0);
+    cumRet = round2(cumRet + ret);
+    return { label: `Payment Certificate No.${i + 1}`, certified: round2(c.net + ret), retention: ret };
   });
 }
 
@@ -287,22 +298,38 @@ export function buildInvoiceDraft(input: BuildInvoiceInput): InvoiceDraft {
   const schedule = buildRetentionSchedule(retentionRows);
   const prevPayments = round2(schedule.rows.slice(0, -1).reduce((s, r) => s + r.payment, 0));
 
-  const terms = claim.payment_terms?.trim()
+  // Details come from the progress claim; when this claim left one blank, the latest
+  // earlier claim of the project that has it (the To block rarely changes claim to claim).
+  const pick = (get: (c: InvoiceClaimRow) => string | null | undefined): string => {
+    const own = clean(get(claim));
+    if (own) return own;
+    const earlier = [...input.projectClaims]
+      .filter((c) => c.id !== claim.id && (c.claim_no ?? 0) <= thisNo)
+      .sort((a, b) => (b.claim_no ?? 0) - (a.claim_no ?? 0));
+    for (const c of earlier) {
+      const v = clean(get(c));
+      if (v) return v;
+    }
+    return "";
+  };
+  const terms = pick((c) => c.payment_terms)
     || (project.payment_terms_days != null ? `${project.payment_terms_days} DAYS` : "");
+  const thisCert = certified.findIndex((c) => c.id === claim.id);
 
   return {
     invoiceNumber: invoiceNumberFor(input.nextRunningNo, today),
     invoiceDate: today,
-    clientName: claim.client_name || "",
-    addressLines: splitAddress(claim.client_address),
-    attn: claim.contact_person || project.contact_person || "",
+    clientName: pick((c) => c.client_name),
+    addressLines: splitAddress(pick((c) => c.client_address)),
+    attn: pick((c) => c.contact_person) || project.contact_person || "",
     email: project.contact_email || "",
     site: project.name || claim.project_name || "",
     jobRef: claim.project_code || project.project_code || "",
-    paymentCert: "",
+    // the main contractor's certificate number = this claim's place in the page-2 schedule
+    paymentCert: thisCert >= 0 ? String(thisCert + 1) : "",
     claimNos: claim.claim_no != null ? String(claim.claim_no).padStart(2, "0") : "",
     paymentTerms: terms.toUpperCase(),
-    customerPo: project.client_po || claim.po_ref || "",
+    customerPo: clean(project.client_po) || pick((c) => c.po_ref || c.wo_po_ref || c.wo_ref),
     quoteBlocks: buildQuoteBlocks(project, input.lines),
     workDone: workDoneLabel(claim.claim_date),
     cumCertified: schedule.total.certified,

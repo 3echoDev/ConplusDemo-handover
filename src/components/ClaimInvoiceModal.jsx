@@ -8,6 +8,7 @@ import {
   buildInvoiceDraft,
   buildRetentionSchedule,
   computeInvoiceTotals,
+  defaultRetention,
   relabelItems,
   retentionLabel,
   round2,
@@ -68,13 +69,13 @@ export default function ClaimInvoiceModal({ claimId, onClose, onIssued }) {
       setLoading(true);
       const { data: claim, error: cErr } = await supabase
         .from("claims")
-        .select("id, claim_no, claim_number, claim_date, project_id, project_code, project_name, client_name, client_address, contact_person, amount, retention_amount, total_claim, certified_amount, prc_date, invoice_date, payment_terms, po_ref, status")
+        .select("id, claim_no, claim_number, claim_date, project_id, project_code, project_name, client_name, client_address, contact_person, amount, retention_amount, total_claim, certified_amount, prc_date, invoice_date, payment_terms, po_ref, wo_ref, wo_po_ref, status")
         .eq("id", claimId)
         .single();
       if (cErr || !claim) { if (!cancelled) { setErr(cErr?.message || "Claim not found."); setLoading(false); } return; }
       const [projRes, claimsRes, linesRes, settingRes, invRes] = await Promise.all([
         supabase.from("projects").select("id, project_code, name, location, scope, quotation_ref, contract_value, total_contract_value, vo_value, retention_pct, retention_cap_pct, payment_terms_days, client_po, contact_email, contact_person").eq("id", claim.project_id).single(),
-        supabase.from("claims").select("id, claim_no, claim_date, project_code, project_name, client_name, client_address, contact_person, amount, certified_amount, payment_terms, po_ref, invoice_date").eq("project_id", claim.project_id),
+        supabase.from("claims").select("id, claim_no, claim_date, project_code, project_name, client_name, client_address, contact_person, amount, certified_amount, payment_terms, po_ref, wo_ref, wo_po_ref, invoice_date").eq("project_id", claim.project_id),
         supabase.from("claim_lines").select("section, quotation_ref, seq, description, unit, qty, contract_amount, curr_amount, cum_amount, verified_amount").eq("claim_id", claimId).order("seq"),
         supabase.from("chase_settings").select("value").eq("key", "invoice_next_no").maybeSingle(),
         supabase.from("internal_invoices").select("id, invoice_number, invoice_date, claim_id, total, status").eq("project_id", claim.project_id).neq("status", "cancelled").order("invoice_date"),
@@ -292,8 +293,8 @@ export default function ClaimInvoiceModal({ claimId, onClose, onIssued }) {
                     <span>{retentionLabel(draft)}{totals.retentionCap != null && <span style={{ color: "var(--fg3)" }}> &middot; cap {money(totals.retentionCap)}</span>}</span>
                     <input style={{ ...S.inp, textAlign: "right", ...S.num }} type="number" step="0.01"
                       value={draft.retentionOverride ?? totals.retention}
-                      onChange={(e) => { const v = numOrNull(e.target.value); set({ retentionOverride: v == null || v === round2((draft.cumCertified * draft.retentionPct) / 100) ? null : v }); }}
-                      title="Calculated from the certified value; overwrite it if the certificate shows a different retention" />
+                      onChange={(e) => { const v = numOrNull(e.target.value); set({ retentionOverride: v == null || v === defaultRetention(draft) ? null : v }); }}
+                      title="Taken from the page-2 retention column (else the % of certified, capped); overwrite it if the certificate shows a different retention" />
                     <span>Less: Payment Received <span style={{ color: "var(--fg3)" }}>(earlier certificates)</span></span>
                     <input style={{ ...S.inp, textAlign: "right", ...S.num }} type="number" step="0.01" value={draft.paymentReceived} onChange={(e) => set({ paymentReceived: numOrNull(e.target.value) ?? 0 })} />
                     <strong>Total Amount</strong><strong style={{ textAlign: "right", ...S.num }}>{money(totals.totalAmount)}</strong>

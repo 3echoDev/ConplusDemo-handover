@@ -65,11 +65,19 @@ describe("invoice totals (Accounts' template)", () => {
   });
 
   it("caps retention at the % of contract sum", () => {
-    const d = { ...templateDraft(), retentionCapPct: 5, contractSum: 15000 }; // cap 750
+    const d = { ...templateDraft(), retentionCapPct: 5, contractSum: 15000, retentionRows: [] }; // cap 750
     const t = computeInvoiceTotals(d);
     expect(t.retentionCap).toBe(750);
     expect(t.retention).toBe(750);
     expect(t.totalAmount).toBe(8350);
+  });
+
+  it("takes page 1's retention from the page-2 column so both pages agree", () => {
+    const d = { ...templateDraft(), retentionRows: [
+      { label: "Payment Certificate No.1", certified: 1000, retention: 100.01 },
+      { label: "Payment Certificate No.2", certified: 9000, retention: 899.98 },
+    ] };
+    expect(computeInvoiceTotals(d).retention).toBe(999.99);
   });
 
   it("honours an override from the certificate", () => {
@@ -103,6 +111,13 @@ describe("helpers", () => {
     ]);
     const capped = defaultRetentionRows([{ claimNo: 1, net: 900 }, { claimNo: 2, net: 8100 }], 10, 500);
     expect(capped[1]).toEqual({ label: "Payment Certificate No.2", certified: 8500, retention: 400 });
+  });
+  it("rounds per row so a capped column adds up to the cap exactly (F23012, 6 Oct)", () => {
+    // three rows whose unrounded retentions each end in .xx5 — summing rounded values must still hit the cap
+    const rows = defaultRetentionRows([{ claimNo: 1, net: 100.05 }, { claimNo: 2, net: 100.05 }, { claimNo: 3, net: 100.05 }, { claimNo: 4, net: 50 }], 10, 33.35);
+    const s = buildRetentionSchedule(rows);
+    expect(s.total.retention).toBe(33.35);
+    rows.forEach((r, i) => expect(s.rows[i].payment).toBe([100.05, 100.05, 100.05, 50][i]));
   });
 });
 
@@ -182,6 +197,18 @@ describe("buildInvoiceDraft (E25077)", () => {
     expect(d.invoiceNumber).toBe("320016/2026/10");
   });
 
+  it("fills the To block, PO and certificate no. from the claims (Accounts, 6 Oct)", () => {
+    const bare = { ...claim(2, 11250, "2026-09-18"), client_address: null, contact_person: null };
+    const c1 = { ...claim(1, 4500, "2026-09-04"), wo_po_ref: "PO-HPC-0012" };
+    const d = buildInvoiceDraft({ claim: bare, project, projectClaims: [c1, bare], lines, nextRunningNo: 1, today: "2026-10-02" });
+    expect(d.addressLines).toEqual(["7 Kung Chong Road", "Singapore 159144"]);
+    expect(d.attn).toBe("Chan Chia Hian, Jason");
+    expect(d.customerPo).toBe("PO-HPC-0012");
+    expect(d.paymentCert).toBe("2");
+    const nil = { ...c1, wo_po_ref: "NIL — LOA pending" };
+    expect(buildInvoiceDraft({ claim: bare, project, projectClaims: [nil, bare], lines, nextRunningNo: 1 }).customerPo).toBe("");
+  });
+
   it("takes one bold subtitle per heading, VO quotations as their own block", () => {
     const blocks = buildQuoteBlocks(project, lines);
     expect(blocks.map((b) => [b.kind, b.quoteRef, b.items.map((i) => i.text)])).toEqual([
@@ -216,5 +243,22 @@ describe("buildInvoiceWorkbook", () => {
     expect(ret.getCell("B14").value).toBe("Accumulative Retention");
     expect(ret.getCell("B29").value).toBe("Payment Certificate No.1");
     expect(inv.pageSetup.printArea).toMatch(/^A1:K\d+$/);
+    // page-1 retention is a live link to the page-2 total; money is right-aligned
+    const retRow = [...Array(80).keys()].find((r) => inv.getCell(`B${r + 1}`).value === "Less: 10% Retention")! + 1;
+    expect((inv.getCell(`K${retRow}`).value as { formula: string }).formula).toBe("'Retention'!H32");
+    expect(ret.getCell("H32").value).toMatchObject({ formula: "SUM(H29:H30)" });
+    expect(inv.getCell(`K${retRow}`).alignment?.horizontal).toBe("right");
+  });
+
+  it("holds the footer to the foot of the A4 page", () => {
+    const inv = buildInvoiceWorkbook(templateDraft()).getWorksheet(INVOICE_SHEET)!;
+    const last = Number(inv.pageSetup.printArea!.split(":")[1].slice(1));
+    let rowsPt = 0;
+    for (let r = 1; r <= last; r++) rowsPt += inv.getRow(r).height ?? 15;
+    let widthPt = 0;
+    for (let c = 1; c <= 11; c++) widthPt += Math.round((inv.getColumn(c).width ?? 8.43) * 7 + 5) * 0.75;
+    const pagePt = ((11.69 - 0.7) * 72 * widthPt) / ((8.27 - 1.02) * 72);
+    expect(rowsPt / pagePt).toBeGreaterThan(0.97);
+    expect(rowsPt / pagePt).toBeLessThanOrEqual(1);
   });
 });

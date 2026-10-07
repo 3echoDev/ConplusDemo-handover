@@ -31,6 +31,15 @@ export interface BuildInvoiceOptions {
 
 export const PAYMENT_MODES_MARKER = "[[PAYMENT_MODES]]";
 
+/** Where each page's pinned footer starts, so the print can hold it to the foot of the page. */
+interface PageLayout { bodyEnd: number; footFrom: number; last: number }
+const layouts = new WeakMap<ExcelJS.Worksheet, PageLayout>();
+
+// A4 portrait less the sheet margins (0.51in sides, 0.35in top/bottom), in points.
+const PRINT_W_PT = (8.27 - 2 * 0.51) * 72;
+const PRINT_H_PT = (11.69 - 2 * 0.35) * 72;
+const DEFAULT_ROW_PT = 16.5;
+
 const font = (size: number, o: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> => ({ name: "Arial", size, ...o });
 const put = (ws: ExcelJS.Worksheet, addr: string, value: ExcelJS.CellValue, f: Partial<ExcelJS.Font>, o: { nf?: string; align?: Partial<ExcelJS.Alignment>; border?: Partial<ExcelJS.Borders> } = {}) => {
   const c = ws.getCell(addr);
@@ -64,9 +73,9 @@ function placeLetterhead(ws: ExcelJS.Worksheet, img: Img | undefined) {
     return;
   }
   const id = ws.workbook.addImage({ buffer: img.buffer, extension: img.extension });
-  // A1 across to column K, keeping the image's aspect ratio (template spans A1:K11)
-  const widthPx = Object.values(COL_WIDTHS).reduce((s, w) => s + w * 7.3, 0);
-  ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: widthPx, height: (widthPx * img.height) / img.width } });
+  // Fills the whole letterhead block A1:K12 (Accounts, 6 Oct): a two-cell anchor stretches
+  // it to the cells, so it never runs into the title row whatever Excel's pixel rounding.
+  ws.addImage(id, { tl: { col: 0, row: 0 }, br: { col: 11, row: 12 }, editAs: "oneCell" } as never);
 }
 
 /** Header block shared by both pages. `top` is the "To:" row. */
@@ -103,7 +112,9 @@ function writeHeader(ws: ExcelJS.Worksheet, d: InvoiceDraft, top: number) {
 function writeFooter(ws: ExcelJS.Worksheet, row: number, spellOf: number, page: string, paymentModes?: Img, marker = false) {
   put(ws, `B${row}`, "SGD:", font(13, { bold: true }));
   put(ws, `C${row}`, spellAmount(spellOf), font(13, { bold: true }));
-  const eoe = row + 2;
+  ws.getRow(row).height ??= 19.5;
+  // Rows row+1 .. row+3 hold the spacer (sized in pinFooter); the footer block starts after.
+  const eoe = row + 4;
   ws.mergeCells(`B${eoe}:K${eoe}`);
   put(ws, `B${eoe}`, "E.&.O.E", font(11), { align: { horizontal: "center" }, border: { top: { style: "thin" } } });
   for (const col of ["C", "D", "E", "F", "G", "H", "I", "J", "K"]) ws.getCell(`${col}${eoe}`).border = { top: { style: "thin" } };
@@ -121,7 +132,34 @@ function writeFooter(ws: ExcelJS.Worksheet, row: number, spellOf: number, page: 
   const pageRow = next + 2;
   ws.mergeCells(`B${pageRow}:K${pageRow}`);
   put(ws, `B${pageRow}`, page, font(10), { align: { horizontal: "center" } });
+  pinFooter(ws, row + 1, eoe, pageRow);
   return pageRow;
+}
+
+/**
+ * Accounts: the payment modes / E.&.O.E block always sits at the bottom of the page.
+ * The sheet prints fit-to-one-page, so give every row a definite height and let the
+ * spacer rows (spacerFrom .. footFrom-1) take up whatever is left of the A4 height.
+ */
+function pinFooter(ws: ExcelJS.Worksheet, spacerFrom: number, footFrom: number, last: number) {
+  let widthPt = 0;
+  for (let c = 1; c <= 11; c++) widthPt += Math.round((ws.getColumn(c).width ?? 8.43) * 7 + 5) * 0.75;
+  const pageRowsPt = (PRINT_H_PT * widthPt) / PRINT_W_PT;
+  let used = 0;
+  for (let r = 1; r <= last; r++) {
+    if (r >= spacerFrom && r < footFrom) continue;
+    const row = ws.getRow(r);
+    if (row.height == null) row.height = DEFAULT_ROW_PT;
+    used += row.height;
+  }
+  let gap = Math.max(0, pageRowsPt * 0.985 - used);
+  const n = footFrom - spacerFrom;
+  for (let i = 0; i < n; i++) {
+    const h = Math.min(400, Math.max(1, gap / (n - i)));
+    ws.getRow(spacerFrom + i).height = Math.round(h * 4) / 4;
+    gap -= h;
+  }
+  layouts.set(ws, { bodyEnd: spacerFrom - 1, footFrom, last });
 }
 
 function writeInvoiceSheet(ws: ExcelJS.Worksheet, d: InvoiceDraft, opts: BuildInvoiceOptions) {
@@ -180,15 +218,19 @@ function writeInvoiceSheet(ws: ExcelJS.Worksheet, d: InvoiceDraft, opts: BuildIn
   const money = (row: number, label: string, value: ExcelJS.CellValue, bold = false, border?: Partial<ExcelJS.Borders>) => {
     put(ws, `B${row}`, label, font(13, { bold }));
     put(ws, `G${row}`, ":", font(13, { bold }));
-    put(ws, `K${row}`, value, font(13, { bold }), { nf: NF_MONEY, align: { horizontal: "left" }, border });
+    put(ws, `K${row}`, value, font(13, { bold }), { nf: NF_MONEY, align: { horizontal: "right" }, border });
     ws.getRow(row).height = 19.5;
   };
   const rCert = r, rRet = r + 1, rRec = r + 2, rTot = r + 3, rGst = r + 4, rDue = r + 5;
   money(rCert, "Total Value of Certified", t.cumCertified);
   const pct = d.retentionPct / 100;
+  // Tied to the page-2 column total (same figure, to the cent) when there is a schedule.
+  const retTotalRow = 30 + d.retentionRows.length;
   const retFormula = d.retentionOverride != null
     ? null
-    : t.retentionCap != null
+    : d.retentionRows.length
+      ? `'${RETENTION_SHEET}'!H${retTotalRow}`
+      : t.retentionCap != null
       ? `-MIN(ROUND(K${rCert}*${pct},2),${t.retentionCap})`
       : `ROUND(-K${rCert}*${pct},2)`;
   money(rRet, retentionLabel(d), retFormula ? fx(retFormula, -t.retention) : -t.retention);
@@ -218,9 +260,10 @@ function writeRetentionSheet(ws: ExcelJS.Worksheet, d: InvoiceDraft, opts: Build
   for (const row of sched.rows) {
     put(ws, `B${r}`, row.label, font(13));
     put(ws, `E${r}`, ":", font(13));
-    put(ws, `F${r}`, row.certified, font(12.5), { nf: NF_MONEY });
-    put(ws, `H${r}`, -row.retention, font(12.5), { nf: NF_MONEY });
-    put(ws, `K${r}`, fx(`F${r}+H${r}`, row.payment), font(12.5), { nf: NF_MONEY });
+    const R = { horizontal: "right" } as const;
+    put(ws, `F${r}`, row.certified, font(12.5), { nf: NF_MONEY, align: R });
+    put(ws, `H${r}`, row.retention ? -row.retention : 0, font(12.5), { nf: NF_MONEY, align: R });
+    put(ws, `K${r}`, fx(`F${r}+H${r}`, row.payment), font(12.5), { nf: NF_MONEY, align: R });
     ws.getRow(r).height = 19.5;
     r++;
   }
@@ -229,9 +272,9 @@ function writeRetentionSheet(ws: ExcelJS.Worksheet, d: InvoiceDraft, opts: Build
   const tb: Partial<ExcelJS.Borders> = { top: { style: "thin" }, bottom: { style: "double" } };
   put(ws, `B${r}`, "Cum. Payment to date", font(13, { bold: true }), { align: { horizontal: "left" } });
   put(ws, `E${r}`, ":", font(13, { bold: true }));
-  put(ws, `F${r}`, fx(`SUM(F${first}:F${lastRow})`, sched.total.certified), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb });
-  put(ws, `H${r}`, fx(`SUM(H${first}:H${lastRow})`, -sched.total.retention), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb });
-  put(ws, `K${r}`, fx(`SUM(K${first}:K${lastRow})`, sched.total.payment), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb });
+  put(ws, `F${r}`, fx(`SUM(F${first}:F${lastRow})`, sched.total.certified), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb, align: { horizontal: "right" } });
+  put(ws, `H${r}`, fx(`SUM(H${first}:H${lastRow})`, -sched.total.retention), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb, align: { horizontal: "right" } });
+  put(ws, `K${r}`, fx(`SUM(K${first}:K${lastRow})`, sched.total.payment), font(12.5, { bold: true }), { nf: NF_MONEY, border: tb, align: { horizontal: "right" } });
 
   const last = writeFooter(ws, Math.max(r + 3, 45), sched.total.payment, "Page 2 of 2");
   ws.pageSetup.printArea = `A1:K${last}`;
@@ -294,20 +337,26 @@ export async function buildInvoicePrintHtml(d: InvoiceDraft): Promise<string> {
   const payModes = `<img class="pay-modes" src="/invoice-payment-modes.png" alt="Payment modes">`;
   const page = (name: string) => {
     const ws = wb.getWorksheet(name)!;
-    const area = ws.pageSetup.printArea ?? "A1:K67";
-    // skip the letterhead rows (1-12): the image is placed above the table instead
-    const lastRow = area.split(":")[1].replace(/^[A-Z]+/i, "");
-    return worksheetToHtml(ws, { range: `A13:K${lastRow}`, pxPerChar: 7.4, replace: { [PAYMENT_MODES_MARKER]: payModes } });
+    const lay = layouts.get(ws)!;
+    const opt = { pxPerChar: 7.4, replace: { [PAYMENT_MODES_MARKER]: payModes } };
+    // skip the letterhead rows (1-12): the image is placed above the table instead;
+    // skip the Excel spacer rows: the flex page pushes the footer down instead
+    return `<div class="inv-body">${worksheetToHtml(ws, { ...opt, range: `A13:K${lay.bodyEnd}` })}</div>`
+      + `<div class="inv-foot">${worksheetToHtml(ws, { ...opt, range: `A${lay.footFrom}:K${lay.last}` })}</div>`;
   };
   const esc = (s: string) => s.replace(/</g, "");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Tax Invoice ${esc(d.invoiceNumber)}</title>
 <style>${SHEET_PRINT_CSS}
   table.sheet { margin: 0 auto; }
   .pay-modes { display: block; width: 440px; max-width: none; margin: 4px 0; }
+  .letterhead { width: 100%; max-width: none; }
+  .page.inv { display: flex; flex-direction: column; box-sizing: border-box; min-height: 276mm; }
+  .inv-foot { margin-top: auto; }
+  @media screen { .page.inv { min-height: 297mm; } }
 </style></head>
 <body>
-  <div class="page"><img class="letterhead" src="/invoice-letterhead.jpg" alt="Conplus Resources Pte Ltd">${page(INVOICE_SHEET)}</div>
-  <div class="page"><img class="letterhead" src="/invoice-letterhead.jpg" alt="Conplus Resources Pte Ltd">${page(RETENTION_SHEET)}</div>
+  <div class="page inv"><img class="letterhead" src="/invoice-letterhead.jpg" alt="Conplus Resources Pte Ltd">${page(INVOICE_SHEET)}</div>
+  <div class="page inv"><img class="letterhead" src="/invoice-letterhead.jpg" alt="Conplus Resources Pte Ltd">${page(RETENTION_SHEET)}</div>
 </body></html>`;
 }
 
