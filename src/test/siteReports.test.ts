@@ -5,6 +5,7 @@ import {
   copyPlannedToActual,
   crewTotal,
   dashboardTotals,
+  defaultSiteLocation,
   draftErrors,
   emptyHeader,
   emptyLine,
@@ -348,5 +349,24 @@ describe("crew carry-over", () => {
     const reset = { ...src("2026-09-15", "Plantation A", ""), supervisor: "", safety_personnel: "" };
     expect(carryCrew([reset, src("2026-09-14", "Plantation A", "321")], "2026-09-16", "")?.from.date).toBe("2026-09-14");
     expect(carryCrew([], "2026-09-16", "")).toBeNull();
+  });
+});
+
+describe("default site location", () => {
+  it("opens a new report on the only site the project uses", () => {
+    expect(defaultSiteLocation(["Plantation A"], [])).toBe("Plantation A");
+  });
+
+  it("stays blank when that site already has a report for the day", () => {
+    expect(defaultSiteLocation(["Plantation A"], ["plantation a "])).toBe("");
+  });
+
+  it("stays blank when the project works several sites", () => {
+    expect(defaultSiteLocation(["Plantation A", "Phase 4"], [])).toBe("");
+  });
+
+  it("ignores blank history and blank reports", () => {
+    expect(defaultSiteLocation([" ", "Plantation A"], [""])).toBe("Plantation A");
+    expect(defaultSiteLocation([], [])).toBe("");
   });
 });

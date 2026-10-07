@@ -37,6 +37,7 @@ import {
   copyPlannedToActual,
   CREW_FIELDS,
   crewTotal,
+  defaultSiteLocation,
   emptyCrew,
   hasCrew,
   draftErrors,
@@ -60,6 +61,7 @@ import {
   fetchCrewSources,
   fetchRecentReports,
   fetchReports,
+  fetchSiteLocations,
   fetchWeeklyPlan,
   reopenReport,
   reporterName,
@@ -69,7 +71,7 @@ import {
   type StoredReportFull,
 } from "@/lib/siteReportsApi";
 import type { SiteMaterial, SiteProject } from "./pickers";
-import { MaterialField } from "./pickers";
+import { LocationField, MaterialField } from "./pickers";
 import { Button, Field, NumberInput, Pill, SectionCard, successInk, TextArea, TextInput } from "./primitives";
 
 type Recent = Awaited<ReturnType<typeof fetchRecentReports>>[number];
@@ -125,6 +127,7 @@ export default function DailyReportTab({
   const [loading, setLoading] = useState(true);
   const [dayReports, setDayReports] = useState<StoredReportFull[]>([]);
   const [recent, setRecent] = useState<Recent[]>([]);
+  const [siteOptions, setSiteOptions] = useState<string[]>([]);
   const [header, setHeader] = useState<ReportHeader>(() => emptyHeader(project.id, date, project.coating_system ?? ""));
   const [lines, setLines] = useState<ReportLine[]>([]);
   const [saved, setSaved] = useState<string>("");
@@ -187,12 +190,17 @@ export default function DailyReportTab({
   const load = useCallback(
     async (preferId?: string) => {
       setLoading(true);
-      const [day, rec] = await Promise.all([fetchReports(project.id, date, date), fetchRecentReports(project.id)]);
+      const [day, rec, sites] = await Promise.all([
+        fetchReports(project.id, date, date),
+        fetchRecentReports(project.id),
+        fetchSiteLocations(project.id),
+      ]);
       setDayReports(day);
       setRecent(rec);
+      setSiteOptions(sites);
       const pick = day.find((r) => r.id === preferId) ?? day[0];
       if (pick) openStored(pick);
-      else await openNew();
+      else await openNew(defaultSiteLocation(sites, day.map((r) => r.site_location)));
       setLoading(false);
     },
     [project.id, date, openStored, openNew],
@@ -498,9 +506,17 @@ export default function DailyReportTab({
       <fieldset disabled={locked || loading} className="contents">
         <SectionCard title="Daily work report" description="Who is on site and for how long — the template posted before work.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Site location" hint="e.g. Plantation A">
+            <Field label="Site location" hint="Pick a site this project uses, or type a new one">
               {(id, d) => (
-                <TextInput id={id} aria-describedby={d} value={header.site_location} onChange={(e) => setH("site_location", e.target.value)} list="sr-locations" autoComplete="off" />
+                <LocationField
+                  id={id}
+                  describedBy={d}
+                  options={siteOptions}
+                  usedToday={dayReports.filter((r) => r.id !== header.id).map((r) => r.site_location)}
+                  value={header.site_location}
+                  onChange={(v) => setH("site_location", v)}
+                  placeholder="e.g. Plantation A"
+                />
               )}
             </Field>
             <Field label="Epoxy system">
@@ -606,6 +622,7 @@ export default function DailyReportTab({
                 onChange={(patch) => setL(i, patch)}
                 onRemove={lines.length > 1 ? () => removeLine(i) : undefined}
                 cardRef={(el) => (lineRefs.current[i] = el)}
+                locationHints={locationHints}
               />
             ))}
             {lines.length === 0 && <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No activities yet.</p>}
@@ -617,12 +634,6 @@ export default function DailyReportTab({
           </div>
         </SectionCard>
       </fieldset>
-
-      <datalist id="sr-locations">
-        {locationHints.map((h) => (
-          <option key={h} value={h} />
-        ))}
-      </datalist>
 
       {/* Action bar: sticks to the bottom of whichever element scrolls (the
           window in the client build, the main pane inside the app shell), so it
@@ -783,6 +794,7 @@ function ActivityCard({
   onChange,
   onRemove,
   cardRef,
+  locationHints,
 }: {
   index: number;
   line: ReportLine;
@@ -792,6 +804,7 @@ function ActivityCard({
   onChange: (patch: Partial<ReportLine>) => void;
   onRemove?: () => void;
   cardRef: (el: HTMLDivElement | null) => void;
+  locationHints: string[];
 }) {
   const [defectOpen, setDefectOpen] = useState(!!(line.defect_area || line.defect_remark));
   const delta = qtyDelta(line);
@@ -819,7 +832,16 @@ function ActivityCard({
       <div className="space-y-4 p-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_1.4fr_7rem]">
           <Field label="Location" hint="Area of the site, e.g. Phase 3">
-            {(id, d) => <TextInput id={id} aria-describedby={d} value={line.location} onChange={(e) => onChange({ location: e.target.value })} list="sr-locations" autoComplete="off" />}
+            {(id, d) => (
+              <LocationField
+                id={id}
+                describedBy={d}
+                options={locationHints}
+                value={line.location}
+                onChange={(v) => onChange({ location: v })}
+                placeholder="e.g. Phase 3"
+              />
+            )}
           </Field>
           <Field label="Activity" error={errFor("activity")}>
             {(id, d) => (

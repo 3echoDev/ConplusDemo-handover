@@ -60,6 +60,26 @@ export async function fetchMaterials(): Promise<SiteMaterial[]> {
   return (data as SiteMaterial[]) ?? [];
 }
 
+/** Site locations this project has reported on, most recently used first. */
+export async function fetchSiteLocations(projectId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("site_daily_reports")
+    .select("site_location,report_date")
+    .eq("project_id", projectId)
+    .order("report_date", { ascending: false })
+    .limit(400);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of ((data as { site_location: string | null }[]) ?? [])) {
+    const name = (r.site_location ?? "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 /** The project's latest works order ("WO: (AI to retrieve the last WO)" on the sheet). */
 export async function fetchLastWo(project: SiteProject): Promise<string> {
   const { data } = await supabase

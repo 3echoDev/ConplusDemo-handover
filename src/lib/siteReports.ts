@@ -208,6 +208,18 @@ export interface CrewSource {
   total_men: number | null;
 }
 
+/**
+ * The site location a new report opens on: the single site this project reports
+ * from, as long as it has no report for that day yet. A project working several
+ * sites is left blank so nobody files the day against the wrong one.
+ */
+export function defaultSiteLocation(sites: string[], usedToday: string[]): string {
+  const known = sites.map((s) => s.trim()).filter(Boolean);
+  if (known.length !== 1) return "";
+  const used = new Set(usedToday.map((u) => (u ?? "").trim().toLowerCase()).filter(Boolean));
+  return used.has(known[0].toLowerCase()) ? "" : known[0];
+}
+
 export interface CarriedCrew {
   crew: Crew;
   /** A Total typed over the counted one on the source report, else null. */

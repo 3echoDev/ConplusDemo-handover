@@ -7,7 +7,7 @@ import { notify as toast } from "./notify";
 import { cn } from "@/lib/utils";
 import { addDays, fmtDay, fmtRange, isoDate, numStr, parseIso, toNum, weekStart, type WeeklyPlanRow } from "@/lib/siteReports";
 import { deletePlanRow, fetchWeeklyPlan, savePlanRow } from "@/lib/siteReportsApi";
-import type { SiteProject } from "./pickers";
+import { LocationField, type SiteProject } from "./pickers";
 import { Button, Field, NumberInput, SectionCard, TextInput } from "./primitives";
 
 interface Draft {
@@ -315,7 +315,16 @@ export default function WeeklyPlanTab({
                 )}
               </Field>
               <Field label="Location" className="lg:col-span-2" hint="e.g. Driveway & Parking lot">
-                {(id, d) => <TextInput id={id} aria-describedby={d} value={editing.location} list="sr-plan-locations" autoComplete="off" onChange={(e) => setEditing((x) => x && { ...x, location: e.target.value })} />}
+                {(id, d) => (
+                  <LocationField
+                    id={id}
+                    describedBy={d}
+                    options={locationHints}
+                    value={editing.location}
+                    onChange={(v) => setEditing((x) => x && { ...x, location: v })}
+                    placeholder="e.g. Driveway & Parking lot"
+                  />
+                )}
               </Field>
               <Field label="Activities" className="sm:col-span-2" error={errors.activities}>
                 {(id, d) => (
@@ -348,11 +357,6 @@ export default function WeeklyPlanTab({
                 {editing.id ? "Save row" : "Add row"}
               </Button>
             </div>
-            <datalist id="sr-plan-locations">
-              {locationHints.map((h) => (
-                <option key={h} value={h} />
-              ))}
-            </datalist>
           </form>
         )}
       </SectionCard>

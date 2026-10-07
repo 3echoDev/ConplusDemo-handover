@@ -1,7 +1,7 @@
-// Project and material comboboxes for Site Reports. Both popovers scale from
-// their trigger (Radix exposes the origin), not from the centre.
+// Project, location and material comboboxes for Site Reports. Every popover
+// scales from its trigger (Radix exposes the origin), not from the centre.
 import { useMemo, useState } from "react";
-import { Check, ChevronsUpDown, FolderKanban, Package, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, FolderKanban, MapPin, Package, Plus } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -200,6 +200,125 @@ export function MaterialField({
                   className="cursor-pointer py-2.5 text-muted-foreground"
                 >
                   Clear material
+                </CommandItem>
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Site or area location: pick one this project already uses, or type a new one.
+ * A site that already has a report for the day is listed with a note, because
+ * the database keeps one report per project, day and site location.
+ */
+export function LocationField({
+  id,
+  options,
+  value,
+  onChange,
+  usedToday = [],
+  placeholder = "Pick or type…",
+  disabled,
+  describedBy,
+  invalid,
+}: {
+  id: string;
+  options: string[];
+  value: string;
+  onChange: (location: string) => void;
+  usedToday?: string[];
+  placeholder?: string;
+  disabled?: boolean;
+  describedBy?: string;
+  invalid?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const used = useMemo(() => new Set(usedToday.map((u) => u.trim().toLowerCase()).filter(Boolean)), [usedToday]);
+  const typed = search.trim();
+  const exact = typed && options.some((o) => o.toLowerCase() === typed.toLowerCase());
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setSearch(value);
+      }}
+    >
+      <PopoverTrigger asChild disabled={disabled}>
+        <button
+          id={id}
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
+          className={cn(inputCls, "flex cursor-pointer items-center gap-2 text-left")}
+        >
+          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className={cn("min-w-0 flex-1 truncate", !value && "text-muted-foreground/70")}>{value || placeholder}</span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className={popCls}>
+        <Command shouldFilter>
+          <CommandInput value={search} onValueChange={setSearch} placeholder="Search or type a new location…" className="h-11 text-base" />
+          <CommandList className="max-h-[min(55vh,20rem)]">
+            {/* forceMount on the group too: cmdk hides a group whose items it does not
+                count as matches, and force-mounted items are never counted. */}
+            {typed && !exact && (
+              <CommandGroup forceMount>
+                <CommandItem
+                  value={`__typed__ ${typed}`}
+                  forceMount
+                  onSelect={() => {
+                    onChange(typed);
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer gap-2 py-2.5"
+                >
+                  <Plus className="h-4 w-4 shrink-0" />
+                  Use “{typed}” as a new location
+                </CommandItem>
+              </CommandGroup>
+            )}
+            <CommandEmpty>Nothing used here yet — type the location.</CommandEmpty>
+            {options.length > 0 && (
+              <CommandGroup heading="Used on this project">
+                {options.map((o) => (
+                  <CommandItem
+                    key={o}
+                    value={o}
+                    onSelect={() => {
+                      onChange(o);
+                      setOpen(false);
+                    }}
+                    className="cursor-pointer gap-3 py-2.5"
+                  >
+                    <Check className={cn("h-4 w-4 shrink-0", value.trim().toLowerCase() === o.trim().toLowerCase() ? "opacity-100" : "opacity-0")} />
+                    <span className="min-w-0 flex-1 truncate text-sm">{o}</span>
+                    {used.has(o.trim().toLowerCase()) && <span className="shrink-0 text-[11px] text-muted-foreground">has a report today</span>}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {value && (
+              <CommandGroup forceMount>
+                <CommandItem
+                  value="__clear__"
+                  forceMount
+                  onSelect={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer py-2.5 text-muted-foreground"
+                >
+                  Clear location
                 </CommandItem>
               </CommandGroup>
             )}
