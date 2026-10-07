@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import {
   Briefcase, DollarSign, FileText, Package, ShoppingCart, AlertTriangle, Building2, Sparkles, Printer, X, Search, ClipboardList, Layers, FileSpreadsheet, FileCheck2, Activity, Truck, Send, Bookmark, HardHat,
 } from "lucide-react";
@@ -770,6 +772,23 @@ interface ProjectDoc {
 const woTotalOf = (wo: WorksOrder) => woOrderTotal(wo);
 
 const woTotal = (wo: WorksOrder) => woOrderTotal(wo);
+
+/**
+ * The Live View claim panel, opened from elsewhere by claim id (Accounts, 6 Oct: click
+ * the claim # in the /claims grid instead of searching for it on the Live View).
+ * A claim the shared cache has not loaded yet (just created on /claims) triggers a refetch.
+ */
+export function ClaimDetailModal({ claimId, onClose }: { claimId: string; onClose: () => void }) {
+  const { claims } = useAppData();
+  const queryClient = useQueryClient();
+  const claim = claims.find((c) => c.id === claimId);
+  useEffect(() => {
+    if (!claim) queryClient.invalidateQueries({ queryKey: ["claims"] });
+  }, [claim, queryClient]);
+  if (!claim) return null;
+  // portalled: the caller may sit inside a styled table cell (the /claims grid)
+  return createPortal(<DetailModal detail={{ type: "claim", item: claim }} onClose={onClose} />, document.body);
+}
 
 function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startEditing?: boolean }) {
   const { updateClaimFields } = useAppData();

@@ -3,6 +3,10 @@ import { supabase } from "@/lib/supabase";
 import { DEFAULT_TEMPLATES, TEMPLATE_META, PLACEHOLDERS, renderChaseTemplate, unknownPlaceholders } from "@/lib/chaseTemplates";
 import ClaimInvoiceModal from "@/components/ClaimInvoiceModal";
 
+// The Live View's claim panel (figures, lines, Edit, Excel, Print/PDF), opened from the
+// claim # in a project's breakdown. Lazy so this page does not load the Live View up front.
+const ClaimDetailModal = React.lazy(() => import("@/pages/LiveViewPage").then((m) => ({ default: m.ClaimDetailModal })));
+
 /*
   ConPlus — Claims Pivot & Payment Chase (v4 — Two-clock engine)
   ---------------------------------------------------------------
@@ -530,7 +534,7 @@ function PivotGrid({ projects, months, expanded, setExpanded }) {
                   <tr className="cp-detail-row">
                     <td className="cp-col-proj" />
                     <td colSpan={months.length + 4}>
-                      <ClaimDetail project={p} />
+                      <ClaimDetail project={p} onClaimClosed={() => setReloadKey((k) => k + 1)} />
                     </td>
                   </tr>
                 )}
@@ -552,8 +556,9 @@ const CURRENT_MONTH = (() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 })();
 
-function ClaimDetail({ project }) {
+function ClaimDetail({ project, onClaimClosed }) {
   const [editIdx, setEditIdx] = useState(null);
+  const [openClaimId, setOpenClaimId] = useState(null);
   const [editDraft, setEditDraft] = useState({});
   const [saving, setSaving] = useState(false);
 
@@ -595,6 +600,11 @@ function ClaimDetail({ project }) {
 
   return (
     <div className="cp-detail">
+      {openClaimId && (
+        <React.Suspense fallback={null}>
+          <ClaimDetailModal claimId={openClaimId} onClose={() => { setOpenClaimId(null); onClaimClosed?.(); }} />
+        </React.Suspense>
+      )}
       <div className="cp-detail-head">
         <span className="cp-detail-title">{project.code} &mdash; {cleanName(project.name)}</span>
         <div className="cp-detail-contact">
@@ -702,7 +712,13 @@ function ClaimDetail({ project }) {
 
             return (
               <tr key={i} className={isCurrentMonth ? "cp-row-current" : ""}>
-                <td>#{c.claim_no ?? "\u2014"}</td>
+                <td>
+                  {c.id ? (
+                    <button type="button" className="cp-claim-link" title="Open claim details" onClick={() => setOpenClaimId(c.id)}>
+                      #{c.claim_no ?? "\u2014"}
+                    </button>
+                  ) : <>#{c.claim_no ?? "\u2014"}</>}
+                </td>
                 <td>{monthLabel(monthKey(c.claim_date))}</td>
                 <td className="r">{fmtFull(c.amount)}</td>
                 <td className="r">{c.retention ? fmtFull(c.retention) : <span className="cp-muted">&mdash;</span>}</td>
@@ -2295,6 +2311,8 @@ const CSS = `
 .cp-dtable th.r { text-align: right; }
 .cp-dtable td { padding: 6px 8px; border-bottom: 1px solid var(--border-lt); font-variant-numeric: tabular-nums; }
 .cp-dtable td.r { text-align: right; font-weight: 700; }
+.cp-claim-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--navy, #1e3a8a); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cp-claim-link:hover { color: #F97316; }
 
 .cp-pending { color: var(--orange-ink); font-style: italic; font-size: 12px; }
 .cp-neg { color: var(--red); font-weight: 700; }
