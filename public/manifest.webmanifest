@@ -1,0 +1,19 @@
+{
+  "id": "/site-reports",
+  "name": "ConPlus Site Reports",
+  "short_name": "Site Reports",
+  "description": "Weekly plan, daily work and material reports, and the dashboard report, per project.",
+  "start_url": "/site-reports",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F3EE",
+  "theme_color": "#D9541F",
+  "lang": "en-SG",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

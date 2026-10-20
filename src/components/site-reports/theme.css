@@ -1,0 +1,94 @@
+/*
+  Site Reports theme — scoped to .sr-app so the rest of the app keeps its blue
+  Outfit/Inter look. Tokens follow the client's SitePulse mockup: warm paper
+  ground, white cards, hairline borders, one orange accent, condensed headings,
+  monospace meta. Values are HSL triplets for the shadcn/Tailwind variables.
+*/
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap");
+
+.sr-app {
+  --background: 43 26% 95%; /* ground #F5F3EE */
+  --foreground: 30 14% 11%; /* ink #211D19 */
+  --card: 0 0% 100%;
+  --card-foreground: 30 14% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 30 14% 11%;
+  --primary: 17 75% 49%; /* accent #D9541F */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 44 26% 92%; /* surface-2 #EFECE4 */
+  --secondary-foreground: 30 14% 11%;
+  --muted: 44 26% 92%;
+  --muted-foreground: 35 7% 45%; /* #7A7369 */
+  --accent: 38 90% 38%; /* amber notes keep their meaning (warn #B8790A) */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62% 47%; /* bad #C22E2E */
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 46% 34%; /* good #2E7D4F */
+  --success-foreground: 0 0% 100%;
+  --warning: 38 90% 38%; /* warn #B8790A */
+  --warning-foreground: 0 0% 100%;
+  --info: 209 53% 35%; /* sky #2A5C8A */
+  --info-foreground: 0 0% 100%;
+  --border: 40 21% 86%; /* line #E2DDD3 */
+  --input: 40 21% 86%;
+  --ring: 17 75% 49%;
+  --radius: 0.75rem;
+
+  --font-heading: "Barlow Condensed", "Outfit", sans-serif;
+  --font-body: "IBM Plex Sans", "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Height of the bottom navigation; the daily report's save bar sits above it. */
+  --sr-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
+
+  font-family: var(--font-body);
+  color-scheme: light;
+}
+
+.dark .sr-app {
+  --background: 38 21% 7%;
+  --foreground: 40 32% 93%;
+  --card: 33 15% 12%;
+  --card-foreground: 40 32% 93%;
+  --popover: 33 15% 12%;
+  --popover-foreground: 40 32% 93%;
+  --primary: 21 86% 59%;
+  --primary-foreground: 35 58% 6%;
+  --secondary: 35 16% 15%;
+  --secondary-foreground: 40 32% 93%;
+  --muted: 35 16% 15%;
+  --muted-foreground: 37 12% 61%;
+  --accent: 40 75% 57%;
+  --accent-foreground: 35 58% 6%;
+  --destructive: 5 73% 67%;
+  --destructive-foreground: 35 58% 6%;
+  --success: 143 42% 56%;
+  --success-foreground: 35 58% 6%;
+  --warning: 40 75% 57%;
+  --warning-foreground: 35 58% 6%;
+  --info: 208 60% 68%;
+  --info-foreground: 35 58% 6%;
+  --border: 36 15% 20%;
+  --input: 36 15% 20%;
+  --ring: 21 86% 59%;
+  color-scheme: dark;
+}
+
+.sr-app .font-mono,
+.sr-app .sr-mono {
+  font-family: var(--font-mono);
+}
+
+.sr-app h1,
+.sr-app h2,
+.sr-app h3,
+.sr-app .font-heading {
+  font-family: var(--font-heading);
+}
+
+/* Standalone (installed) mode: respect the notch and the home indicator. */
+@media (display-mode: standalone) {
+  .sr-app .sr-topbar {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}

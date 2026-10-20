@@ -72,7 +72,7 @@ import {
 } from "@/lib/siteReportsApi";
 import type { SiteMaterial, SiteProject } from "./pickers";
 import { LocationField, MaterialField } from "./pickers";
-import { Button, Field, NumberInput, Pill, SectionCard, successInk, TextArea, TextInput } from "./primitives";
+import { Button, Field, NumberInput, Pill, SectionCard, StageTracker, labelCls, successInk, TextArea, TextInput } from "./primitives";
 
 type Recent = Awaited<ReturnType<typeof fetchRecentReports>>[number];
 
@@ -389,7 +389,7 @@ export default function DailyReportTab({
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-[11.5rem] space-y-1.5">
-            <label htmlFor="sr-date" className="block text-[13px] font-medium text-foreground">
+            <label htmlFor="sr-date" className={labelCls}>
               Date
             </label>
             <div className="relative">
@@ -426,6 +426,22 @@ export default function DailyReportTab({
             )}
           </div>
         </div>
+
+        {/* Where this report is: draft before work, ACTUAL at the end of the day, then submitted. */}
+        {!loading && (
+          <StageTracker
+            className="mt-4"
+            steps={[
+              { title: "Before work", desc: header.id ? "Draft saved" : "Save a draft", state: header.id ? "done" : "active" },
+              {
+                title: "End of day",
+                desc: lines.length === 0 ? "Fill ACTUAL" : `${actualCount}/${lines.length} actual`,
+                state: locked || (lines.length > 0 && actualCount === lines.length) ? "done" : header.id ? "active" : "todo",
+              },
+              { title: "Submitted", desc: locked ? fmtStamp(header.submitted_at) : "Read-only after", state: locked ? "done" : lines.length > 0 && actualCount === lines.length ? "active" : "todo" },
+            ]}
+          />
+        )}
 
         {dayReports.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -638,7 +654,7 @@ export default function DailyReportTab({
       {/* Action bar: sticks to the bottom of whichever element scrolls (the
           window in the client build, the main pane inside the app shell), so it
           stays in the content column and never covers the sidebar. */}
-      <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-card shadow-[0_-6px_16px_-10px_rgb(15_23_42/0.18)] sm:mx-0 sm:rounded-t-2xl sm:border-x">
+      <div className="sticky bottom-[var(--sr-nav-h,0px)] z-30 -mx-4 border-t border-border bg-card shadow-[0_-6px_16px_-10px_rgb(33_29_25/0.18)] sm:mx-0 sm:rounded-t-2xl sm:border-x">
         <div className="flex items-center gap-2 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
           <div className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
             {loading ? null : dirty ? (
@@ -686,7 +702,7 @@ export default function DailyReportTab({
 
       {/* Submit */}
       <AlertDialog open={confirmSubmit} onOpenChange={(o) => busy !== "submit" && setConfirmSubmit(o)}>
-        <AlertDialogContent className="max-w-md rounded-2xl">
+        <AlertDialogContent className="sr-app max-w-md rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Submit the {fmtDay(date)} report?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -732,7 +748,7 @@ export default function DailyReportTab({
 
       {/* Delete draft */}
       <AlertDialog open={confirmDelete} onOpenChange={(o) => busy !== "delete" && setConfirmDelete(o)}>
-        <AlertDialogContent className="max-w-md rounded-2xl">
+        <AlertDialogContent className="sr-app max-w-md rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -758,7 +774,7 @@ export default function DailyReportTab({
 
       {/* Unsaved changes guard */}
       <AlertDialog open={pending !== null} onOpenChange={(o) => !o && setPending(null)}>
-        <AlertDialogContent className="max-w-md rounded-2xl">
+        <AlertDialogContent className="sr-app max-w-md rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>This report has edits that are not saved. Save the draft first to keep them.</AlertDialogDescription>

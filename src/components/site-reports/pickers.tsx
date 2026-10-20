@@ -25,7 +25,7 @@ export interface SiteMaterial {
 }
 
 const popCls =
-  "origin-[var(--radix-popover-content-transform-origin)] p-0 w-[var(--radix-popover-trigger-width)] min-w-[18rem] rounded-xl";
+  "sr-app origin-[var(--radix-popover-content-transform-origin)] p-0 w-[var(--radix-popover-trigger-width)] min-w-[18rem] rounded-xl";
 
 export function ProjectPicker({
   projects,
