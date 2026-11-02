@@ -34,7 +34,13 @@ describe("chase templates", () => {
   });
 
   it("keeps the client's verbatim payment wording in the defaults", () => {
-    expect(DEFAULT_TEMPLATES["pay.1st"].body).toContain("Please be informed that your account is long OVERDUE.");
+    // Accounts' "Email Templates" sheet, 2 Nov 2026
+    expect(DEFAULT_TEMPLATES["pay.invoice"].body).toContain("We are pleased to submit our tax invoice for your perusal.");
+    expect(DEFAULT_TEMPLATES["pay.invoice"].body).toContain("Go-Green w.e.f 1st November 2023");
+    expect(DEFAULT_TEMPLATES["pay.1st"].body).toContain("Please be informed that your account is long overdue.");
+    expect(DEFAULT_TEMPLATES["pay.1st"].body).toContain("Kindly advise the payment of {outstanding} by {deadline}.");
+    expect(DEFAULT_TEMPLATES["pay.2nd"].body).toBe(DEFAULT_TEMPLATES["pay.1st"].body);
+    expect(DEFAULT_TEMPLATES["pay.final.legal"].body).toContain("Statement of Account as at {as_at}");
     expect(DEFAULT_TEMPLATES["pay.final.legal"].body).toContain("commence legal proceedings");
     expect(DEFAULT_TEMPLATES["pay.soa"].body.endsWith("{signature}")).toBe(true);
   });

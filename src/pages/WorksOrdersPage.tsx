@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, Download, Pencil } from "lucide-react";
+import { Plus, Search, ChevronRight, ClipboardList, Layers, Calculator, Printer, Download, Pencil, Receipt } from "lucide-react";
 import { printWO } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
+import MaterialInvoiceModal from "@/components/MaterialInvoiceModal";
 import ActivityLog from "@/components/ActivityLog";
 import WOPricingEditor from "@/components/WOPricingEditor";
 import { useAppData } from "@/data/AppDataContext";
@@ -29,6 +30,7 @@ export default function WorksOrdersPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [invoiceFor, setInvoiceFor] = useState<string | null>(null); // WO id with the material-supply invoice open
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -265,6 +267,13 @@ export default function WorksOrdersPage() {
                         >
                           <Printer className="h-3.5 w-3.5" /> Print
                         </button>
+                        <button
+                          onClick={() => setInvoiceFor(wo.id)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                          title="Tax invoice for supply of materials (Accounts' second invoice format)"
+                        >
+                          <Receipt className="h-3.5 w-3.5" /> Prepare invoice
+                        </button>
                         <span className="text-xs text-muted-foreground">Status</span>
                         <select
                           className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm capitalize"
@@ -292,6 +301,10 @@ export default function WorksOrdersPage() {
       )}
 
       <CreateWODialog open={creating} onClose={() => setCreating(false)} />
+      {invoiceFor && (() => {
+        const wo = worksOrders.find((w) => w.id === invoiceFor);
+        return wo ? <MaterialInvoiceModal wo={wo} onClose={() => setInvoiceFor(null)} /> : null;
+      })()}
     </div>
   );
 }

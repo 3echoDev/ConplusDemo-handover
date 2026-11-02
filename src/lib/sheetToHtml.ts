@@ -19,6 +19,15 @@ export interface SheetRenderOptions {
   pxPerChar?: number;
   /** Width the sheet must fit into (px). Fonts scale down by the same ratio, like Excel "fit to 1 page wide". Default 734 (A4 portrait, 8 mm margins). */
   fitWidthPx?: number;
+  /** Accounting-format money like Excel: the "$" pinned to the cell's left edge, the number to its right. */
+  splitCurrency?: boolean;
+}
+
+/** "$ 1,234.00" -> "$" + "1,234.00"; "($ 1,234.00)" -> "($" + "1,234.00)"; anything else untouched. */
+export function splitCurrencyHtml(text: string): string | null {
+  const m = text.match(/^(\(?\$) (.*)$/);
+  if (!m) return null;
+  return `<span style="float:left">${esc(m[1])}</span>${esc(m[2])}`;
 }
 
 const colToNum = (col: string) => col.toUpperCase().split("").reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0);
@@ -174,7 +183,7 @@ export function worksheetToHtml(ws: ExcelJS.Worksheet, opts: SheetRenderOptions 
         const span = spans.get(`${r}:${c}`);
         const text = formatCellValue(cell.value, cell.numFmt);
         const isNumber = typeof (cell.value && typeof cell.value === "object" && "result" in (cell.value as object) ? (cell.value as ExcelJS.CellFormulaValue).result : cell.value) === "number";
-        const rep = opts.replace?.[text.trim()];
+        const rep = opts.replace?.[text.trim()] ?? (opts.splitCurrency && isNumber && /\$/.test(cell.numFmt ?? "") ? splitCurrencyHtml(text) ?? undefined : undefined);
         const wrap = !!cell.alignment?.wrapText;
         let spill = false;
         if (!wrap && text && !isNumber && !span) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { DEFAULT_TEMPLATES, TEMPLATE_META, PLACEHOLDERS, renderChaseTemplate, unknownPlaceholders } from "@/lib/chaseTemplates";
+import { DEFAULT_TEMPLATES, TEMPLATE_META, PLACEHOLDERS, PAYMENT_TEMPLATE_CHOICES, renderChaseTemplate, unknownPlaceholders } from "@/lib/chaseTemplates";
 import ClaimInvoiceModal from "@/components/ClaimInvoiceModal";
 
 // The Live View's claim panel (figures, lines, Edit, Excel, Print/PDF), opened from the
@@ -123,8 +123,22 @@ function payVars(row) {
     days_over: Math.max(0, -(row.days_to_due || 0)),
     deadline: payDeadline(row),
     outstanding: `SGD ${fmtNum(row.outstanding_amount != null ? row.outstanding_amount : row.invoice_amount)}`,
+    as_at: fmtDate(new Date().toISOString().slice(0, 10)),
   };
 }
+
+/** A specific payment template, rendered for this claim (the card's template picker). */
+function renderPayTemplate(row, key) {
+  return renderChaseTemplate(key, TEMPLATE_OVERRIDES, payVars(row));
+}
+
+/** The template key the payment clock would use for this claim's stage. */
+function payStageKey(row) {
+  return { soa: "pay.soa", soa_overdue: "pay.soa_overdue", "1st": "pay.1st", "2nd": "pay.2nd", final: "pay.final.legal" }[row.stage] || null;
+}
+
+const splitEmails = (s) => (s || "").split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function getPayEmail(row) {
   const vars = payVars(row);
@@ -195,6 +209,7 @@ export default function ClaimsPivot() {
         claim_id: c.id,
         claim_no: c.claim_no,
         claim_number: c.claim_number,
+        project_id: c.project_id,
         project_code: c.project_code,
         project_name: c.project_name || c.projects?.name || null,
         client_name: c.client_name,
@@ -953,8 +968,23 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
   const [chip, setChip] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
   const [detailMap, setDetailMap] = useState({}); // claim_id -> { history, hold }
-  const [emailDraft, setEmailDraft] = useState({}); // project_id -> in-progress email input (before save)
+  // Recipients live on the project: To = projects.contact_email (comes with the chase
+  // views), CC / BCC = projects.chase_cc / chase_bcc (fetched here). Editable any time
+  // (Accounts, 2 Nov: "allow editing after saving; separate into To / CC / BCC").
+  const [recipients, setRecipients] = useState({}); // project_id -> { cc, bcc }
+  const [recipEdit, setRecipEdit] = useState({}); // project_id -> { to, cc, bcc } while the form is open
   const [savingEmail, setSavingEmail] = useState(null); // project_id currently saving
+  const [attnEdit, setAttnEdit] = useState({}); // claim_id -> Attn text while typing
+  const [pickedTemplate, setPickedTemplate] = useState({}); // claim_id -> template key chosen on the card
+  const loadRecipients = useCallback(async () => {
+    const ids = [...new Set([...certRows, ...payRows, ...pendingRows].map((r) => r.project_id).filter(Boolean))];
+    if (!ids.length) { setRecipients({}); return; }
+    const { data } = await supabase.from("projects").select("id, chase_cc, chase_bcc").in("id", ids);
+    const m = {};
+    for (const p of data || []) m[p.id] = { cc: p.chase_cc || "", bcc: p.chase_bcc || "" };
+    setRecipients(m);
+  }, [certRows, payRows, pendingRows]);
+  useEffect(() => { void loadRecipients(); }, [loadRecipients]);
 
   const clock = chaseTab === "certificate" ? "certificate" : "payment";
 
@@ -1057,12 +1087,16 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
       // Send exactly what the card previews (templates are editable); n8n falls
       // back to its own wording only if subject/body are missing.
       const drafted = effectiveEmail(row);
+      const rc = recipients[row.project_id] || {};
+      const cc = splitEmails(rc.cc), bcc = splitEmails(rc.bcc);
+      const q = `claim_id=${row.claim_id}&clock=${clock}&to=${encodeURIComponent(row.contact_email)}`
+        + (cc.length ? `&cc=${encodeURIComponent(cc.join(","))}` : "") + (bcc.length ? `&bcc=${encodeURIComponent(bcc.join(","))}` : "");
       const res = await fetch(
-        `${SEND_CHASE_URL}?claim_id=${row.claim_id}&clock=${clock}&to=${encodeURIComponent(row.contact_email)}`,
+        `${SEND_CHASE_URL}?${q}`,
         {
           method: "POST",
           headers: { "X-Chase-Token": SEND_CHASE_TOKEN, "Content-Type": "application/json" },
-          body: JSON.stringify({ to: row.contact_email, subject: drafted?.subject || null, body: drafted?.body || null, manual: !row.needs_action_today }),
+          body: JSON.stringify({ to: row.contact_email, cc, bcc, subject: drafted?.subject || null, body: drafted?.body || null, manual: !row.needs_action_today }),
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -1134,23 +1168,59 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
     await onRefresh();
   };
 
-  // Save a recipient email onto the project (email lives on projects, not claims).
-  // Once saved it locks in — the card shows it read-only and the input disappears.
-  const handleSaveEmail = async (row) => {
-    const email = (emailDraft[row.project_id] || "").trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showFeedback("Enter a valid email address."); return; }
+  // Save the recipients onto the project (they live on projects, not claims). The
+  // form can be reopened at any time — nothing locks once saved.
+  const openRecipients = (row) => {
+    const rc = recipients[row.project_id] || {};
+    setRecipEdit((m) => ({ ...m, [row.project_id]: { to: row.contact_email || "", cc: rc.cc || "", bcc: rc.bcc || "" } }));
+  };
+  const closeRecipients = (projectId) => setRecipEdit((m) => { const n = { ...m }; delete n[projectId]; return n; });
+  const handleSaveRecipients = async (row) => {
+    const ed = recipEdit[row.project_id] || {};
+    const to = (ed.to || "").trim();
+    if (!EMAIL_RE.test(to)) { showFeedback("Enter a valid To: email address."); return; }
+    const bad = [...splitEmails(ed.cc), ...splitEmails(ed.bcc)].filter((e) => !EMAIL_RE.test(e));
+    if (bad.length) { showFeedback(`Not an email address: ${bad.join(", ")}`); return; }
     if (!row.project_id) { showFeedback("No project linked to this claim."); return; }
     setSavingEmail(row.project_id);
     try {
-      const { error } = await supabase.from("projects").update({ contact_email: email }).eq("id", row.project_id);
+      const patch = { contact_email: to, chase_cc: splitEmails(ed.cc).join(", ") || null, chase_bcc: splitEmails(ed.bcc).join(", ") || null };
+      const { error } = await supabase.from("projects").update(patch).eq("id", row.project_id);
       if (error) { showFeedback("Error: " + error.message); }
       else {
-        showFeedback("Recipient email saved.");
-        setEmailDraft((m) => { const n = { ...m }; delete n[row.project_id]; return n; });
+        showFeedback("Recipients saved.");
+        closeRecipients(row.project_id);
+        await loadRecipients();
       }
     } catch (e) { showFeedback("Error: " + e.message); }
     setSavingEmail(null);
     await onRefresh();
+  };
+
+  // Attn on the draft = the claim's contact person; editable in place (Accounts, 2 Nov).
+  const saveAttn = async (row) => {
+    const v = attnEdit[row.claim_id];
+    if (v == null) return;
+    const next = v.trim();
+    setAttnEdit((m) => { const n = { ...m }; delete n[row.claim_id]; return n; });
+    if (next === (row.contact_person || "")) return;
+    const { data, error } = await supabase.rpc("update_claim", { p_claim_id: row.claim_id, p_patch: { contact_person: next || null } });
+    if (error || !data?.ok) showFeedback("Attn not saved: " + (error?.message || data?.error || "unknown error"));
+    else { showFeedback("Attn saved on this claim."); await onRefresh(); }
+  };
+
+  // Template picker on a Payment chase card: re-draft this claim from the chosen
+  // wording (Invoice / SOA / 1st / 2nd / Final) and keep it as the claim's draft.
+  const applyTemplate = async (row, key) => {
+    setPickedTemplate((m) => ({ ...m, [row.claim_id]: key }));
+    if (key === payStageKey(row)) { await resetDraft(row); return; }
+    const t = renderPayTemplate(row, key);
+    if (!t) return;
+    setDraftEdit((m) => { const n = { ...m }; delete n[row.claim_id]; return n; });
+    const { data, error } = await supabase.rpc("save_chase_draft", { p_claim_id: row.claim_id, p_clock: clock, p_subject: t.subject, p_body: t.body, p_actor: actorName() });
+    if (error || !data?.ok) showFeedback("Draft not saved: " + (error?.message || data?.error || "unknown error"));
+    else showFeedback(`Draft switched to the ${PAYMENT_TEMPLATE_CHOICES.find((c) => c.key === key)?.label.replace(/^\d+\. /, "") || "chosen"} wording.`);
+    await loadDrafts();
   };
 
   const openDraft = (row, isManual) => {
@@ -1339,30 +1409,47 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
               {cleanClient(row.client_name)}
               {row.contact_person ? ` \u00B7 ${row.contact_person}` : ""}
             </div>
-            {row.contact_email ? (
-              <div className="cpc-mailchip on" title="Recipient email saved on the project">
-                <span className="cpc-mailglyph">{"\u2709"}</span> {row.contact_email}
-              </div>
-            ) : (
-              <div className="cpc-mailedit">
-                <span className="cpc-mailedit-label">EMAIL:</span>
-                <input
-                  className="cpc-mailedit-input"
-                  type="email"
-                  placeholder="recipient@company.com"
-                  value={emailDraft[row.project_id] || ""}
-                  onChange={(e) => setEmailDraft((m) => ({ ...m, [row.project_id]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveEmail(row); }}
-                />
-                <button
-                  className="cpc-btn small"
-                  onClick={() => handleSaveEmail(row)}
-                  disabled={savingEmail === row.project_id}
-                >
-                  {savingEmail === row.project_id ? "Saving\u2026" : "Save"}
-                </button>
-              </div>
-            )}
+            {(() => {
+              const ed = recipEdit[row.project_id];
+              const rc = recipients[row.project_id] || {};
+              if (ed) {
+                const set = (k) => (e) => setRecipEdit((m) => ({ ...m, [row.project_id]: { ...m[row.project_id], [k]: e.target.value } }));
+                const onKey = (e) => { if (e.key === "Enter") handleSaveRecipients(row); if (e.key === "Escape") closeRecipients(row.project_id); };
+                return (
+                  <div className="cpc-mailedit cpc-mailedit-form" onClick={(e) => e.stopPropagation()}>
+                    {[["to", "To:", "recipient@company.com"], ["cc", "CC:", "optional, comma-separated"], ["bcc", "BCC:", "optional, comma-separated"]].map(([k, lbl, ph]) => (
+                      <label key={k} className="cpc-mailedit-row">
+                        <span className="cpc-mailedit-label">{lbl}</span>
+                        <input className="cpc-mailedit-input" type="text" placeholder={ph} value={ed[k]} onChange={set(k)} onKeyDown={onKey} autoFocus={k === "to"} />
+                      </label>
+                    ))}
+                    <div className="cpc-mailedit-actions">
+                      <button className="cpc-btn small" onClick={() => handleSaveRecipients(row)} disabled={savingEmail === row.project_id}>
+                        {savingEmail === row.project_id ? "Saving\u2026" : "Save"}
+                      </button>
+                      <button className="cpc-btn small" onClick={() => closeRecipients(row.project_id)}>Cancel</button>
+                    </div>
+                  </div>
+                );
+              }
+              if (!row.contact_email) {
+                return (
+                  <button className="cpc-mailchip none cpc-mailchip-btn" onClick={() => openRecipients(row)} title="Add the recipient email (To / CC / BCC) for this project's chase emails">
+                    <span className="cpc-mailglyph">{"\u2709"}</span> add recipient email
+                  </button>
+                );
+              }
+              return (
+                <div className="cpc-mailchips">
+                  <button className="cpc-mailchip on cpc-mailchip-btn" onClick={() => openRecipients(row)} title="Saved on the project. Click to edit To / CC / BCC">
+                    <span className="cpc-mailglyph">{"\u2709"}</span> {row.contact_email}
+                    <span className="cpc-mailchip-edit">edit</span>
+                  </button>
+                  {rc.cc ? <div className="cpc-mailchip ready" title="CC"><strong>CC</strong> {rc.cc}</div> : null}
+                  {rc.bcc ? <div className="cpc-mailchip ready" title="BCC"><strong>BCC</strong> {rc.bcc}</div> : null}
+                </div>
+              );
+            })()}
             {row.notify_salesperson && row.sales_manager && (
               <div className="cpc-sales">Notify {row.sales_manager}</div>
             )}
@@ -1596,7 +1683,35 @@ function ChasePanel({ chaseTab, setChaseTab, certRows, payRows, pendingRows = []
                   <div className={`cpc-email${email.edited ? " cpc-email-edited" : ""}`}>
                     <div className="cpc-email-head">
                       <div><strong>To:</strong> {row.contact_email || <span className="cp-muted">no recipient email &mdash; add one above</span>}</div>
-                      {row.contact_person ? <div><strong>Attn:</strong> {row.contact_person}</div> : null}
+                      {recipients[row.project_id]?.cc ? <div><strong>CC:</strong> {recipients[row.project_id].cc}</div> : null}
+                      {recipients[row.project_id]?.bcc ? <div><strong>BCC:</strong> {recipients[row.project_id].bcc}</div> : null}
+                      <div className="cpc-email-attn">
+                        <strong>Attn:</strong>{" "}
+                        <input
+                          className="cpc-email-attn-input"
+                          value={attnEdit[row.claim_id] ?? (row.contact_person || "")}
+                          placeholder="contact person"
+                          onChange={(e) => setAttnEdit((m) => ({ ...m, [row.claim_id]: e.target.value }))}
+                          onBlur={() => saveAttn(row)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          aria-label="Attn"
+                          title="Click to edit. Saved on this claim; the draft's greeting uses it."
+                        />
+                      </div>
+                      {clock === "payment" && (
+                        <div className="cpc-email-template">
+                          <strong>Template:</strong>{" "}
+                          <select
+                            className="cpc-email-template-select"
+                            value={pickedTemplate[row.claim_id] || (PAYMENT_TEMPLATE_CHOICES.some((c) => c.key === payStageKey(row)) ? payStageKey(row) : "")}
+                            onChange={(e) => { if (e.target.value) void applyTemplate(row, e.target.value); }}
+                            title="Choose the wording for this claim's next email"
+                          >
+                            {!PAYMENT_TEMPLATE_CHOICES.some((c) => c.key === (pickedTemplate[row.claim_id] || payStageKey(row))) && <option value="">{"Stage wording (choose to replace)"}</option>}
+                            {PAYMENT_TEMPLATE_CHOICES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <div className="cpc-email-editrow">
                         {email.edited ? (
                           <>
@@ -3014,6 +3129,20 @@ const CSS = `
 .cpc-mailedit-input { font-size:12px; padding:4px 10px; border:1px solid #FDBA74; border-radius:6px; min-width:200px; background:#fff; color:#111827; }
 .cpc-mailedit-input:focus { outline:none; border-color:#F97316; box-shadow:0 0 0 2px rgba(249,115,22,0.2); }
 .cpc-mailedit-input::placeholder { color:#9CA3AF; }
+.cpc-mailchips { display:flex; flex-direction:column; gap:3px; align-items:flex-start; }
+.cpc-mailchip-btn { cursor:pointer; font-family:inherit; }
+.cpc-mailchip-btn:hover { filter:brightness(0.96); }
+.cpc-mailchip-edit { margin-left:4px; font-weight:500; text-decoration:underline; opacity:0.75; }
+.cpc-mailchip.ready strong { font-size:10px; letter-spacing:0.04em; margin-right:2px; }
+.cpc-mailedit-form { flex-direction:column; align-items:stretch; gap:4px; min-width:260px; }
+.cpc-mailedit-row { display:grid; grid-template-columns:36px 1fr; align-items:center; gap:6px; }
+.cpc-mailedit-actions { display:flex; gap:6px; margin-top:2px; }
+.cpc-email-attn { margin-top:2px; }
+.cpc-email-attn-input { font:inherit; color:var(--c-text); background:transparent; border:1px solid transparent; border-radius:4px; padding:1px 4px; min-width:180px; }
+.cpc-email-attn-input:hover { border-color:var(--c-border); }
+.cpc-email-attn-input:focus { outline:none; border-color:#2563eb; background:#fff; }
+.cpc-email-template { margin-top:4px; }
+.cpc-email-template-select { font:inherit; font-size:12px; padding:2px 6px; border:1px solid var(--c-border); border-radius:6px; background:#fff; color:var(--c-text); }
 
 .cpc-strip { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .cpc-strip-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }

@@ -25,6 +25,7 @@ export const TEMPLATE_META: TemplateMeta[] = [
   { key: "cert.t-4", clock: "certificate", label: "Certificate — 4 days before due", when: "PRC due in 4 days" },
   { key: "cert.due", clock: "certificate", label: "Certificate — due today", when: "PRC due today" },
   { key: "cert.overdue", clock: "certificate", label: "Certificate — overdue", when: "every 7 days after the PRC due date" },
+  { key: "pay.invoice", clock: "payment", label: "Payment — Invoice (tax invoice sent)", when: "when Accounts sends the tax invoice; picked on the card" },
   { key: "pay.soa", clock: "payment", label: "Payment — Statement of Account", when: "day the invoice is issued" },
   { key: "pay.soa_overdue", clock: "payment", label: "Payment — SOA overdue", when: "14 / 21 / 28 days overdue" },
   { key: "pay.1st", clock: "payment", label: "Payment — 1st reminder", when: "35 days overdue" },
@@ -46,6 +47,19 @@ export const PLACEHOLDERS: { name: string; means: string }[] = [
   { name: "{deadline}", means: "payment deadline = last reminder + 7 days" },
   { name: "{outstanding}", means: "outstanding amount, e.g. SGD 60,527.01" },
   { name: "{signature}", means: "Best regards + sales manager + company" },
+  { name: "{as_at}", means: "today's date, e.g. 05 Oct 2026 (the SOA 'as at' date)" },
+];
+
+/**
+ * The templates Accounts pick from on a Payment chase card (their list, 2 Nov 2026):
+ * 1 Invoice, 2 Standard SOA, 3 1st Reminder, 4 2nd Reminder, 5 Final Reminder.
+ */
+export const PAYMENT_TEMPLATE_CHOICES: { key: string; label: string }[] = [
+  { key: "pay.invoice", label: "1. Invoice Template" },
+  { key: "pay.soa", label: "2. Standard Statement of Account (SOA)" },
+  { key: "pay.1st", label: "3. 1st Reminder" },
+  { key: "pay.2nd", label: "4. 2nd Reminder" },
+  { key: "pay.final.legal", label: "5. Final Reminder" },
 ];
 
 const SIG = "{signature}";
@@ -63,6 +77,11 @@ export const DEFAULT_TEMPLATES: Record<string, ChaseTemplate> = {
     subject: "Overdue: Payment Response Certificate — {project_name} (Claim {claim_no})",
     body: "Dear Sir/Madam,\n\nWe refer to our Progress Claim {claim_no} for {project}, submitted on {submitted_on} for {amount}.\n\nThe Payment Response Certificate was due on {due_date} and is now {days_over} days overdue. We would be grateful if you could arrange for it to be issued at the earliest, or advise us of the expected date.\n\nThank you.",
   },
+  // Accounts' "Email Templates" sheet (2 Nov 2026), verbatim apart from the placeholders.
+  "pay.invoice": {
+    subject: "Tax Invoice — {project_name} ({project_code})",
+    body: `Dear {contact},\n\nGood day.\n\nWe are pleased to submit our tax invoice for your perusal.\n\nPlease be informed that we will stop printing and mailing hardcopy invoice in an effort to Go-Green w.e.f 1st November 2023.\nIf you are unable to download the attached, please contact us @ 6753 9939 or email to accounts@conplus.com.sg\n\nThank you.${SIG}`,
+  },
   "pay.soa": {
     subject: "Statement of Account — {project_name} ({project_code})",
     body: `Dear {contact},\n\nGood day.\n\nPlease refer to the attached herewith the SOA for your reference.\n\nThank you.${SIG}`,
@@ -73,15 +92,15 @@ export const DEFAULT_TEMPLATES: Record<string, ChaseTemplate> = {
   },
   "pay.1st": {
     subject: "1st REMINDER — Payment overdue for {project_name} ({days_over} days)",
-    body: `Dear {contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by {deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
+    body: `Dear {contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long overdue.\n\nKindly advise the payment of {outstanding} by {deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
   },
   "pay.2nd": {
     subject: "2nd REMINDER — Payment overdue for {project_name} ({days_over} days)",
-    body: `Dear {contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nKindly advise the payment status by {deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
+    body: `Dear {contact},\n\nGood day.\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long overdue.\n\nKindly advise the payment of {outstanding} by {deadline}.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
   },
   "pay.final.legal": {
     subject: "FINAL REMINDER — Legal proceedings pending for {project_name} ({outstanding} outstanding)",
-    body: `Dear {contact},\n\nPlease refer to the attached herewith the Statement of Account for your reference.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment {outstanding} by {deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of {outstanding} is not received in full by {deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
+    body: `Dear {contact},\n\nKindly refer to the attached file for the Statement of Account as at {as_at}.\n\nPlease be informed that your account is long OVERDUE.\n\nWe will expect the full settlement of all outstanding payment {outstanding} by {deadline}.\n\nWithout prejudice to our rights, if the said payment for the amount of {outstanding} is not received in full by {deadline}, we will commence legal proceedings to recover the debt without further notice to you and this email may be tendered in court as evidence of your failure to pay.\n\nWe would appreciate your immediate attention to this matter.\n\nThank you.${SIG}`,
   },
   "pay.final.termination": {
     subject: "FINAL REMINDER — Work suspension pending for {project_name} ({outstanding} outstanding)",

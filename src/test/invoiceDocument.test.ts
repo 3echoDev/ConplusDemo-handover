@@ -14,7 +14,8 @@ import {
   type InvoiceDraft,
   type InvoiceProjectRow,
 } from "@/lib/invoiceDocument";
-import { buildInvoiceWorkbook, INVOICE_SHEET, RETENTION_SHEET } from "@/lib/invoiceExcel";
+import { buildInvoiceWorkbook, INVOICE_SHEET, RETENTION_SHEET, PAYNOW_QR_MARKER } from "@/lib/invoiceExcel";
+import { splitCurrencyHtml, worksheetToHtml } from "@/lib/sheetToHtml";
 
 // Accounts' sample: PC1 certified 1,000, PC2 9,000 (cum 10,000), 10% retention.
 const templateDraft = (): InvoiceDraft => ({
@@ -262,3 +263,61 @@ describe("buildInvoiceWorkbook", () => {
     expect(rowsPt / pagePt).toBeLessThanOrEqual(1);
   });
 });
+
+describe("Accounts' layout notes (2 Nov 2026)", () => {
+  const wb = buildInvoiceWorkbook(templateDraft(), { printMarkers: true });
+  const inv = wb.getWorksheet(INVOICE_SHEET)!;
+  const ret = wb.getWorksheet(RETENTION_SHEET)!;
+  const rowOf = (ws: typeof inv, col: string, text: string) =>
+    [...Array(90).keys()].find((r) => ws.getCell(`${col}${r + 1}`).value === text)! + 1;
+
+  it("closes the gap: header titles end where the values start, on both pages", () => {
+    for (const [ws, r] of [[inv, 13], [inv, 15], [ret, 16]] as const) {
+      const h = ws.getCell(`H${r}`);
+      expect(h.alignment?.horizontal).toBe("right");
+      expect(ws.getCell(`J${r}`).isMerged).toBe(true); // H:J merged, so the title ends at K
+      expect(ws.getCell(`K${r}`).alignment?.horizontal).toBe("left");
+    }
+    expect(inv.getCell("H13").value).toBe("INVOICE NO:");
+    expect(inv.getCell("H15").value).toBe("GST REG NO.");
+    expect(ret.getCell("H22").value).toBe("CUSTOMER'S PO:");
+  });
+
+  it("aligns the data: the print pins the $ to the left of the figures column, like Excel", () => {
+    expect(splitCurrencyHtml("$ 2,295,056.46")).toBe('<span style="float:left">$</span>2,295,056.46');
+    expect(splitCurrencyHtml("($ 116,431.67)")).toBe('<span style="float:left">($</span>116,431.67)');
+    expect(splitCurrencyHtml("-")).toBeNull();
+    const html = worksheetToHtml(inv, { range: "A13:K60", splitCurrency: true });
+    expect(html).toContain('<span style="float:left">$</span>10,000.00');
+    expect(html).toContain('<span style="float:left">($</span>1,000.00)');
+  });
+
+  it("rules a line under Site/Project on both pages", () => {
+    const r1 = rowOf(inv, "B", "Site/Project:"), r2 = rowOf(ret, "B", "Site/Project:");
+    for (const col of ["B", "F", "K"]) {
+      expect(inv.getCell(`${col}${r1}`).border?.bottom?.style).toBe("thin");
+      expect(ret.getCell(`${col}${r2}`).border?.bottom?.style).toBe("thin");
+    }
+  });
+
+  it("puts Work Done directly below the description", () => {
+    const lastItem = Math.max(...[...Array(60).keys()].filter((r) => /^ITEM \d+$/.test(String(inv.getCell(`B${r + 1}`).value))).map((r) => r + 1));
+    const work = rowOf(inv, "E", "Work Done:");
+    expect(work).toBe(lastItem + 2);
+    expect(rowOf(inv, "B", "Total Value of Certified")).toBeGreaterThan(work);
+  });
+
+  it("builds the Payment Modes block from cells with the QR beside it (no picture backdrop)", () => {
+    const title = rowOf(inv, "B", "Payment Modes");
+    expect(inv.getCell(`B${title}`).font?.underline).toBeTruthy();
+    expect(inv.getCell(`B${title + 1}`).value).toBe(PAYNOW_QR_MARKER);
+    expect(inv.getCell(`D${title + 1}`).value).toBe("Bank Name");
+    expect(inv.getCell(`E${title + 1}`).value).toBe(": OCBC Bank");
+    expect(inv.getCell(`E${title + 5}`).value).toBe(": 199404220W");
+    expect(inv.getCell(`B${title + 7}`).value).toMatch(/^Please indicate Invoice Number/);
+    expect(inv.getCell(`B${title + 8}`).value).toMatch(/computer-generated/);
+    expect(ret.getCell("B70").value).not.toBe("Payment Modes"); // page 2 has no bank block
+    expect([...Array(90).keys()].some((r) => ret.getCell(`B${r + 1}`).value === "Payment Modes")).toBe(false);
+  });
+});
+
