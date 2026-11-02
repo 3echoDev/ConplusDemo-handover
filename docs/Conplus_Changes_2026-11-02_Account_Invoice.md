@@ -44,4 +44,5 @@ Status column is kept current as items close. Numbering continues in `docs/Conpl
 ## Open questions for Accounts
 - Running number for the material-supply invoice: the sample shows 310266/2026/04 while progress-claim invoices run 320016/2026/10. One series or two? Built on the shared counter until told otherwise.
 - The PayNow QR in the new sheet is an SGQR (merchant "CONPLUS RESOURCES PTE LTD", UEN 199404220W). The old block used a plain PayNow-UEN code for the same UEN. Both invoices now print the SGQR.
-- Send path: the n8n send-chase workflow only reads `to` today; `cc` / `bcc` are now sent in the payload and need the Gmail node's CC / BCC fields mapped before they take effect.
+- Amount in words on the material invoice follows the sample ("… Dollars and Twenty Cents"); the progress-claim invoice keeps its template's "… and Cents … Only". Say if both should read the same.
+- Send path: the n8n send-chase workflow only reads `to` today; `cc` / `bcc` are now sent in the payload. Exact edit for the two nodes is in `docs/n8n/send_chase_cc_bcc.md` (apply by hand; automated write was blocked).
