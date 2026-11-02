@@ -4,7 +4,7 @@
 import ExcelJS from "exceljs";
 import { spellAmount } from "@/lib/invoiceDocument";
 import { CONPLUS_GST_REG } from "@/lib/invoiceDocument";
-import { computeMaterialTotals, lineTotal, type MaterialInvoiceDraft } from "@/lib/materialInvoiceDocument";
+import { computeMaterialTotals, lineTotal, spellAmountDollars, type MaterialInvoiceDraft } from "@/lib/materialInvoiceDocument";
 import {
   COL_WIDTHS, GREY_INK, NF_DATE, NF_MONEY, INVOICE_PRINT_CSS, PAYNOW_QR_IMG, PAYNOW_QR_MARKER,
   font, fx, headerLine, loadInvoiceImages, pageLayoutOf, placeLetterhead, put, setup, siteRule, utcDate, writeFooter,
@@ -56,8 +56,8 @@ export function buildMaterialInvoiceWorkbook(d: MaterialInvoiceDraft, opts: Buil
   ws.getRow(top + 9).height = 16.5;
   siteRule(ws, top + 9);
 
-  // Item table (header row 26 on Accounts' sheet).
-  const hdr = 26;
+  // Item table: header row 27, band 29-50, totals 51-53, words 55 — Accounts' sheet's own rows.
+  const hdr = 27;
   const bottom: Partial<ExcelJS.Borders> = { bottom: { style: "thin" } };
   const C = { horizontal: "center" } as const;
   ws.mergeCells(`C${hdr}:F${hdr}`);
@@ -69,40 +69,61 @@ export function buildMaterialInvoiceWorkbook(d: MaterialInvoiceDraft, opts: Buil
   for (const col of ["D", "E", "F", "I", "J"]) ws.getCell(`${col}${hdr}`).border = bottom;
   ws.getRow(hdr).height = 20.1;
 
-  let r = hdr + 2;
-  put(ws, `C${r}`, d.subtitle, font(12, { underline: true }));
-  ws.getRow(r).height = 19.5;
-  r++;
-  const firstLine = r;
+  // Item grid exactly as on Accounts' sheet: a boxed band from row 29 to at least row 50
+  // (S/NO box, description box C:F, then one box per column), the subtitle on its
+  // second row, items from the third; the band grows if there are more items.
+  const gridTop = hdr + 2; // 29
+  const subtitleRow = gridTop + 1; // 30
+  const firstLine = gridTop + 2; // 31
+  const gridBottom = Math.max(50, firstLine + d.lines.length);
+  const thin = { style: "thin" } as const;
+  const BOX: Record<string, Partial<ExcelJS.Borders>> = {
+    B: { top: thin, bottom: thin, left: thin, right: thin },
+    C: { top: thin, bottom: thin, left: thin },
+    D: { top: thin, bottom: thin },
+    E: { top: thin, bottom: thin },
+    F: { top: thin, bottom: thin, right: thin },
+  };
+  for (let gr = gridTop; gr <= gridBottom; gr++) {
+    for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]) {
+      ws.getCell(`${col}${gr}`).border = BOX[col] ?? { top: thin, bottom: thin, left: thin, right: thin };
+    }
+    ws.getRow(gr).height = 19.5;
+  }
+  put(ws, `C${subtitleRow}`, d.subtitle, font(12, { underline: true }), { border: BOX.C });
+  let r = firstLine;
   d.lines.forEach((l, i) => {
-    put(ws, `B${r}`, i + 1, font(12), { align: C });
-    ws.mergeCells(`C${r}:F${r}`);
-    put(ws, `C${r}`, l.description, font(12));
-    put(ws, `G${r}`, l.unitPrice, font(12), { nf: NF_MONEY, align: C });
-    put(ws, `H${r}`, l.qty, font(12), { nf: NF_QTY, align: C });
-    put(ws, `I${r}`, l.unit, font(12), { align: C });
-    put(ws, `K${r}`, fx(`ROUND(G${r}*H${r},2)`, lineTotal(l)), font(12), { nf: NF_MONEY, align: { horizontal: "right" } });
-    ws.getRow(r).height = 19.5;
+    put(ws, `B${r}`, i + 1, font(12), { align: C, border: BOX.B });
+    put(ws, `C${r}`, l.description, font(12), { border: BOX.C });
+    put(ws, `G${r}`, l.unitPrice, font(12), { nf: NF_MONEY, align: C, border: BOX.G ?? { top: thin, bottom: thin, left: thin, right: thin } });
+    put(ws, `H${r}`, l.qty, font(12), { nf: NF_QTY, align: C, border: { top: thin, bottom: thin, left: thin, right: thin } });
+    put(ws, `I${r}`, l.unit, font(12), { align: C, border: { top: thin, bottom: thin, left: thin, right: thin } });
+    put(ws, `K${r}`, fx(`ROUND(G${r}*H${r},2)`, lineTotal(l)), font(12), { nf: NF_MONEY, align: { horizontal: "right" }, border: { top: thin, bottom: thin, left: thin, right: thin } });
     r++;
   });
-  const lastLine = Math.max(r - 1, firstLine);
 
-  // Totals: at least where Accounts' sheet puts them (row 51), lower if the items run long.
-  const rSub = Math.max(r + 2, 51);
+  // Totals right under the band (row 51 on Accounts' sheet).
+  const rSub = gridBottom + 1;
   const money = (row: number, label: string, value: ExcelJS.CellValue, bold = false, border?: Partial<ExcelJS.Borders>, labelCol = "H") => {
     put(ws, `${labelCol}${row}`, label, font(13, { bold }), { align: { horizontal: "right" } });
     put(ws, `K${row}`, value, font(13, { bold }), { nf: NF_MONEY, align: { horizontal: "right" }, border });
-    ws.getRow(row).height = 19.5;
+    ws.getRow(row).height = row === rSub ? 19.5 : row === rSub + 1 ? 17.25 : 18;
   };
-  ws.mergeCells(`H${rSub}:J${rSub}`);
-  money(rSub, "Sub-Total", fx(`SUM(K${firstLine}:K${lastLine})`, t.subTotal), false, { top: { style: "thin" } });
-  ws.mergeCells(`H${rSub + 1}:J${rSub + 1}`);
-  money(rSub + 1, `GST ${d.gstPct}%`, fx(`ROUND(K${rSub}*${d.gstPct / 100},2)`, t.gst));
-  ws.mergeCells(`G${rSub + 2}:J${rSub + 2}`);
-  money(rSub + 2, "Total Balance Due for this Invoice", fx(`K${rSub}+K${rSub + 1}`, t.totalDue), true, { top: { style: "thin" }, bottom: { style: "double" } }, "G");
+  ws.mergeCells(`H${rSub}:I${rSub}`);
+  money(rSub, "Sub-Total", fx(`SUM(K${gridTop}:K${gridBottom})`, t.subTotal));
+  ws.mergeCells(`H${rSub + 1}:I${rSub + 1}`);
+  money(rSub + 1, `GST ${d.gstPct}%`, fx(`ROUND(K${rSub}*${d.gstPct / 100},2)`, t.gst), false, { bottom: thin });
+  ws.mergeCells(`F${rSub + 2}:J${rSub + 2}`); // the label spills left on Accounts' sheet; merged so the print does the same
+  money(rSub + 2, "Total Balance Due for this Invoice", fx(`K${rSub}+K${rSub + 1}`, t.totalDue), true, { bottom: { style: "double" } }, "F");
 
+  // Amount in words two rows down ("SGD : " + words, both bold 13), then the shared footer.
   const last = writeFooter(ws, rSub + 4, t.totalDue, "Page 1 of 1", opts.payNowQr, opts.printMarkers, true);
+  put(ws, `B${rSub + 4}`, "SGD : ", font(13, { bold: true }));
+  put(ws, `C${rSub + 4}`, spellAmountDollars(t.totalDue), font(13, { bold: true }));
   ws.pageSetup.printArea = `A1:K${last}`;
+
+  // Accounts' sheet is set in Calibri throughout (the progress-claim template is Arial).
+  ws.eachRow({ includeEmpty: true }, (row) => row.eachCell({ includeEmpty: true }, (cell) => { if (cell.font) cell.font = { ...cell.font, name: "Calibri" }; }));
   return wb;
 }
 

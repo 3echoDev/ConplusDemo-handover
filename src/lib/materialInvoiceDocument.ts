@@ -9,7 +9,15 @@
 // materialInvoiceExcel.ts.
 import type { WorksOrder, WorksOrderLine } from "@/data/sampleData";
 import { qtyUnitLabel } from "@/lib/woDocument";
-import { invoiceNumberFor, round2, splitAddress, todayIso, DEFAULT_GST_PCT } from "@/lib/invoiceDocument";
+import { invoiceNumberFor, round2, spellAmount, splitAddress, todayIso, DEFAULT_GST_PCT } from "@/lib/invoiceDocument";
+
+/** Accounts' wording on this format: "One Hundred Ninety Six Dollars and Twenty Cents"
+ * (the progress-claim invoice keeps its template's "… and Cents Twenty Only"). */
+export function spellAmountDollars(amount: number): string {
+  const base = spellAmount(amount).replace(/ Only$/, "");
+  const [dollars, cents] = base.split(" and Cents ");
+  return cents ? `${dollars} Dollars and ${cents} Cents` : `${dollars} Dollars`;
+}
 
 export interface MaterialInvoiceLine {
   description: string;

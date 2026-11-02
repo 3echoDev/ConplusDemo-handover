@@ -7,11 +7,12 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Download, Printer, FileCheck2, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { WorksOrder } from "@/data/sampleData";
-import { invoiceNumberFor, spellAmount } from "@/lib/invoiceDocument";
+import { invoiceNumberFor } from "@/lib/invoiceDocument";
 import {
   buildMaterialInvoiceDraft,
   computeMaterialTotals,
   lineTotal,
+  spellAmountDollars,
   type MaterialInvoiceDraft,
   type MaterialInvoiceLine,
 } from "@/lib/materialInvoiceDocument";
@@ -169,7 +170,7 @@ export default function MaterialInvoiceModal({ wo, onClose, onIssued }: { wo: Wo
                 <div className="flex justify-between"><span>Sub-Total</span><span className="tabular-nums">{money(totals.subTotal)}</span></div>
                 <div className="flex justify-between"><span>GST {draft.gstPct}%</span><span className="tabular-nums">{money(totals.gst)}</span></div>
                 <div className="flex justify-between border-t border-border pt-1 font-semibold"><span>Total Balance Due</span><span className="tabular-nums">{money(totals.totalDue)}</span></div>
-                <div className="text-xs text-muted-foreground">SGD: {spellAmount(totals.totalDue)}</div>
+                <div className="text-xs text-muted-foreground">SGD: {spellAmountDollars(totals.totalDue)}</div>
               </div>
             </div>
 

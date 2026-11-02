@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorksOrder } from "@/data/sampleData";
 import { spellAmount } from "@/lib/invoiceDocument";
-import { buildMaterialInvoiceDraft, computeMaterialTotals, lineDescription, materialLinesFromWO } from "@/lib/materialInvoiceDocument";
+import { buildMaterialInvoiceDraft, computeMaterialTotals, lineDescription, materialLinesFromWO, spellAmountDollars } from "@/lib/materialInvoiceDocument";
 import { buildMaterialInvoiceWorkbook, MATERIAL_SHEET } from "@/lib/materialInvoiceExcel";
 import { PAYNOW_QR_MARKER } from "@/lib/invoiceExcel";
 
@@ -52,6 +52,8 @@ describe("material-supply invoice (Accounts' 2nd format)", () => {
     const t = computeMaterialTotals(d);
     expect(t).toEqual({ lineTotals: [180], subTotal: 180, gst: 16.2, totalDue: 196.2 });
     expect(spellAmount(t.totalDue)).toBe("One Hundred Ninety Six and Cents Twenty Only");
+    expect(spellAmountDollars(t.totalDue)).toBe("One Hundred Ninety Six Dollars and Twenty Cents");
+    expect(spellAmountDollars(180)).toBe("One Hundred Eighty Dollars");
   });
 
   it("writes the one-page sheet in Accounts' layout", () => {
@@ -71,21 +73,30 @@ describe("material-supply invoice (Accounts' 2nd format)", () => {
     expect(ws.getCell("B21").value).toBe("Tel:");
     expect(ws.getCell("B24").value).toBe("Site/Project:");
     expect(ws.getCell("K24").border?.bottom?.style).toBe("thin");
-    expect(ws.getCell("B26").value).toBe("S/NO");
-    expect(ws.getCell("C26").value).toBe("DESCRIPTION");
-    expect(ws.getCell("K26").value).toBe("TOTAL");
-    expect(ws.getCell("C28").value).toBe("Supply of Material:");
-    expect(ws.getCell("B29").value).toBe(1);
-    expect(ws.getCell("C29").value).toBe("StoPox WL100 (RAL 7040)");
-    expect(ws.getCell("G29").value).toBe(180);
-    expect(ws.getCell("I29").value).toBe("set");
-    expect(ws.getCell("K29").value).toMatchObject({ result: 180 });
+    expect(ws.getCell("B27").value).toBe("S/NO");
+    expect(ws.getCell("C27").value).toBe("DESCRIPTION");
+    expect(ws.getCell("K27").value).toBe("TOTAL");
+    expect(ws.getCell("K27").border?.bottom?.style).toBe("thin");
+    // the item band, rows 29-50, boxed like Accounts' sheet
+    expect(ws.getCell("C30").value).toBe("Supply of Material:");
+    expect(ws.getCell("B31").value).toBe(1);
+    expect(ws.getCell("C31").value).toBe("StoPox WL100 (RAL 7040)");
+    expect(ws.getCell("G31").value).toBe(180);
+    expect(ws.getCell("I31").value).toBe("set");
+    expect(ws.getCell("K31").value).toMatchObject({ result: 180 });
+    const box = (a: string) => ["top", "bottom", "left", "right"].map((s) => (ws.getCell(a).border?.[s as "top"]?.style ? s[0] : ".")).join("");
+    expect(box("B29")).toBe("tblr"); expect(box("C29")).toBe("tbl."); expect(box("D40")).toBe("tb.."); expect(box("F50")).toBe("tb.r"); expect(box("K50")).toBe("tblr");
+    expect(box("B28")).toBe("...."); expect(box("K51")).toBe("....");
     expect(ws.getCell("H51").value).toBe("Sub-Total");
-    expect(ws.getCell("K51").value).toMatchObject({ formula: "SUM(K29:K29)", result: 180 });
+    expect(ws.getCell("K51").value).toMatchObject({ formula: "SUM(K29:K50)", result: 180 });
     expect(ws.getCell("K52").value).toMatchObject({ result: 16.2 });
-    expect(ws.getCell("G53").value).toBe("Total Balance Due for this Invoice");
+    expect(ws.getCell("F53").value).toBe("Total Balance Due for this Invoice");
     expect(ws.getCell("K53").value).toMatchObject({ result: 196.2 });
-    expect(ws.getCell("C55").value).toBe("One Hundred Ninety Six and Cents Twenty Only");
+    expect(ws.getCell("K53").border?.bottom?.style).toBe("double");
+    expect(ws.getCell("B55").value).toBe("SGD : ");
+    expect(ws.getCell("C55").value).toBe("One Hundred Ninety Six Dollars and Twenty Cents");
+    expect(ws.getCell("C55").font?.name).toBe("Calibri");
+    expect(ws.getCell("B13").font?.name).toBe("Calibri");
     const col = (c: string) => [...Array(90).keys()].map((r) => ws.getCell(`${c}${r + 1}`).value);
     expect(col("B")).toContain("Payment Modes");
     expect(col("B")).toContain(PAYNOW_QR_MARKER);
