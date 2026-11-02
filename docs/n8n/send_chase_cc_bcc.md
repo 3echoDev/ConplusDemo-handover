@@ -6,9 +6,10 @@ POST to `/webhook/conplus-send-chase`. Two edits make the Gmail node use them.
 The `GO_LIVE` safe sink is kept: until it is `true`, CC/BCC stay empty just as
 `to` is overridden to the handover inbox.
 
-(An automated patch over the n8n REST API was prepared on 2 Nov 2026 but the
-session's permission classifier blocked the write; apply by hand in the editor
-or allow `mcp__claude_ai_n8n` / the REST call and re-run.)
+**Status: APPLIED 2 Nov 2026 (pm) over the REST API** (workflow versionId
+`1421622f-7908-405c-816c-d0beea026d5d`, left active). The edits below are the
+record of what changed; re-apply by hand only if the workflow is ever restored
+from an older version.
 
 ## 1. Node "Prep email" (Code)
 

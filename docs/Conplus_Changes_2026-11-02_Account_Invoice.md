@@ -20,14 +20,14 @@ Status column is kept current as items close. Numbering continues in `docs/Conpl
 
 | # | Ask | Status |
 |---|---|---|
-| B1 | A second Tax Invoice layout for **supply of materials**: header To / Attn / Tel / Site, right block INVOICE NO, GST REG NO, INVOICE DATE, **PO NO** (customer's Purchase Order), **WO NO** (our Work Order), **DO NO** (Delivery Order), **JOB REF** (= Quotation No.), PAYMENT TERMS; item table S/NO · DESCRIPTION · PRICE/UNIT · QTY · unit · TOTAL under a "Supply of Material:" subtitle; Sub-Total, GST 9%, Total Balance Due; amount in words; E.&.O.E; **PayNow QR code** (the SGQR they supplied); "computer-generated" line; Page 1 of 1. Sample: 310266/2026/04 to GA Construction, 1 set StoPox WL100 @ 180. | ✅ built — "Prepare invoice" on a Works Order (Download / Print work; **Issue** waits on migration `20261102_material_invoice.sql`, not yet applied) |
+| B1 | A second Tax Invoice layout for **supply of materials**: header To / Attn / Tel / Site, right block INVOICE NO, GST REG NO, INVOICE DATE, **PO NO** (customer's Purchase Order), **WO NO** (our Work Order), **DO NO** (Delivery Order), **JOB REF** (= Quotation No.), PAYMENT TERMS; item table S/NO · DESCRIPTION · PRICE/UNIT · QTY · unit · TOTAL under a "Supply of Material:" subtitle; Sub-Total, GST 9%, Total Balance Due; amount in words; E.&.O.E; **PayNow QR code** (the SGQR they supplied); "computer-generated" line; Page 1 of 1. Sample: 310266/2026/04 to GA Construction, 1 set StoPox WL100 @ 180. | ✅ built — "Prepare invoice" on a Works Order (Download / Print work; **Issue** live: migration `20261102_material_invoice.sql` applied 2 Nov pm) |
 
 ## Sheet 3 — "Progress Claim > Chase" (marked-up Payment chase card, F23012 #24)
 
 | # | Ask (their words) | Status |
 |---|---|---|
 | C1 | Recipient email: "Please allow editing after saving" (today the chip locks once saved). | ✅ |
-| C2 | "…and separate into To: / CC: / BCC:" | ✅ UI done (`projects.chase_cc` / `chase_bcc`, migration `20261102_chase_recipients.sql` **not yet applied**; passed to the send webhook as `cc` / `bcc` — n8n Gmail node must map them) |
+| C2 | "…and separate into To: / CC: / BCC:" | ✅ UI done (`projects.chase_cc` / `chase_bcc`, migration `20261102_chase_recipients.sql` **still not applied** (classifier kept denying it; user to run); passed to the send webhook as `cc` / `bcc` and the n8n Gmail node now maps them) |
 | C3 | Attn on the reminder draft: "Please allow edits". | ✅ (saves `claims.contact_person`) |
 | C4 | "Please allow users to choose their preferred email template from these options: 1. Invoice Template 2. Standard Statement of Account (SOA) 3. 1st Reminder 4. 2nd Reminder 5. Final Reminder" | ✅ template picker on the Payment chase draft |
 
@@ -45,4 +45,4 @@ Status column is kept current as items close. Numbering continues in `docs/Conpl
 - Running number for the material-supply invoice: the sample shows 310266/2026/04 while progress-claim invoices run 320016/2026/10. One series or two? Built on the shared counter until told otherwise.
 - The PayNow QR in the new sheet is an SGQR (merchant "CONPLUS RESOURCES PTE LTD", UEN 199404220W). The old block used a plain PayNow-UEN code for the same UEN. Both invoices now print the SGQR.
 - Amount in words on the material invoice follows the sample ("… Dollars and Twenty Cents"); the progress-claim invoice keeps its template's "… and Cents … Only". Say if both should read the same.
-- Send path: the n8n send-chase workflow only reads `to` today; `cc` / `bcc` are now sent in the payload. Exact edit for the two nodes is in `docs/n8n/send_chase_cc_bcc.md` (apply by hand; automated write was blocked).
+- Send path: the n8n send-chase workflow only reads `to` today; `cc` / `bcc` are now sent in the payload. Applied 2 Nov pm over the REST API (`docs/n8n/send_chase_cc_bcc.md`); CC/BCC still gated by GO_LIVE.
