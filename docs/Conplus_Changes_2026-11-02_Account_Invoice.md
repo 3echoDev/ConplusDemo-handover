@@ -27,7 +27,7 @@ Status column is kept current as items close. Numbering continues in `docs/Conpl
 | # | Ask (their words) | Status |
 |---|---|---|
 | C1 | Recipient email: "Please allow editing after saving" (today the chip locks once saved). | ✅ |
-| C2 | "…and separate into To: / CC: / BCC:" | ✅ UI done (`projects.chase_cc` / `chase_bcc`, migration `20261102_chase_recipients.sql` **still not applied** (classifier kept denying it; user to run); passed to the send webhook as `cc` / `bcc` and the n8n Gmail node now maps them) |
+| C2 | "…and separate into To: / CC: / BCC:" | ✅ UI done (`projects.chase_cc` / `chase_bcc`, migration `20261102_chase_recipients.sql` applied live 3 Nov; passed to the send webhook as `cc` / `bcc` and the n8n Gmail node now maps them) |
 | C3 | Attn on the reminder draft: "Please allow edits". | ✅ (saves `claims.contact_person`) |
 | C4 | "Please allow users to choose their preferred email template from these options: 1. Invoice Template 2. Standard Statement of Account (SOA) 3. 1st Reminder 4. 2nd Reminder 5. Final Reminder" | ✅ template picker on the Payment chase draft |
 
