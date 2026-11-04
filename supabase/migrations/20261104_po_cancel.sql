@@ -27,10 +27,9 @@ begin
    where po.id = p_po_id
    returning po.po_number, po.status into v_po_number, v_new_status;
 
-  insert into audit_log (table_name, record_id, action, old_data, new_data)
-  values ('purchase_orders', p_po_id, 'cancel',
-          jsonb_build_object('status', v_old_status),
-          jsonb_build_object('status', 'cancelled', 'reason', p_reason));
+  -- No explicit audit row: audit_log.action is CHECK-limited to insert/update/delete/submit/
+  -- approve/reject/close/test_reset, and trg_audit_purchase_orders already records the
+  -- status change (old/new row) as an 'update'. The reason lives in rejection_reason.
 
   -- clear the pending-approval alert, if any
   update alerts a
