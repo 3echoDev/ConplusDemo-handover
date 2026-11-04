@@ -923,6 +923,13 @@ export async function dbCreatePO(input: CreatePOInput): Promise<string> {
 }
 
 export async function dbUpdatePOStatus(poId: string, status: POStatus): Promise<void> {
+  if (status === "cancelled") {
+    // anon has SELECT only on purchase_orders; a direct update is a silent no-op.
+    // po_cancel (SECURITY DEFINER) does the write, the audit row and clears the alert.
+    const { error } = await supabase.rpc("po_cancel", { p_po_id: poId, p_reason: "Cancelled from the dashboard" });
+    if (error) throw new Error(error.message);
+    return;
+  }
   const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
   if (status === "approved") patch.approved_at = new Date().toISOString();
   const { error } = await supabase.from("purchase_orders").update(patch).eq("id", poId);

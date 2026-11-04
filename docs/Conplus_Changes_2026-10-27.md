@@ -124,11 +124,11 @@ Other differences visible in her template, worth noting but **not** asked for: a
 
 ---
 
-## 5. Cancel six pending-approval POs. APP READY 4 Nov; data change = `supabase/sql/20261104_cancel_six_july_pos.sql` (or the new Cancel PO button)
+## 5. Cancel six pending-approval POs. APP READY 4 Nov; needs `supabase/migrations/20261104_po_cancel.sql` applied, then Cancel PO on each card
 
 **Ask:** "Please cancel the following six POs still marked as pending approval: 2607-0005, 2607-0011, 2607-0012, 2607-0015, 2607-0016 and 2607-0017."
 
-Re-asked 3 Nov. 4 Nov: `cancelled` added as a PO status (badge, Cancelled column on /purchase-orders and the Live View pipeline, Reject button replaced by Cancel PO with a confirm dialog). The six rows were still `pending` on 4 Nov; the update itself is in `supabase/sql/20261104_cancel_six_july_pos.sql` — run it, or press Cancel PO on each card. The 2607-0017 pending-approval alert was resolved 4 Nov. Originally: Before doing it: confirm with Muhsin, check each PO is genuinely still pending (not received against), and decide cancel-vs-void so the PO numbers are not reused.
+Re-asked 3 Nov. 4 Nov: `cancelled` added as a PO status (badge, Cancelled column on /purchase-orders and the Live View pipeline, Reject button replaced by Cancel PO with a confirm dialog). The six rows were still `pending` on 4 Nov; the button only works once `supabase/migrations/20261104_po_cancel.sql` is applied (anon cannot update the table directly; the first live click was a silent no-op). The 2607-0017 pending-approval alert was resolved 4 Nov. Originally: Before doing it: confirm with Muhsin, check each PO is genuinely still pending (not received against), and decide cancel-vs-void so the PO numbers are not reused.
 
 Note these are **July** POs (26-07-xxxx). The attached `PO 2610-0016 Sto (LTC Coatings - The Florida) BLANKET ORDER.pdf` is an October PO and is the worked example for item 4, not one of the six.
 
