@@ -5,21 +5,19 @@ import ExcelJS from "exceljs";
 import type { WorksOrder } from "@/data/sampleData";
 import { qtyUnitLabel, cleanRemark } from "@/lib/woDocument";
 
-/* ── Colors matching the template ────────────────────────────────── */
+/* ── Colors matching the "(4) Works Order 25XXX" template ─────────── */
+// Blue title, plain (unfilled) header labels & column headers, yellow section rows.
 
-const TEAL = "FF006B54";
-const LABEL_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD0E8E0" } };
-const COL_HEAD_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7FBFAF" } };
-const AREA_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCCE5CC" } };
-const CALC_HEAD_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF3CD" } };
-const SIG_HEAD_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF3CD" } };
+const BLUE = "FF0070C0"; // title + CALCULATION label
+const AREA_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } }; // yellow section/area rows
+const SIG_HEAD_FILL: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
 
 const THIN: Partial<ExcelJS.Borders> = {
   top: { style: "thin" }, bottom: { style: "thin" },
   left: { style: "thin" }, right: { style: "thin" },
 };
 
-const F_TITLE: Partial<ExcelJS.Font> = { name: "Arial", size: 14, bold: true, color: { argb: TEAL } };
+const F_TITLE: Partial<ExcelJS.Font> = { name: "Arial", size: 14, bold: true, color: { argb: BLUE } };
 const F_LABEL: Partial<ExcelJS.Font> = { name: "Arial", size: 10, bold: true };
 const F_VALUE: Partial<ExcelJS.Font> = { name: "Arial", size: 10, bold: true };
 const F_COL_HEAD: Partial<ExcelJS.Font> = { name: "Arial", size: 9, bold: true };
@@ -63,7 +61,6 @@ function headerRow(
   const lbl = ws.getCell(row, 1);
   lbl.value = leftLabel;
   lbl.font = F_LABEL;
-  lbl.fill = LABEL_FILL;
   lbl.alignment = { vertical: "middle" };
   lbl.border = THIN;
   ws.getCell(row, 2).border = THIN;
@@ -95,7 +92,6 @@ function headerRow(
   const rLbl = ws.getCell(row, 6);
   rLbl.value = rightLabel;
   rLbl.font = F_LABEL;
-  rLbl.fill = LABEL_FILL;
   rLbl.alignment = { vertical: "middle" };
   ws.getCell(row, 6).border = THIN;
   ws.getCell(row, 7).border = THIN;
@@ -179,7 +175,6 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
     const cell = ws.getCell(r, c);
     cell.value = label;
     cell.font = F_COL_HEAD;
-    cell.fill = COL_HEAD_FILL;
     cell.border = THIN;
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   }
@@ -188,15 +183,13 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
     const cell = ws.getCell(r, c1);
     cell.value = label;
     cell.font = F_COL_HEAD;
-    cell.fill = COL_HEAD_FILL;
     cell.border = THIN;
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     ws.getCell(r, c2).border = THIN;
   }
-  // CALCULATION header in K — yellow fill
+  // CALCULATION header in K — blue label, no fill (matches template)
   ws.getCell(r, 11).value = "CALCULATION";
-  ws.getCell(r, 11).font = F_COL_HEAD;
-  ws.getCell(r, 11).fill = CALC_HEAD_FILL;
+  ws.getCell(r, 11).font = { ...F_COL_HEAD, color: { argb: BLUE } };
   ws.getCell(r, 11).border = THIN;
   ws.getCell(r, 11).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
 
@@ -207,34 +200,34 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
   for (const area of wo.areas) {
     const areaStartRow = r;
 
-    // Area header row — green fill
+    // Area header row — yellow fill, black bold text
     ws.getCell(r, 1).value = area.seq;
-    ws.getCell(r, 1).font = { ...F_CELL_BOLD, color: { argb: TEAL } };
+    ws.getCell(r, 1).font = F_CELL_BOLD;
     ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
 
     // Area name in B, merged B–G
     ws.mergeCells(r, 2, r, 7);
     ws.getCell(r, 2).value = area.areaName;
-    ws.getCell(r, 2).font = { ...F_CELL_BOLD, color: { argb: TEAL } };
+    ws.getCell(r, 2).font = F_CELL_BOLD;
     ws.getCell(r, 2).alignment = { vertical: "middle", wrapText: true };
 
     // Area sqm in H (number) + I (unit "m2"), or prep_note verbatim
     if (area.areaSqm != null) {
       ws.getCell(r, 8).value = area.areaSqm;
-      ws.getCell(r, 8).font = { ...F_CELL_BOLD, color: { argb: TEAL } };
+      ws.getCell(r, 8).font = F_CELL_BOLD;
       ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
       ws.getCell(r, 9).value = "m2";
-      ws.getCell(r, 9).font = { ...F_CELL_BOLD, color: { argb: TEAL } };
+      ws.getCell(r, 9).font = F_CELL_BOLD;
       ws.getCell(r, 9).alignment = { horizontal: "left", vertical: "middle" };
     } else if (area.prepNote) {
       // Non-m2 items show prep_note verbatim in the qty area
       ws.mergeCells(r, 8, r, 9);
       ws.getCell(r, 8).value = area.prepNote;
-      ws.getCell(r, 8).font = { ...F_CELL_BOLD, color: { argb: TEAL } };
+      ws.getCell(r, 8).font = F_CELL_BOLD;
       ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
     }
 
-    // Style area row — green fill + borders
+    // Style area row — yellow fill + borders
     for (let c = 1; c <= COL_COUNT; c++) {
       ws.getCell(r, c).fill = AREA_FILL;
       ws.getCell(r, c).border = THIN;
@@ -248,10 +241,9 @@ export async function exportWOTemplateExcel(wo: WorksOrder): Promise<void> {
       ws.getCell(r, 2).value = area.prepNote;
       ws.getCell(r, 2).font = F_PREP;
       ws.getCell(r, 2).alignment = { vertical: "middle", wrapText: true };
-      // CALCULATION header for this area section (yellow)
+      // CALCULATION header for this area section (blue label, no fill)
       ws.getCell(r, 11).value = "CALCULATION";
-      ws.getCell(r, 11).font = F_COL_HEAD;
-      ws.getCell(r, 11).fill = CALC_HEAD_FILL;
+      ws.getCell(r, 11).font = { ...F_COL_HEAD, color: { argb: BLUE } };
       ws.getCell(r, 11).border = THIN;
       ws.getCell(r, 11).alignment = { horizontal: "center", vertical: "middle" };
       borderedRange(ws, r, 1, 10);
