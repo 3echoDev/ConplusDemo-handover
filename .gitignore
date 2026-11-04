@@ -27,3 +27,6 @@ dist-ssr
 .claude/
 
 .vercel
+
+.creative-studio-pipeline/
+.social-pipeline/
