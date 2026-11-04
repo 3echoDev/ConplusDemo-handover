@@ -124,7 +124,7 @@ Other differences visible in her template, worth noting but **not** asked for: a
 
 ---
 
-## 5. Cancel six pending-approval POs. APP READY 4 Nov; needs `supabase/migrations/20261104_po_cancel.sql` applied, then Cancel PO on each card
+## 5. Cancel six pending-approval POs. DONE 4 Nov (po_cancel applied, six cancelled from the live app, verified)
 
 **Ask:** "Please cancel the following six POs still marked as pending approval: 2607-0005, 2607-0011, 2607-0012, 2607-0015, 2607-0016 and 2607-0017."
 
