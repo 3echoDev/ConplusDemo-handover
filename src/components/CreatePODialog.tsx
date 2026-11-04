@@ -65,12 +65,18 @@ export default function CreatePODialog({ open, onClose }: Props) {
     setItems(items.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
   };
 
-  // Material picked from stock → default the Unit to its packing size (stock_unit, else unit).
+  // The PO document splits this string into the template's Packing and UOM
+  // columns ("30kg/set" → 20.00-style pack size + "kg/set"), so keep the item
+  // master's packing string whole rather than composing a label out of it.
+  const poUnit = (unit?: string | null, stockUnit?: string | null) =>
+    (stockUnit || "").trim() || (unit || "").trim();
+
+  // Material picked from stock → always overwrite the Unit with its packing string.
   const pickMaterial = (idx: number, next: { description: string; materialId: string | null }) => {
     const m = next.materialId ? inventory.find((x) => x.id === next.materialId) : null;
     setItems(items.map((item, i) => {
       if (i !== idx) return item;
-      const unit = item.unit || (m ? m.stockUnit || m.unit || "" : "");
+      const unit = m ? poUnit(m.unit, m.stockUnit) : item.unit;
       return { ...item, material: next.description, materialId: next.materialId, unit };
     }));
   };
@@ -224,7 +230,7 @@ export default function CreatePODialog({ open, onClose }: Props) {
                 <thead>
                   <tr className="bg-secondary/50 text-xs text-muted-foreground uppercase tracking-wider">
                     <th className="text-left p-2.5 font-medium">Material</th>
-                    <th className="text-left p-2.5 font-medium w-24" title="Packing size as printed on the PO, e.g. 30kg/set">Unit</th>
+                    <th className="text-left p-2.5 font-medium w-24" title="Packing size as printed on the PO, e.g. 30kg/set — the PO splits it into Packing and UOM">Packing / UOM</th>
                     <th className="text-right p-2.5 font-medium w-16">Qty</th>
                     <th className="text-right p-2.5 font-medium w-24">Unit Price</th>
                     <th className="text-right p-2.5 font-medium w-24" title="Discount per unit">Disc/Unit</th>
@@ -299,7 +305,7 @@ export default function CreatePODialog({ open, onClose }: Props) {
           </div>
 
           <datalist id="po-unit-options">
-            {[...new Set(inventory.map((m) => m.stockUnit || m.unit).filter(Boolean))].sort().map((u) => (
+            {[...new Set(inventory.map((m) => poUnit(m.unit, m.stockUnit)).filter(Boolean))].sort().map((u) => (
               <option key={u} value={u as string} />
             ))}
           </datalist>

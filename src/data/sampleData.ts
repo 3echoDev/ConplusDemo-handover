@@ -164,7 +164,12 @@ export interface PurchaseOrder {
   deliveryAddress?: string;
   deliveryContact?: string;
   deliveryContactNumber?: string;
-  items: { material: string; qty: number; unitPrice: number; unit?: string; discountPct?: number; itemCode?: string; discPerUnit?: number }[];
+  /**
+   * `unit` holds the item master's packing string ("30kg/set"); the PO document
+   * splits it into the template's Packing and UOM columns. `packing` / `uom`
+   * override that split when a line carries them explicitly.
+   */
+  items: { material: string; qty: number; unitPrice: number; unit?: string; packing?: string; uom?: string; discountPct?: number; itemCode?: string; discPerUnit?: number }[];
 }
 
 export interface SupplierInfo {

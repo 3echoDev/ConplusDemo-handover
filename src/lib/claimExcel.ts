@@ -226,12 +226,15 @@ function writeSection(
     // Work-done sub-row(s) — the yellow input cells for this claim's quantities.
     // The first sub-row carries any values from the line; further slots stay blank
     // (empty variation templates keep two so the layout matches the master).
+    // A sub-row holds quantities only (J/K/T/U). The amount and Total cells
+    // (L/M/N/O and V/W/X/Y) are left empty, as in the client's revised template
+    // of 27 Oct 2026: every total belongs to the item row, and the subtotal row's
+    // SUBTOTAL(9,…) over M/N/W/X would otherwise count the sub-rows on top of the
+    // item row that already sums them.
     for (let s = sub; s <= subLast; s++) {
       const first = s === sub;
       const jVal = first ? pq : 0, kVal = first ? cq : 0;
       const tVal = first ? vPq : 0, uVal = first ? vCq : 0;
-      const jAmt = first ? pAmt : 0, kAmt = first ? cAmt : 0;
-      const tAmt = first ? vpAmt : 0, uAmt = first ? vcAmt : 0;
       setCell(ws, `B${s}`, l && first ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
       setCell(ws, `C${s}`, first ? l?.remarks ?? "" : "", { fill: YELLOW, align: { vertical: "middle" } });
       for (const col of ["D", "E", "F"]) setCell(ws, `${col}${s}`, "", { fill: YELLOW });
@@ -239,21 +242,21 @@ function writeSection(
       setCell(ws, `I${s}`, "", { fill: YELLOW, nf: NF_MONEY });
       setCell(ws, `J${s}`, jVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
       setCell(ws, `K${s}`, kVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `L${s}`, fx(`J${s}+K${s}`, jVal + kVal), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `M${s}`, fx(`J${s}*I${item}`, jAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-      setCell(ws, `N${s}`, fx(`K${s}*I${item}`, kAmt), { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
-      setCell(ws, `O${s}`, fx(`M${s}+N${s}`, jAmt + kAmt), { nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `L${s}`, "", { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `M${s}`, "", { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `N${s}`, "", { fill: YELLOW, nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
+      setCell(ws, `O${s}`, "", { nf: NF_MONEY, align: { horizontal: "right", vertical: "middle" } });
       setCell(ws, `P${s}`, "", { fill: YELLOW, nf: "0.0%" });
       setCell(ws, `Q${s}`, "", {});
       setCell(ws, `S${s}`, "", { fill: YELLOW, nf: NF_MONEY });
       setCell(ws, `T${s}`, tVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
       setCell(ws, `U${s}`, uVal, { fill: YELLOW, nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `V${s}`, fx(`T${s}+U${s}`, tVal + uVal), { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `W${s}`, fx(`T${s}*S${item}`, tAmt), { fill: YELLOW, nf: NF_MONEY });
-      setCell(ws, `X${s}`, fx(`U${s}*S${item}`, uAmt), { fill: YELLOW, nf: NF_MONEY });
-      setCell(ws, `Y${s}`, fx(`W${s}+X${s}`, tAmt + uAmt), { nf: NF_MONEY });
+      setCell(ws, `V${s}`, "", { nf: NF_QTY, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `W${s}`, "", { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `X${s}`, "", { fill: YELLOW, nf: NF_MONEY });
+      setCell(ws, `Y${s}`, "", { nf: NF_MONEY });
       setCell(ws, `Z${s}`, "", { nf: "0.0%" });
-      setCell(ws, `AA${s}`, fx(`Y${s}-O${s}`, first ? round2(vAmt - (pAmt + cAmt)) : 0), { nf: NF_MONEY });
+      setCell(ws, `AA${s}`, fx(`Y${s}-O${s}`, 0), { nf: NF_MONEY });
       borderRange(ws, `B${s}:AA${s}`);
       ws.getRow(s).height = 21;
     }

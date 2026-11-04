@@ -186,6 +186,38 @@ describe("claim 02: main contractor's cumulative verified (client Excel, 19 Sep)
     expect(num(d2, `AA${a1}`)).toBeCloseTo(5000 - 17882, 2);
   });
 
+  // Client's revised template, 27 Oct 2026: a work-done sub-row holds quantities
+  // only. Every amount and Total cell belongs to the item row, so the subtotal's
+  // SUBTOTAL(9,…) over M/N/W/X cannot count a sub-row on top of the item row.
+  it("leaves amount and Total cells empty on work-done sub-rows", () => {
+    const sub = a1 + 1;
+    expect(val(d2, `C${sub}`)).toBeTruthy(); // it really is the work-done row
+    for (const col of ["L", "M", "N", "O", "V", "W", "X", "Y"]) {
+      expect(val(d2, `${col}${sub}`) ?? "", `${col}${sub} is empty`).toBe("");
+      expect(formulaOf(d2, `${col}${sub}`), `${col}${sub} has no formula`).toBeNull();
+    }
+    // The quantity inputs stay, and keep the yellow input fill.
+    expect(num(d2, `J${sub}`)).toBe(107.64);
+    expect(num(d2, `K${sub}`)).toBe(250);
+    for (const col of ["J", "K", "M", "N", "T", "U", "W", "X"])
+      expect(fillOf(d2, `${col}${sub}`), `${col}${sub} yellow`).toBe(YELLOW);
+  });
+
+  it("subtotals the amount columns over item rows only", () => {
+    let subtotalRow = 0;
+    d2.eachRow((row, n) => {
+      if (String(row.getCell(2).value ?? "").startsWith("Subtotal — Sub-Contract Works")) subtotalRow = n;
+    });
+    expect(subtotalRow).toBeGreaterThan(0);
+    // A1 is the only line with figures: previous 5,382 / current 12,500 claimed,
+    // 5,000 / 0 verified. These are the cached results we write; what stops Excel
+    // from recalculating them to double is the empty sub-rows asserted above.
+    expect(num(d2, `M${subtotalRow}`)).toBeCloseTo(5382, 2);
+    expect(num(d2, `N${subtotalRow}`)).toBeCloseTo(12500, 2);
+    expect(num(d2, `W${subtotalRow}`)).toBeCloseTo(5000, 2);
+    expect(num(d2, `X${subtotalRow}`)).toBeCloseTo(0, 2);
+  });
+
   it("carries the verified total into the cover's Payment Certified column", () => {
     expect(num(c2, "G45")).toBe(5000);
     expect(num(c2, "G47")).toBe(5000);

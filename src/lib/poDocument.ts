@@ -35,6 +35,25 @@ const MIN_ROWS = 10;
 
 type POItem = PurchaseOrder["items"][number];
 
+/**
+ * Packing and UOM are two columns on the client's revised PO template of
+ * 27 Oct 2026, both looked up from their item master: Packing is the numeric
+ * pack size, UOM the unit of that pack ("20.00" + "kg/set").
+ *
+ * We hold the pair as one string on the line (materials.stock_unit, e.g.
+ * "30kg/set") and split it here, so no column had to be added to po_line_items.
+ * An explicit packing / uom on the line wins when one is set. A string with no
+ * leading number ("kg") is all UOM, which is what the older rows carry.
+ */
+export function splitPacking(item: Pick<POItem, "unit" | "packing" | "uom">) {
+  if (item.packing != null || item.uom != null)
+    return { packing: item.packing ?? "", uom: item.uom ?? "" };
+  const raw = (item.unit ?? "").trim();
+  const m = /^(\d+(?:\.\d+)?)\s*(.*)$/.exec(raw);
+  if (!m) return { packing: "", uom: raw };
+  return { packing: m[1], uom: m[2].trim() };
+}
+
 // Line amount = qty × (unit price − discount per unit).
 const lineAmount = (i: POItem) => i.qty * (i.unitPrice - (i.discPerUnit ?? 0));
 
@@ -57,12 +76,14 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
 
   const bodyRows = po.items.map((i, n) => {
     const disc = i.discPerUnit ?? 0;
+    const { packing, uom } = splitPacking(i);
     return `
       <tr>
         <td class="c">${n + 1}</td>
         <td>${escapeHtml(i.itemCode || "")}</td>
         <td>${escapeHtml(i.material)}</td>
-        <td class="c">${escapeHtml(i.unit || "")}</td>
+        <td class="c">${escapeHtml(packing)}</td>
+        <td class="c">${escapeHtml(uom)}</td>
         <td class="r">${i.qty}</td>
         <td class="r">${money(i.unitPrice)}</td>
         <td class="r">${disc > 0 ? money(disc) : "$ -"}</td>
@@ -71,7 +92,7 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
   });
   for (let n = po.items.length; n < MIN_ROWS; n++) {
     bodyRows.push(
-      `<tr><td class="c">${n + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`
+      `<tr><td class="c">${n + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`
     );
   }
 
@@ -168,7 +189,8 @@ export function buildPOHtml(po: PurchaseOrder, opts: { autoPrint: boolean }) {
         <th style="width:34px">S/No.</th>
         <th style="width:110px">Item Code</th>
         <th>Item Description</th>
-        <th style="width:64px">Unit</th>
+        <th style="width:52px">Packing</th>
+        <th style="width:58px">UOM</th>
         <th style="width:44px">QTY</th>
         <th style="width:82px">Unit Price</th>
         <th style="width:72px">Disc/Unit</th>
@@ -261,11 +283,11 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
     { width: 5 },  // 1  S/No.
     { width: 9 },  // 2  Item Code ┐
     { width: 10 }, // 3  Item Code ┘
-    { width: 9 },  // 4  Description ┐
-    { width: 11 }, // 5  Description │
-    { width: 10 }, // 6  Description │
-    { width: 10 }, // 7  Description ┘
-    { width: 9 },  // 8  Unit
+    { width: 11 }, // 4  Description ┐
+    { width: 13 }, // 5  Description │
+    { width: 12 }, // 6  Description ┘
+    { width: 8 },  // 7  Packing
+    { width: 9 },  // 8  UOM
     { width: 8 },  // 9  QTY
     { width: 12 }, // 10 Unit Price
     { width: 10 }, // 11 Disc/Unit
@@ -414,10 +436,13 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
   }
   r++;
 
-  // ── Item table header (Item Code = 2-3, Item Description = 4-7) ──
+  // ── Item table header (Item Code = 2-3, Item Description = 4-6) ──
+  // Packing and UOM are separate columns on the client's revised template of
+  // 27 Oct 2026. Description gives up column 7 for them so the sheet keeps its
+  // 12-column grid and the header thirds above (1-4 | 5-8 | 9-12) still line up.
   const headSpans: [string, number, number][] = [
-    ["S/No.", 1, 1], ["Item Code", 2, 3], ["Item Description", 4, 7],
-    ["Unit", 8, 8], ["QTY", 9, 9], ["Unit Price", 10, 10], ["Disc/Unit", 11, 11], ["Amount", 12, 12],
+    ["S/No.", 1, 1], ["Item Code", 2, 3], ["Item Description", 4, 6],
+    ["Packing", 7, 7], ["UOM", 8, 8], ["QTY", 9, 9], ["Unit Price", 10, 10], ["Disc/Unit", 11, 11], ["Amount", 12, 12],
   ];
   for (const [label, c1, c2] of headSpans) {
     if (c2 > c1) ws.mergeCells(r, c1, r, c2);
@@ -434,13 +459,15 @@ export async function exportPOToExcel(po: PurchaseOrder): Promise<void> {
     ws.getCell(r, 1).value = n + 1;
     ws.getCell(r, 1).alignment = { horizontal: "center", vertical: "middle" };
     ws.mergeCells(r, 2, r, 3);
-    ws.mergeCells(r, 4, r, 7);
+    ws.mergeCells(r, 4, r, 6);
     if (it) {
+      const { packing, uom } = splitPacking(it);
       ws.getCell(r, 2).value = it.itemCode || "";
       ws.getCell(r, 2).alignment = { horizontal: "center", vertical: "middle" };
       ws.getCell(r, 4).value = it.material;
       ws.getCell(r, 4).alignment = { vertical: "middle", wrapText: true };
-      ws.getCell(r, 8).value = it.unit || ""; ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
+      ws.getCell(r, 7).value = packing; ws.getCell(r, 7).alignment = { horizontal: "center", vertical: "middle" };
+      ws.getCell(r, 8).value = uom; ws.getCell(r, 8).alignment = { horizontal: "center", vertical: "middle" };
       ws.getCell(r, 9).value = it.qty; ws.getCell(r, 9).alignment = { horizontal: "right", vertical: "middle" };
       ws.getCell(r, 10).value = it.unitPrice; ws.getCell(r, 10).numFmt = CUR; ws.getCell(r, 10).alignment = { horizontal: "right", vertical: "middle" };
       ws.getCell(r, 11).value = it.discPerUnit ?? 0; ws.getCell(r, 11).numFmt = CUR; ws.getCell(r, 11).alignment = { horizontal: "right", vertical: "middle" };
