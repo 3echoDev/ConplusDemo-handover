@@ -16,7 +16,7 @@ Status legend: **TODO** = not started · **Q** = question back to the client · 
 
 ---
 
-## 1. Progress claim template: drop the Total formulas on work-done sub-rows. DONE 2026-10-27 (not yet committed/deployed)
+## 1. Progress claim template: drop the Total formulas on work-done sub-rows. DONE 2026-10-27, committed + pushed 4 Nov (5af0f99)
 
 **Ask:** "Attached the revised ConPlus Progress Claim Template and Dashboard Progress Claim for reference. Removed the total formula as shown in the screenshot to ensure the total is clear and tally."
 
@@ -94,7 +94,7 @@ Two tests added in `src/test/claimExcel.test.ts` — sub-rows carry no amount or
 
 ---
 
-## 4. PO template: split Packing and UOM into two columns. DONE 2026-10-27 (not yet committed/deployed)
+## 4. PO template: split Packing and UOM into two columns. DONE 2026-10-27, committed + pushed 4 Nov (5af0f99)
 
 **Ask:** "Attached the revised PO template with Packing and UOM split into two separate columns. The Stock Code is not yet confirmed. I will update you once confirmed."
 
@@ -124,11 +124,11 @@ Other differences visible in her template, worth noting but **not** asked for: a
 
 ---
 
-## 5. Cancel six pending-approval POs. HOLD — needs the user's go-ahead
+## 5. Cancel six pending-approval POs. APP READY 4 Nov; data change = `supabase/sql/20261104_cancel_six_july_pos.sql` (or the new Cancel PO button)
 
 **Ask:** "Please cancel the following six POs still marked as pending approval: 2607-0005, 2607-0011, 2607-0012, 2607-0015, 2607-0016 and 2607-0017."
 
-This is a data change on live records, not a code change. Not actioned. Before doing it: confirm with Muhsin, check each PO is genuinely still pending (not received against), and decide cancel-vs-void so the PO numbers are not reused.
+Re-asked 3 Nov. 4 Nov: `cancelled` added as a PO status (badge, Cancelled column on /purchase-orders and the Live View pipeline, Reject button replaced by Cancel PO with a confirm dialog). The six rows were still `pending` on 4 Nov; the update itself is in `supabase/sql/20261104_cancel_six_july_pos.sql` — run it, or press Cancel PO on each card. The 2607-0017 pending-approval alert was resolved 4 Nov. Originally: Before doing it: confirm with Muhsin, check each PO is genuinely still pending (not received against), and decide cancel-vs-void so the PO numbers are not reused.
 
 Note these are **July** POs (26-07-xxxx). The attached `PO 2610-0016 Sto (LTC Coatings - The Florida) BLANKET ORDER.pdf` is an October PO and is the worked example for item 4, not one of the six.
 

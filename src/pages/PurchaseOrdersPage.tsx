@@ -6,6 +6,10 @@ import { formatCurrency, type POStatus, type PurchaseOrder } from "@/data/sample
 import { printPO } from "@/lib/poDocument";
 import CreatePODialog from "@/components/CreatePODialog";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function PODetailDialog({ po, onClose }: { po: PurchaseOrder; onClose: () => void }) {
   const { updatePOFields } = useAppData();
@@ -142,6 +146,7 @@ const kanbanCols: { status: POStatus; label: string }[] = [
   { status: "issued", label: "Issued" },
   { status: "delivered", label: "Delivered" },
   { status: "closed", label: "Closed" },
+  { status: "cancelled", label: "Cancelled" },
 ];
 
 export default function PurchaseOrdersPage() {
@@ -150,6 +155,7 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [detailPO, setDetailPO] = useState<string | null>(null);
+  const [cancelPO, setCancelPO] = useState<PurchaseOrder | null>(null);
 
   const filtered = purchaseOrders.filter((po) =>
     po.poNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -158,7 +164,13 @@ export default function PurchaseOrdersPage() {
   );
 
   const handleApprove = (poId: string) => updatePOStatus(poId, "approved");
-  const handleReject = (poId: string) => updatePOStatus(poId, "rejected");
+  // "Cancel" replaces the old Reject: the PO keeps its number and drops out of the pipeline
+  // (Wendy, 27 Oct / 3 Nov 2026: six July POs left pending after the approval step was removed).
+  const confirmCancel = async () => {
+    if (!cancelPO) return;
+    await updatePOStatus(cancelPO.id, "cancelled");
+    setCancelPO(null);
+  };
   const selectedPO = purchaseOrders.find((p) => p.id === detailPO);
 
   return (
@@ -225,10 +237,10 @@ export default function PurchaseOrdersPage() {
                             <CheckCircle className="h-3 w-3" /> Approve
                           </button>
                           <button
-                            onClick={() => handleReject(po.id)}
+                            onClick={() => setCancelPO(po)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors text-xs font-medium"
                           >
-                            <X className="h-3 w-3" /> Reject
+                            <X className="h-3 w-3" /> Cancel PO
                           </button>
                         </>
                       ) : (
@@ -291,10 +303,10 @@ export default function PurchaseOrdersPage() {
                             <CheckCircle className="h-2.5 w-2.5" /> Approve
                           </button>
                           <button
-                            onClick={() => handleReject(po.id)}
+                            onClick={() => setCancelPO(po)}
                             className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
                           >
-                            <X className="h-2.5 w-2.5" /> Reject
+                            <X className="h-2.5 w-2.5" /> Cancel
                           </button>
                         </div>
                       )}
@@ -312,6 +324,23 @@ export default function PurchaseOrdersPage() {
 
       <CreatePODialog open={showCreate} onClose={() => setShowCreate(false)} />
       {selectedPO && <PODetailDialog po={selectedPO} onClose={() => setDetailPO(null)} />}
+      <AlertDialog open={!!cancelPO} onOpenChange={(o) => { if (!o) setCancelPO(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel PO {cancelPO?.poNumber}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelPO?.supplier} · {cancelPO?.project} · {cancelPO ? formatCurrency(cancelPO.amount) : ""}.
+              The PO number is kept and the order moves to Cancelled. It will not be issued to the supplier.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep PO</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCancel} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Cancel PO
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

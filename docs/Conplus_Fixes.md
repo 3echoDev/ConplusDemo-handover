@@ -168,6 +168,11 @@ Tally (16 Sep): 41 numbered items — 30 ✅ done · 4 ◐ partly · 5 ⏳ clien
 46. **Email wording (sheet 4).**
     ✅ Done 2 Nov (local). New `pay.invoice` template with Accounts' Go-Green text; 1st and 2nd reminders now say "Kindly advise the payment of {outstanding} by {deadline}"; the final reminder opens with "Statement of Account as at {as_at}" (new placeholder = today's date). All five are in the Email templates editor as before.
 
+47. **Cancel the six July POs left "pending approval"** (Wendy 28 Sep answer, 27 Oct, 3 Nov).
+    ✅ App side done 4 Nov: `cancelled` PO status, Cancelled column on both PO views, Cancel PO button with confirm (replaces Reject, which had no column). Data: `supabase/sql/20261104_cancel_six_july_pos.sql` to run once (rows still pending on 4 Nov; alert for 2607-0017 resolved).
+
+48. **27 Oct items 1 + 4 were never committed** although the 28 Oct reply said they were in the next update; shipped 4 Nov (5af0f99).
+
 ---
 
 ## Next, in order

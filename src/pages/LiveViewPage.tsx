@@ -670,6 +670,7 @@ const PIPELINE: { status: POStatus; label: string }[] = [
   { status: "issued", label: "Issued" },
   { status: "delivered", label: "Delivered" },
   { status: "closed", label: "Closed" },
+  { status: "cancelled", label: "Cancelled" },
 ];
 
 const WO_PIPELINE: { status: WOStatus; label: string }[] = [

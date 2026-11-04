@@ -131,7 +131,7 @@ export interface InventoryItem {
   projectAllocations: ProjectAllocation[];
 }
 
-export type POStatus = "draft" | "pending" | "approved" | "rejected" | "issued" | "delivered" | "closed";
+export type POStatus = "draft" | "pending" | "approved" | "rejected" | "issued" | "delivered" | "closed" | "cancelled";
 
 export interface PurchaseOrder {
   id: string;
