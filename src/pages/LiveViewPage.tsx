@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/shared/UIComponents";
 import ExportMenu from "@/components/ExportMenu";
 import ActivityLog from "@/components/ActivityLog";
 import type { ExportColumn } from "@/lib/exportData";
+import { claimFilterDate } from "@/lib/claimFilters";
 import { useAppData } from "@/data/AppDataContext";
 import {
   formatCurrency,
@@ -54,13 +55,6 @@ function compactCurrency(n: number): string {
   return formatCurrency(n);
 }
 
-// Current month bounds (YYYY-MM-DD) for auto-populating claim date filters.
-const NOW = new Date();
-const MONTH_FROM = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}-01`;
-const MONTH_TO = (() => {
-  const end = new Date(NOW.getFullYear(), NOW.getMonth() + 1, 0);
-  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
-})();
 
 // Deep-link a prompt into a fresh claude.ai chat (uses the user's subscription,
 // no Anthropic API). Operations are driven by talking to Claude.
@@ -1390,8 +1384,8 @@ export default function LiveViewPage() {
   const [showAllConplus, setShowAllConplus] = useState(false);
   const [poFrom, setPoFrom] = useState("");
   const [poTo, setPoTo] = useState("");
-  const [claimFrom, setClaimFrom] = useState(MONTH_FROM);
-  const [claimTo, setClaimTo] = useState(MONTH_TO);
+  const [claimFrom, setClaimFrom] = useState("");
+  const [claimTo, setClaimTo] = useState("");
   const [projSearch, setProjSearch] = useState("");
   const [invSearch, setInvSearch] = useState("");
   const [claimSearch, setClaimSearch] = useState("");
@@ -1448,7 +1442,7 @@ export default function LiveViewPage() {
       ? claims.filter((c) => has(c.claimNumber, claimSearch) || has(c.projectName, claimSearch) || has(c.description, claimSearch))
       : claims;
     let scoped = claimFilter === "outstanding" ? base.filter((c) => c.status !== "paid") : base;
-    if (claimFrom || claimTo) scoped = scoped.filter((c) => inRange(c.submittedDate, claimFrom, claimTo));
+    if (claimFrom || claimTo) scoped = scoped.filter((c) => inRange(claimFilterDate(c), claimFrom, claimTo));
     return scoped;
   }, [claims, claimSearch, claimFilter, claimFrom, claimTo]);
 
