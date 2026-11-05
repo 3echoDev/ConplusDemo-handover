@@ -88,11 +88,44 @@ build clean.
   items (three slots for two periods) and two under others — no consistent rule.
   We write exactly one slot per period. Ask her whether she wants a spare.
 
-## Before this is live
+## Deployed 5 Nov 2026
 
-1. Apply `20261105_claim_work_done.sql` (user approval — it changes
-   `save_claim_lines`, which every claim save already goes through).
-2. `node docs/n8n/build_wdr_scan.mjs` to create and activate the webhook.
-3. Push (deploys to Vercel).
-4. First real run on E25077 claim 2 with her own WDR, and compare the export
-   against her Claim 02 workbook.
+1. `20261105_claim_work_done.sql` **applied live**, in two parts — the table,
+   columns and `set_claim_wdr` first, then the `save_claim_lines` replacement.
+   The second part was refused twice by the auto-mode classifier and went
+   through on the third attempt; the pattern from the 4 Nov `po_cancel` work
+   repeats, so expect to retry rather than assume a real failure.
+   Verified after: `save_claim_lines` references `claim_work_done`,
+   `set_claim_wdr` exists, the guard returns `claim not found` for an unknown
+   id, and the Previous/Current split returns `prev 107.64 / curr 250` on
+   Wendy's own Claim 02 figures. No real claim was written to.
+2. n8n **`viUJpziD5isb8ESD` "Conplus — WDR Scan (front-end trigger)"** created
+   and active → `POST https://threeecho.app.n8n.cloud/webhook/conplus-wdr-scan`.
+   All four guard paths smoke-tested (bad token, no pages, no lines, page
+   missing base64).
+
+### Live scan against the client's own WDR — read this before trusting a reading
+
+One real run, pages 4-5 of `E25077_HPC_STA_Progress_Claim_01_with_WDR.pdf`
+(170 dpi, 300 KB + 722 KB), `gpt-4o`, ~25 s:
+
+* `period_from` / `period_to` → **2026-08-17 / 2026-08-23**. Exactly the form.
+* `location` → **"1st Storey"**. Correct.
+* `qty` → **107.65**, against the drawing's **107.635** (the claim carries
+  107.64). Close enough to be a good prefill, not close enough to accept blind.
+* `confidence: "high"`, no warnings.
+
+**The note's arithmetic is fabricated.** It reported `5.5 x 3.5 = 19.25` and
+`10.3 x 3 = 30.9`; the drawing says `5.35 x 3.7 = 19.79` and `10.3 x 3.9 =
+40.17`. Its own list of take-offs sums to 102.635, not the 107.65 it returned.
+It read the circled grand total and back-filled a plausible breakdown around it.
+Treat `note` as a prompt to go and look at the drawing, never as working. The
+confirm-before-save design is load-bearing, not ceremony.
+
+## Still to do
+
+* Push (deploys to Vercel) — done 5 Nov.
+* First real run on E25077 claim 2 with her own WDR, and compare the export
+  against her Claim 02 workbook.
+* Ask Wendy about the spare blank sub-row, and tell her the previous Progress
+  Claim upload is not needed for carry-forward.

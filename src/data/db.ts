@@ -1,6 +1,6 @@
 // Supabase data access layer: row types, UI mappers, and mutations.
 import { supabase } from "@/lib/supabase";
-import { periodLabel, type WorkDonePeriod } from "@/lib/workDone";
+import { periodLabel, rollUp, type WorkDonePeriod } from "@/lib/workDone";
 import type {
   Project,
   InventoryItem,
@@ -680,8 +680,11 @@ export async function dbSaveClaimLines(claimId: string, lines: ClaimLineInput[])
       unit: l.unit || null,
       qty: l.qty,
       rate: l.rate,
-      prev_qty: l.prevQty ?? 0,
-      curr_qty: l.currQty ?? 0,
+      // Derived from the breakdown when there is one. save_claim_lines does the
+      // same sum server-side; doing it here too means the figures are right even
+      // against an older copy of the RPC, and the two can never disagree.
+      prev_qty: l.periods?.length ? rollUp(l.periods).prevQty : l.prevQty ?? 0,
+      curr_qty: l.periods?.length ? rollUp(l.periods).currQty : l.currQty ?? 0,
       remarks: l.remarks || null,
       periods: l.periods
         ? l.periods.map((p, n) => ({
