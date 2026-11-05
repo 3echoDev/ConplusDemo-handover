@@ -329,7 +329,7 @@ export function buildClaimHtml(claim: Claim, ctx: ClaimDocContext): string {
  * The old hand-built layout (buildClaimHtml) is kept only as a fallback if the
  * workbook cannot be built.
  */
-export async function printClaim(claim: Claim, ctx: ClaimDocContext): Promise<void> {
+export async function printClaim(claim: Claim, ctx: ClaimDocContext, wdrUrl?: string | null): Promise<void> {
   const warnings = claimExportWarnings(claim, ctx);
   if (
     warnings.length &&
@@ -340,7 +340,7 @@ export async function printClaim(claim: Claim, ctx: ClaimDocContext): Promise<vo
   if (!w) return;
   let html: string;
   try {
-    html = await buildClaimPrintHtml(claim, ctx);
+    html = await buildClaimPrintHtml(claim, ctx, wdrUrl);
   } catch (e) {
     console.error("claim print: workbook render failed, using fallback layout", e);
     html = buildClaimHtml(claim, ctx);
@@ -352,7 +352,7 @@ export async function printClaim(claim: Claim, ctx: ClaimDocContext): Promise<vo
 }
 
 /** The Excel master rendered as print HTML (cover page + claim details). */
-export async function buildClaimPrintHtml(claim: Claim, ctx: ClaimDocContext): Promise<string> {
+export async function buildClaimPrintHtml(claim: Claim, ctx: ClaimDocContext, wdrUrl?: string | null): Promise<string> {
   // dynamic imports: claimExcel imports this module, so a static import would be circular
   const [{ buildClaimWorkbook, CLAIM_SHEET_COVER, CLAIM_SHEET_DETAILS }, { worksheetToHtml, SHEET_PRINT_CSS }] = await Promise.all([
     import("@/lib/claimExcel"),
@@ -366,13 +366,34 @@ export async function buildClaimPrintHtml(claim: Claim, ctx: ClaimDocContext): P
   const coverHtml = worksheetToHtml(cover, { range: "A1:J63", replace: { "[ Company Logo ]": "" }, pxPerChar: 7 });
   const detailsHtml = worksheetToHtml(details, { range: `B1:Q${lastRow}`, titleRows: "1:12", pxPerChar: 6.2 });
   const title = `Progress Claim ${claimNumberDisplay(claim)} — ${claim.projectCode}`;
+
+  // The Work Done Report for this period, appended page by page so the whole
+  // submission to the main contractor comes out of a single Save-as-PDF
+  // (Wendy, 3 Nov 2026). The WDR pages are scans already, so rasterising them
+  // loses nothing. A report that cannot be read must not block the claim.
+  let wdrHtml = "";
+  if (wdrUrl) {
+    try {
+      const { rasterisePdfUrl } = await import("@/lib/wdrScan");
+      const pages = await rasterisePdfUrl(wdrUrl, 2200, 0.9);
+      wdrHtml = pages
+        .map((p) => `<div class="page wdr"><img src="data:${p.mime};base64,${p.base64}" alt="Work Done Report"></div>`)
+        .join("");
+    } catch (e) {
+      console.error("claim print: could not append the Work Done Report", e);
+    }
+  }
+
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/</g, "")}</title>
 <style>${SHEET_PRINT_CSS}
   .cover table.sheet { margin: 0 auto; }
   .details table.sheet { width: 100% !important; }
+  .wdr { display: flex; align-items: center; justify-content: center; }
+  .wdr img { max-width: 100%; max-height: 100%; object-fit: contain; }
 </style></head>
 <body>
   <div class="page cover"><img class="letterhead" src="/conplus-header.png" alt="Conplus Resources Pte Ltd" onerror="this.style.display='none'">${coverHtml}</div>
   <div class="page details">${detailsHtml}</div>
+  ${wdrHtml}
 </body></html>`;
 }

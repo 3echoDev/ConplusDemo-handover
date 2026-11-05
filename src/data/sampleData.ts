@@ -265,6 +265,12 @@ export interface ClaimLine {
   verifiedQty: number | null;
   verifiedAmount: number | null;
   remarks: string;
+  /**
+   * Work-done breakdown: one entry per work period (item 2, Wendy 3 Nov 2026).
+   * Absent on claims created before the breakdown existed — the Excel then
+   * synthesises the single sub-row those claims have always printed.
+   */
+  periods?: import("@/lib/workDone").WorkDonePeriod[];
 }
 
 export interface ProjectTask {

@@ -29,7 +29,8 @@ import { printWO, woOrderTotal } from "@/lib/woDocument";
 import { exportWOTemplateExcel } from "@/lib/woExcelExport";
 import { printClaim, computeClaimTotals, type ClaimDocContext } from "@/lib/claimDocument";
 import { exportClaimToExcel, lineKey } from "@/lib/claimExcel";
-import { fetchClaimLines } from "@/data/db";
+import { fetchClaimLines, fetchClaimWdr } from "@/data/db";
+import type { WdrState } from "@/components/ClaimWorkDonePanel";
 import ClaimLinesEditor from "@/components/ClaimLinesEditor";
 import StockWatchlist from "@/components/StockWatchlist";
 import { cn } from "@/lib/utils";
@@ -803,11 +804,17 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
 
   // Load this claim's lines on open (lazy — not part of the list fetch)
   const [lines, setLines] = useState<ClaimLine[]>(claim.lines ?? []);
+  // The Work Done Report behind this claim's current period (item 2). It is
+  // per-claim and never carried forward, so it loads with the claim's lines.
+  const [wdr, setWdr] = useState<WdrState | null>(null);
   useEffect(() => {
     let alive = true;
     fetchClaimLines(claim.id)
       .then((ls) => { if (alive) setLines(ls); })
       .catch(() => { /* no lines yet — leave empty */ });
+    fetchClaimWdr(claim.id)
+      .then((w) => { if (alive) setWdr(w); })
+      .catch(() => { /* no report attached */ });
     return () => { alive = false; };
   }, [claim.id]);
 
@@ -983,6 +990,10 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
         {editingLines && (
           <ClaimLinesEditor
             claimId={claim.id}
+            projectCode={claim.projectCode}
+            claimNo={claim.claimNo ?? claim.claimNumber}
+            wdr={wdr}
+            onWdrChange={setWdr}
             lines={lines}
             onSaved={(ls) => { setLines(ls); setEditingLines(false); }}
             onCancel={() => setEditingLines(false)}
@@ -1068,7 +1079,7 @@ function ClaimDetailBody({ claim, startEditing = false }: { claim: Claim; startE
             <FileSpreadsheet className="h-4 w-4 text-success" /> Excel
           </button>
           <button
-            onClick={() => printClaim(claimWithLines, docCtx)}
+            onClick={() => printClaim(claimWithLines, docCtx, wdr?.url)}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground hover:bg-secondary transition-colors"
           >
             <Printer className="h-4 w-4" /> Print / PDF

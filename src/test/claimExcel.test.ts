@@ -228,3 +228,84 @@ describe("claim 02: main contractor's cumulative verified (client Excel, 19 Sep)
     expect(num(c2, "F55")).toBeCloseTo(11593.8, 2);
   });
 });
+
+describe("claim 02 work-done breakdown (item 2, Wendy 3 Nov 2026)", () => {
+  // Her Claim 02 workbook, Claim Details rows 16-19:
+  //   A1 item                                    J=SUM(J17:J19)  K=SUM(K17:K19)
+  //    1 Work Done: 17-23 Aug'26 - 1st Storey    prev 107.64     curr 0
+  //    2 Work Done: 01-15 Sep'26 - 1st Storey    prev 0          curr 250
+  const periods = [
+    { seq: 1, label: "", periodFrom: "2026-08-17", periodTo: "2026-08-23", location: "1st Storey", qty: 107.64, isCurrent: false, source: "carried" as const },
+    { seq: 2, label: "", periodFrom: "2026-09-01", periodTo: "2026-09-15", location: "1st Storey", qty: 250, isCurrent: true, source: "wdr" as const },
+  ];
+  const lines3: ClaimLine[] = lines.map((l) => l.pgRef === "A1"
+    ? { ...l, claimId: "c3", prevQty: 107.64, prevAmount: 5382, currQty: 250, currAmount: 12500, cumQty: 357.64, cumAmount: 17882, periods }
+    : { ...l, claimId: "c3", prevQty: 0, prevAmount: 0, currQty: 0, currAmount: 0, cumQty: 0, cumAmount: 0 });
+  const claim3: Claim = { ...claim, id: "c3", claimNumber: "CLM-E25077-2", claimNo: 2, lines: lines3 };
+  let d3: ExcelJS.Worksheet;
+  let a1 = 0, a2 = 0;
+  const num = (sheet: ExcelJS.Worksheet, addr: string) => val(sheet, addr) ?? 0;
+
+  beforeAll(async () => {
+    const built = buildClaimWorkbook(claim3, ctx);
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await built.xlsx.writeBuffer()) as ArrayBuffer);
+    d3 = book.getWorksheet(CLAIM_SHEET_DETAILS)!;
+    d3.eachRow((row, n) => {
+      const b = String(row.getCell("B").value ?? "");
+      if (!a1 && b === "A1") a1 = n;
+      if (!a2 && b === "A2") a2 = n;
+    });
+  });
+
+  it("writes one numbered sub-row per period, labelled the way the client writes it", () => {
+    expect(a1).toBeGreaterThan(0);
+    expect(val(d3, `B${a1 + 1}`)).toBe(1);
+    expect(val(d3, `C${a1 + 1}`)).toBe("Work Done: 17-23 Aug'26 - 1st Storey");
+    expect(val(d3, `B${a1 + 2}`)).toBe(2);
+    expect(val(d3, `C${a1 + 2}`)).toBe("Work Done: 01-15 Sep'26 - 1st Storey");
+    // Two periods means two slots, then A2's zone header, then A2 — the same
+    // shape as the client's sheet (A1 row 16, subs 17-19, zone 20, A2 row 21).
+    expect(a2).toBe(a1 + 2 + 1 + 1);
+  });
+
+  it("puts an earlier period in Previous and this claim's period in Current", () => {
+    expect(num(d3, `J${a1 + 1}`)).toBe(107.64);
+    expect(num(d3, `K${a1 + 1}`)).toBe(0);
+    expect(num(d3, `J${a1 + 2}`)).toBe(0);
+    expect(num(d3, `K${a1 + 2}`)).toBe(250);
+  });
+
+  it("sums the sub-rows on the item row, over the full span", () => {
+    expect(formulaOf(d3, `J${a1}`)).toBe(`SUM(J${a1 + 1}:J${a1 + 2})`);
+    expect(formulaOf(d3, `K${a1}`)).toBe(`SUM(K${a1 + 1}:K${a1 + 2})`);
+    expect(num(d3, `J${a1}`)).toBe(107.64);
+    expect(num(d3, `K${a1}`)).toBe(250);
+    expect(num(d3, `L${a1}`)).toBeCloseTo(357.64, 2);
+    expect(num(d3, `N${a1}`)).toBeCloseTo(12500, 2);
+  });
+
+  it("still holds amounts off the sub-rows, so the subtotal cannot double-count", () => {
+    for (const r of [a1 + 1, a1 + 2]) {
+      for (const col of ["L", "M", "N", "O", "V", "W", "X", "Y"]) {
+        expect(val(d3, `${col}${r}`) ?? "", `${col}${r} is empty`).toBe("");
+      }
+    }
+    let subtotalRow = 0;
+    d3.eachRow((row, n) => {
+      if (String(row.getCell(2).value ?? "").startsWith("Subtotal — Sub-Contract Works")) subtotalRow = n;
+    });
+    expect(num(d3, `M${subtotalRow}`)).toBeCloseTo(5382, 2);
+    expect(num(d3, `N${subtotalRow}`)).toBeCloseTo(12500, 2);
+  });
+
+  it("leaves a line with no breakdown exactly as it prints today", () => {
+    // One slot, numbered 1, with no label and zero quantities — unchanged from
+    // before item 2, so existing claims re-export byte-for-byte as they did.
+    expect(val(d3, `B${a2 + 1}`)).toBe(1);
+    expect(val(d3, `C${a2 + 1}`)).toBe("");
+    expect(val(d3, `J${a2 + 1}`) ?? 0).toBe(0);
+    expect(val(d3, `K${a2 + 1}`) ?? 0).toBe(0);
+    expect(formulaOf(d3, `J${a2}`)).toBe(`SUM(J${a2 + 1}:J${a2 + 1})`);
+  });
+});

@@ -4,6 +4,7 @@
 // buildClaimWorkbook() is DOM-free so it can run under vitest / Node.
 import ExcelJS from "exceljs";
 import type { Claim, ClaimLine } from "@/data/sampleData";
+import { periodsForLine, periodLabel, rollUp, subRowCount } from "@/lib/workDone";
 import {
   bySection,
   claimNumberDisplay,
@@ -174,16 +175,23 @@ function writeSection(
       r++;
     }
     const item = r;
-    // Empty template rows (variation section with no line items) reserve two
-    // sub-rows to match the corrected master's B/O/Y SUMIF ranges and put the
-    // subtotal on the same row the cover formulas reference.
-    const subCount = l ? 1 : 2;
+    // One sub-row per work period (item 2, Wendy 3 Nov 2026): her Claim 02 puts
+    // "Work Done: 17-23 Aug'26" and "Work Done: 01-15 Sep'26" under item A1 and
+    // sums them on the item row. A line with no breakdown still gets the one
+    // sub-row it has always had. Empty template rows (variation section with no
+    // line items) reserve two to match the corrected master's B/O/Y SUMIF ranges
+    // and put the subtotal on the row the cover formulas reference.
+    const periods = l ? periodsForLine(l, l.periods) : [];
+    const subCount = l ? subRowCount(periods) : 2;
     const sub = r + 1;
     const subLast = r + subCount;
     const rate = l?.rate ?? 0;
     const qty = l?.qty ?? 0;
-    const pq = l?.prevQty ?? 0;
-    const cq = l?.currQty ?? 0;
+    // With a breakdown the periods are the truth, so the item row can never
+    // disagree with the sub-rows it claims to sum.
+    const rolled = periods.length ? rollUp(periods) : null;
+    const pq = rolled ? rolled.prevQty : l?.prevQty ?? 0;
+    const cq = rolled ? rolled.currQty : l?.currQty ?? 0;
     const amount = round2(qty * rate);
     const pAmt = round2(pq * rate), cAmt = round2(cq * rate);
     const vRate = l ? rate : 0;
@@ -233,10 +241,15 @@ function writeSection(
     // item row that already sums them.
     for (let s = sub; s <= subLast; s++) {
       const first = s === sub;
-      const jVal = first ? pq : 0, kVal = first ? cq : 0;
+      const period = periods[s - sub];
+      // Each period's quantity lands in Previous or Current according to whether
+      // it was claimed before; the verified columns stay on the first sub-row,
+      // as the main contractor certifies a cumulative figure, not a period one.
+      const jVal = period ? (period.isCurrent ? 0 : period.qty) : first && !periods.length ? pq : 0;
+      const kVal = period ? (period.isCurrent ? period.qty : 0) : first && !periods.length ? cq : 0;
       const tVal = first ? vPq : 0, uVal = first ? vCq : 0;
-      setCell(ws, `B${s}`, l && first ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
-      setCell(ws, `C${s}`, first ? l?.remarks ?? "" : "", { fill: YELLOW, align: { vertical: "middle" } });
+      setCell(ws, `B${s}`, period ? period.seq : l && first ? 1 : null, { fill: YELLOW, align: { horizontal: "center", vertical: "middle" } });
+      setCell(ws, `C${s}`, period ? periodLabel(period) : first ? l?.remarks ?? "" : "", { fill: YELLOW, align: { vertical: "middle" } });
       for (const col of ["D", "E", "F"]) setCell(ws, `${col}${s}`, "", { fill: YELLOW });
       setCell(ws, `G${s}`, "", { nf: NF_MONEY });
       setCell(ws, `I${s}`, "", { fill: YELLOW, nf: NF_MONEY });

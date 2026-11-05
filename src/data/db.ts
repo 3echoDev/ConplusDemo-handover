@@ -1,5 +1,6 @@
 // Supabase data access layer: row types, UI mappers, and mutations.
 import { supabase } from "@/lib/supabase";
+import { periodLabel, type WorkDonePeriod } from "@/lib/workDone";
 import type {
   Project,
   InventoryItem,
@@ -578,6 +579,30 @@ export function mapClaimLine(row: ClaimLineRow): ClaimLine {
   };
 }
 
+interface ClaimWorkDoneRow {
+  id: string;
+  claim_line_id: string;
+  seq: number;
+  label: string | null;
+  period_from: string | null;
+  period_to: string | null;
+  location: string | null;
+  qty: number | null;
+  is_current: boolean;
+  source: string | null;
+}
+
+const mapWorkDone = (row: ClaimWorkDoneRow): WorkDonePeriod => ({
+  seq: row.seq,
+  label: row.label ?? "",
+  periodFrom: row.period_from,
+  periodTo: row.period_to,
+  location: row.location ?? "",
+  qty: Number(row.qty ?? 0),
+  isCurrent: row.is_current,
+  source: row.source === "wdr" || row.source === "carried" ? row.source : "manual",
+});
+
 export async function fetchClaimLines(claimId: string): Promise<ClaimLine[]> {
   const { data, error } = await supabase
     .from("claim_lines")
@@ -586,7 +611,24 @@ export async function fetchClaimLines(claimId: string): Promise<ClaimLine[]> {
     .order("section", { ascending: true })
     .order("seq", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data as ClaimLineRow[]).map(mapClaimLine);
+  const lines = (data as ClaimLineRow[]).map(mapClaimLine);
+  if (!lines.length) return lines;
+
+  // The work-done breakdown (item 2). A claim written before it simply has no
+  // rows here, and its lines keep printing the single sub-row they always had.
+  const { data: wd, error: wdError } = await supabase
+    .from("claim_work_done")
+    .select("*")
+    .in("claim_line_id", lines.map((l) => l.id))
+    .order("seq", { ascending: true });
+  if (wdError) throw new Error(wdError.message);
+  const byLine = new Map<string, WorkDonePeriod[]>();
+  for (const row of (wd ?? []) as ClaimWorkDoneRow[]) {
+    const list = byLine.get(row.claim_line_id) ?? [];
+    list.push(mapWorkDone(row));
+    byLine.set(row.claim_line_id, list);
+  }
+  return lines.map((l) => (byLine.has(l.id) ? { ...l, periods: byLine.get(l.id) } : l));
 }
 
 // Every claim write goes through SECURITY DEFINER RPCs: the browser runs with
@@ -618,6 +660,11 @@ export interface ClaimLineInput {
   prevQty: number | null;
   currQty: number | null;
   remarks: string;
+  /**
+   * Work-done breakdown. When present it is authoritative: save_claim_lines
+   * recomputes prev_qty / curr_qty from it, so the two can never drift.
+   */
+  periods?: WorkDonePeriod[];
 }
 
 export async function dbSaveClaimLines(claimId: string, lines: ClaimLineInput[]): Promise<number> {
@@ -636,9 +683,59 @@ export async function dbSaveClaimLines(claimId: string, lines: ClaimLineInput[])
       prev_qty: l.prevQty ?? 0,
       curr_qty: l.currQty ?? 0,
       remarks: l.remarks || null,
+      periods: l.periods
+        ? l.periods.map((p, n) => ({
+            seq: n + 1,
+            label: periodLabel(p),
+            period_from: p.periodFrom,
+            period_to: p.periodTo,
+            location: p.location || null,
+            qty: p.qty,
+            is_current: p.isCurrent,
+            source: p.source,
+          }))
+        : undefined,
     })),
   });
   return Number(res.count ?? 0);
+}
+
+/** The Work Done Report attached to a claim, if any. */
+export async function fetchClaimWdr(
+  claimId: string,
+): Promise<{ url: string; filename: string; periodFrom: string | null; periodTo: string | null } | null> {
+  const { data, error } = await supabase
+    .from("claims")
+    .select("wdr_url, wdr_filename, wdr_period_from, wdr_period_to")
+    .eq("id", claimId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const row = data as { wdr_url: string | null; wdr_filename: string | null; wdr_period_from: string | null; wdr_period_to: string | null } | null;
+  if (!row?.wdr_url) return null;
+  return {
+    url: row.wdr_url,
+    filename: row.wdr_filename ?? "Work Done Report.pdf",
+    periodFrom: row.wdr_period_from,
+    periodTo: row.wdr_period_to,
+  };
+}
+
+/**
+ * Point a claim at the Work Done Report behind its current period. The file
+ * lives in the public "documents" bucket; passing an empty url clears it.
+ * The WDR belongs to this claim only and is never carried forward.
+ */
+export async function dbSetClaimWdr(
+  claimId: string,
+  wdr: { url: string; filename: string; periodFrom?: string | null; periodTo?: string | null } | null,
+): Promise<void> {
+  await claimRpc("set_claim_wdr", {
+    p_claim_id: claimId,
+    p_url: wdr?.url ?? "",
+    p_filename: wdr?.filename ?? "",
+    p_period_from: wdr?.periodFrom ?? null,
+    p_period_to: wdr?.periodTo ?? null,
+  });
 }
 
 export function mapAlert(row: AlertRow): Alert {
@@ -794,6 +891,9 @@ async function uploadToBucket(path: string, body: Blob, contentType: string): Pr
   }
   return supabase.storage.from("documents").getPublicUrl(path).data.publicUrl;
 }
+
+/** Same bucket, exported for callers outside this module (the WDR panel). */
+export const uploadDocument = uploadToBucket;
 
 // PO numbers follow ConPlus format YYMM-NNNN (e.g. 2607-0003).
 async function nextPONumber(): Promise<string> {
