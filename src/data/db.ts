@@ -616,12 +616,19 @@ export async function fetchClaimLines(claimId: string): Promise<ClaimLine[]> {
 
   // The work-done breakdown (item 2). A claim written before it simply has no
   // rows here, and its lines keep printing the single sub-row they always had.
+  // Never fatal: the caller treats a throw as "no lines at all", and losing the
+  // whole schedule because the breakdown could not be read would be far worse
+  // than printing the single sub-row these claims had before item 2.
   const { data: wd, error: wdError } = await supabase
     .from("claim_work_done")
     .select("*")
     .in("claim_line_id", lines.map((l) => l.id))
     .order("seq", { ascending: true });
-  if (wdError) throw new Error(wdError.message);
+  if (wdError) {
+    // eslint-disable-next-line no-console
+    console.warn("claim work-done breakdown unavailable:", wdError.message);
+    return lines;
+  }
   const byLine = new Map<string, WorkDonePeriod[]>();
   for (const row of (wd ?? []) as ClaimWorkDoneRow[]) {
     const list = byLine.get(row.claim_line_id) ?? [];
