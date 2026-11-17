@@ -56,6 +56,7 @@ import {
   submitReport,
   type StoredReportFull,
 } from "@/lib/siteReportsApi";
+import { fetchAllocatedCrew } from "@/lib/siteOrdersApi";
 import type { SiteMaterial, SiteProject } from "./pickers";
 import { LocationField, MaterialField } from "./pickers";
 import { Banner, Button, ButtonRow, Card, CardHead, Chip, Field, FieldRow, IconButton, Note, NumberInput, SectionLabel, TextArea, TextInput, Tracker } from "./primitives";
@@ -121,6 +122,7 @@ export default function DailyReportTab({
   const [meta, setMeta] = useState<{ updated_at: string | null; updated_by: string | null }>({ updated_at: null, updated_by: null });
   const [fromPlan, setFromPlan] = useState(0);
   const [crewFrom, setCrewFrom] = useState<CarriedCrew["from"] | null>(null);
+  const [crewAllocated, setCrewAllocated] = useState(false);
   const [totalTouched, setTotalTouched] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState<null | "save" | "submit" | "reopen" | "delete">(null);
@@ -146,18 +148,22 @@ export default function DailyReportTab({
     setTotalTouched(r.total_men != null && r.total_men !== crewTotal(h));
     setFromPlan(0);
     setCrewFrom(null);
+    setCrewAllocated(false);
     setShowErrors(false);
   }, []);
 
   const openNew = useCallback(
     async (siteLocation = "") => {
-      const [plan, crewSources] = await Promise.all([fetchWeeklyPlan(project.id, date, date), fetchCrewSources(project.id, date)]);
+      const [plan, crewSources, allocated] = await Promise.all([fetchWeeklyPlan(project.id, date, date), fetchCrewSources(project.id, date), fetchAllocatedCrew(project.id, date)]);
       const ls = linesFromPlan(plan, date);
-      const kept = carryCrew(crewSources, date, siteLocation);
+      // A project run through orders takes the day's crew from that day's allocation
+      // (empty when nobody is allocated: each day starts clean). Projects without
+      // orders keep the earlier behaviour: the last report's crew is carried over.
+      const kept = allocated === undefined ? carryCrew(crewSources, date, siteLocation) : null;
       const h: ReportHeader = {
         ...emptyHeader(project.id, date, project.coating_system ?? ""),
         site_location: siteLocation,
-        ...(kept?.crew ?? {}),
+        ...(allocated?.crew ?? kept?.crew ?? {}),
         total_men: kept?.total != null ? String(kept.total) : "",
       };
       const start = ls.length ? ls : [emptyLine()];
@@ -168,6 +174,7 @@ export default function DailyReportTab({
       setMeta({ updated_at: null, updated_by: null });
       setFromPlan(ls.length);
       setCrewFrom(kept?.from ?? null);
+      setCrewAllocated(!!allocated);
       setTotalTouched(kept?.total != null);
       setShowErrors(false);
     },
@@ -461,6 +468,9 @@ export default function DailyReportTab({
           >
             Man power
           </SectionLabel>
+          {crewAllocated && !locked && (
+            <Note className="mb-3">Filled from this day's manpower allocation on the project's orders. Change who is on site in Deployment &amp; Execution; edits here stay on this report only.</Note>
+          )}
           {crewFrom && !locked && (
             <Note className="mb-3">
               Kept from the {fmtDay(crewFrom.date)} report{crewFrom.site ? ` · ${crewFrom.site}` : ""}. Keep it, edit it, or reset it if the team changed. Worker numbers, separated by commas.

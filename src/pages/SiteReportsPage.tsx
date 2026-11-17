@@ -18,6 +18,11 @@ import { useSitePwa } from "@/lib/sitePwa";
 import DailyReportTab from "@/components/site-reports/DailyReportTab";
 import WeeklyPlanTab from "@/components/site-reports/WeeklyPlanTab";
 import DashboardTab from "@/components/site-reports/DashboardTab";
+import { OrdersList, OrderStageForm } from "@/components/site-reports/OrdersTab";
+import { DeploymentStage, ScheduleStage } from "@/components/site-reports/OrderDays";
+import { EquipmentTab, ManpowerTab } from "@/components/site-reports/RegistersTab";
+import { orderChip, orderDone, projectHeadline, stageName, type SiteOrder, type SiteTool, type SiteWorker } from "@/lib/siteOrders";
+import { fetchOrders, fetchTools, fetchWorkers } from "@/lib/siteOrdersApi";
 import { type SiteMaterial, type SiteProject } from "@/components/site-reports/pickers";
 import {
   Banner,
@@ -33,6 +38,7 @@ import {
   Placeholder,
   SectionLabel,
   Select,
+  TabButton,
   TextInput,
   TopBar,
   Tracker,
@@ -49,14 +55,19 @@ import "@/components/site-reports/theme.css";
     Progress      — the per-project Dashboard Report, with Excel export
   Built screen for screen on the client's SitePulse mockup (Oct 2026):
     Active Projects (cards + filters, navbar)
-    -> project: Reports list (cards with the stage rail) | Plan | Progress, navbar
-       -> a report: the edit screen with the stacked button row, no navbar
+    -> project: Orders | Reports | Plan | Progress
+       -> an order stage / a report: the edit screen with the stacked button row, no navbar
+    Manpower, Equipment: the registers and where each person / tool is today.
     Settings: reporter name, install, help.
+  Orders (16 Nov 2026): a project holds one or more orders (phases); each walks
+  Project Plan -> Kick Off -> Schedule Posting -> Deployment & Execution ->
+  Site Walk / Handover -> Transfer / Movement -> Completion on its own.
   Installable (manifest + service worker, see lib/sitePwa.ts). The URL carries
   ?project=&tab=&date=&week=&report= so a link opens the same view.
 */
 
-type Tab = "projects" | "reports" | "daily" | "plan" | "progress" | "settings";
+type Tab = "projects" | "orders" | "order" | "reports" | "daily" | "plan" | "progress" | "manpower" | "equipment" | "settings";
+const GLOBAL_TABS: Tab[] = ["projects", "manpower", "equipment", "settings"];
 const LAST_PROJECT_KEY = "conplus_site_reports_project";
 
 const readLastProject = () => {
@@ -70,21 +81,26 @@ const readLastProject = () => {
 type DayStatus = "draft" | "submitted";
 type Recent = Awaited<ReturnType<typeof fetchRecentReports>>[number];
 
-const NAV: { id: Tab; icon: string; label: string; needsProject?: boolean }[] = [
+const NAV: { id: Tab; icon: string; label: string }[] = [
   { id: "projects", icon: "🗂️", label: "Projects" },
-  { id: "reports", icon: "📝", label: "Reports", needsProject: true },
-  { id: "plan", icon: "📅", label: "Plan", needsProject: true },
-  { id: "progress", icon: "📊", label: "Progress", needsProject: true },
+  { id: "manpower", icon: "👷", label: "Manpower" },
+  { id: "equipment", icon: "🧰", label: "Equipment" },
   { id: "settings", icon: "⚙️", label: "Settings" },
+];
+const PROJECT_TABS: { id: Tab; label: string }[] = [
+  { id: "orders", label: "Orders" },
+  { id: "reports", label: "Reports" },
+  { id: "plan", label: "Plan" },
+  { id: "progress", label: "Progress" },
 ];
 
 function readTab(raw: string | null, hasProject: boolean): Tab {
   if (raw === "dashboard") return "progress";
-  if (raw && ["projects", "reports", "daily", "plan", "progress", "settings"].includes(raw)) {
+  if (raw && ["projects", "orders", "order", "reports", "daily", "plan", "progress", "manpower", "equipment", "settings"].includes(raw)) {
     const t = raw as Tab;
-    return hasProject || t === "projects" || t === "settings" ? t : "projects";
+    return hasProject || GLOBAL_TABS.includes(t) ? t : "projects";
   }
-  return hasProject ? "reports" : "projects";
+  return hasProject ? "orders" : "projects";
 }
 
 /**
@@ -106,6 +122,9 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
   const [resetSignal, setResetSignal] = useState(0);
   const [todayStatus, setTodayStatus] = useState<Record<string, DayStatus>>({});
   const [recent, setRecent] = useState<Recent[] | null>(null);
+  const [orders, setOrders] = useState<SiteOrder[] | null>(null);
+  const [workers, setWorkers] = useState<SiteWorker[] | null>(null);
+  const [tools, setTools] = useState<SiteTool[] | null>(null);
   const pwa = useSitePwa();
 
   const today = isoDate(new Date());
@@ -115,6 +134,10 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
   const date = params.get("date") || today;
   const week = weekStart(params.get("week") || date);
   const reportParam = params.get("report"); // "new", an id, or null (that day's first report)
+  const orderParam = params.get("order"); // "new" or an order id
+  const stageParam = Math.min(7, Math.max(1, parseInt(params.get("stage") || "1", 10) || 1));
+  const projectOrders = useMemo(() => (project && orders ? orders.filter((o) => o.project_id === project.id) : null), [orders, project]);
+  const order = useMemo(() => (orderParam && orderParam !== "new" ? (orders?.find((o) => o.id === orderParam) ?? null) : null), [orders, orderParam]);
 
   const patch = useCallback(
     (next: Record<string, string | null>) =>
@@ -138,6 +161,19 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
       setLoadingProjects(false);
     })();
   }, []);
+
+  // Orders of every project (cards, registers) and the two registers.
+  const loadOrders = useCallback(() => {
+    fetchOrders().then(setOrders);
+  }, []);
+  const loadRegisters = useCallback(() => {
+    fetchWorkers().then(setWorkers);
+    fetchTools().then(setTools);
+  }, []);
+  useEffect(() => {
+    loadOrders();
+    loadRegisters();
+  }, [loadOrders, loadRegisters]);
 
   // Today's report per project, for the chip on each project card.
   useEffect(() => {
@@ -197,9 +233,12 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
   const changed = useCallback(() => setRefreshKey((k) => k + 1), []);
   const guardNav = (action: () => void) => (dailyDirty ? setPendingNav(() => action) : action());
 
-  const go = (t: Tab) => guardNav(() => patch({ tab: t, report: null, date: null }));
+  const go = (t: Tab) => guardNav(() => patch({ tab: t, report: null, date: null, order: null, stage: null }));
   const openProject = (p: SiteProject) =>
-    guardNav(() => patch({ project: p.project_code, tab: "reports", date: null, week: null, report: null }));
+    guardNav(() => patch({ project: p.project_code, tab: "orders", date: null, week: null, report: null, order: null, stage: null }));
+  const openOrderStage = (orderId: string, stage: number, projectCode?: string) =>
+    patch({ ...(projectCode ? { project: projectCode } : {}), tab: "order", order: orderId, stage: String(stage), report: null, date: null });
+  const backToOrders = () => patch({ tab: "orders", order: null, stage: null });
   const openReport = (d: string, id: string | "new" | null) => guardNav(() => patch({ tab: "daily", date: d === today ? null : d, report: id }));
 
   const projectSub = project ? [project.project_code, project.client_name, project.location].filter(Boolean).join(" · ") : "";
@@ -229,25 +268,91 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
                 <div className="mt-2 text-[11px] leading-[1.6] text-[var(--ink-muted)]">
                   {loadingProjects
                     ? "Loading projects…"
-                    : `${projects.length} active projects · ${Object.values(todayStatus).filter((s) => s === "submitted").length} submitted today · ${Object.values(todayStatus).filter((s) => s === "draft").length} in draft · chips show today's report`}
+                    : `${projects.length} active projects · ${(orders ?? []).filter((o) => !orderDone(o)).length} open orders · ${Object.values(todayStatus).filter((s) => s === "submitted").length} reports submitted today · chips show the order stage`}
                 </div>
               }
             />
-            <ProjectsScreen projects={projects} loading={loadingProjects} todayStatus={todayStatus} onOpen={openProject} pwa={pwa} offline={offline} />
-            <NavBar tab={tab} hasProject={!!project} go={go} />
+            <ProjectsScreen projects={projects} orders={orders ?? []} loading={loadingProjects} todayStatus={todayStatus} onOpen={openProject} pwa={pwa} offline={offline} />
+            <NavBar tab={tab} go={go} />
+          </>
+        )}
+
+        {/* ── Project: Orders (each one a phase, with its seven-stage rail) ── */}
+        {tab === "orders" && project && (
+          <>
+            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} block={<ProjectTabs tab={tab} go={go} />} />
+            <div className="sr-scroll">
+              {offline}
+              <OrdersList orders={projectOrders} onNew={() => patch({ tab: "order", order: "new", stage: "1" })} onOpen={(o, s) => openOrderStage(o.id, s)} />
+            </div>
+            <NavBar tab={tab} go={go} />
+          </>
+        )}
+
+        {/* ── An order stage (edit screen: button row, no navbar) ── */}
+        {tab === "order" && project && (orderParam === "new" || order) && (
+          <>
+            <TopBar
+              back
+              onBack={backToOrders}
+              title={orderParam === "new" ? "New Order" : stageName(stageParam)}
+              sub={orderParam === "new" || !order ? project.name : `${project.project_code} · ${order.label} · Stage ${stageParam} of 7`}
+            />
+            {offline}
+            {order && stageParam === 3 ? (
+              <ScheduleStage key={order.id} order={order} workers={workers ?? []} tools={tools ?? []} allOrders={orders ?? []} onSaved={loadOrders} onBack={backToOrders} onOpenStage={openOrderStage} onOpenReport={() => undefined} />
+            ) : order && stageParam === 4 ? (
+              <DeploymentStage
+                key={order.id}
+                order={order}
+                workers={workers ?? []}
+                tools={tools ?? []}
+                allOrders={orders ?? []}
+                onSaved={loadOrders}
+                onBack={backToOrders}
+                onOpenStage={openOrderStage}
+                onOpenReport={(d) => patch({ tab: "daily", date: d === today ? null : d, report: null, order: null, stage: null })}
+              />
+            ) : (
+              <OrderStageForm
+                key={`${order?.id ?? "new"}:${stageParam}`}
+                project={project}
+                order={order}
+                stage={orderParam === "new" ? 1 : stageParam}
+                workers={workers ?? []}
+                tools={tools ?? []}
+                onSaved={loadOrders}
+                onBack={backToOrders}
+                onOpenStage={openOrderStage}
+              />
+            )}
+          </>
+        )}
+        {tab === "order" && project && orderParam !== "new" && !order && (
+          <>
+            <TopBar back onBack={backToOrders} title="Order" sub={project.name} />
+            {orders === null ? (
+              <div className="sr-scroll">
+                <div className="sr-skeleton" />
+              </div>
+            ) : (
+              <Placeholder icon="🗂️" title="Order not found" action={<Button variant="primary" onClick={backToOrders}>Back to orders</Button>}>
+                This order is no longer on the project.
+              </Placeholder>
+            )}
           </>
         )}
 
         {/* ── Project: Reports list ── */}
         {tab === "reports" && project && (
           <>
-            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} />
+            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} block={<ProjectTabs tab={tab} go={go} />} />
             <div className="sr-scroll">
               {offline}
               <FabNew onClick={() => openReport(today, "new")}>＋ New report</FabNew>
               <ReportsList recent={recent} today={today} onOpen={(r) => openReport(r.report_date, r.id)} />
             </div>
-            <NavBar tab={tab} hasProject={!!project} go={go} />
+            <NavBar tab={tab} go={go} />
           </>
         )}
 
@@ -275,7 +380,7 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
         {/* ── Project: Weekly plan ── */}
         {tab === "plan" && project && (
           <>
-            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} />
+            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} block={<ProjectTabs tab={tab} go={go} />} />
             <div className="sr-scroll">
               {offline}
               <WeeklyPlanTab
@@ -287,24 +392,24 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
                 locationHints={locationHints}
               />
             </div>
-            <NavBar tab={tab} hasProject={!!project} go={go} />
+            <NavBar tab={tab} go={go} />
           </>
         )}
 
         {/* ── Project: Progress (the Dashboard Report) ── */}
         {tab === "progress" && project && (
           <>
-            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} />
+            <TopBar back onBack={() => go("projects")} title={project.name} sub={projectSub} block={<ProjectTabs tab={tab} go={go} />} />
             <div className="sr-scroll">
               {offline}
               <DashboardTab key={project.id} project={project} lastWo={lastWo} refreshKey={refreshKey} onOpenDay={(d) => openReport(d, null)} />
             </div>
-            <NavBar tab={tab} hasProject={!!project} go={go} />
+            <NavBar tab={tab} go={go} />
           </>
         )}
 
         {/* A project tab with the project still loading, or a code that no longer exists. */}
-        {tab !== "projects" && tab !== "settings" && !project && (
+        {!GLOBAL_TABS.includes(tab) && !project && (
           <>
             <TopBar back onBack={() => go("projects")} title="Site Reports" />
             {loadingProjects ? (
@@ -318,7 +423,23 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
                 The project in this link is not active any more.
               </Placeholder>
             )}
-            <NavBar tab={tab} hasProject={false} go={go} />
+            <NavBar tab={tab} go={go} />
+          </>
+        )}
+
+        {/* ── Manpower / Equipment: the registers, and where everyone and everything is ── */}
+        {tab === "manpower" && (
+          <>
+            <TopBar title="Manpower" sub="Roster and where each person is" />
+            <ManpowerTab workers={workers} allOrders={orders ?? []} onChanged={loadRegisters} onOpenOrder={(p) => openOrderStage(p.order_id, 4, p.project_code)} />
+            <NavBar tab={tab} go={go} />
+          </>
+        )}
+        {tab === "equipment" && (
+          <>
+            <TopBar title="Equipment" sub="Tool register and where each tool is" />
+            <EquipmentTab tools={tools} allOrders={orders ?? []} onChanged={loadRegisters} onOpenOrder={(p) => openOrderStage(p.order_id, 4, p.project_code)} />
+            <NavBar tab={tab} go={go} />
           </>
         )}
 
@@ -327,7 +448,7 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
           <>
             <TopBar title="Settings" sub="Account, app & help" />
             <SettingsScreen pwa={pwa} offline={offline} />
-            <NavBar tab={tab} hasProject={!!project} go={go} />
+            <NavBar tab={tab} go={go} />
           </>
         )}
       </div>
@@ -359,20 +480,26 @@ export default function SiteReportsPage({ embedded = false }: { embedded?: boole
   );
 }
 
-function NavBar({ tab, hasProject, go }: { tab: Tab; hasProject: boolean; go: (t: Tab) => void }) {
+/** Orders · Reports · Plan · Progress, under a project's top bar. */
+function ProjectTabs({ tab, go }: { tab: Tab; go: (t: Tab) => void }) {
+  return (
+    <div className="mt-2.5 flex gap-1.5" role="group" aria-label="Project sections">
+      {PROJECT_TABS.map((t) => (
+        <TabButton key={t.id} active={tab === t.id} onClick={() => go(t.id)}>
+          {t.label}
+        </TabButton>
+      ))}
+    </div>
+  );
+}
+
+function NavBar({ tab, go }: { tab: Tab; go: (t: Tab) => void }) {
   return (
     <nav className="sr-navbar sticky bottom-0 z-40" aria-label="Site Reports sections">
       {NAV.map((n) => {
-        const active = tab === n.id || (tab === "daily" && n.id === "reports");
+        const active = tab === n.id || (n.id === "projects" && !GLOBAL_TABS.includes(tab));
         return (
-          <button
-            key={n.id}
-            type="button"
-            className={cn("sr-navitem", active && "active")}
-            aria-current={active ? "page" : undefined}
-            disabled={n.needsProject && !hasProject}
-            onClick={() => go(n.id)}
-          >
+          <button key={n.id} type="button" className={cn("sr-navitem", active && "active")} aria-current={active ? "page" : undefined} onClick={() => go(n.id)}>
             <span className="sr-ic" aria-hidden>
               {n.icon}
             </span>
@@ -387,6 +514,7 @@ function NavBar({ tab, hasProject, go }: { tab: Tab; hasProject: boolean; go: (t
 /** The mockup's "Active Projects": filters under the top bar, then one card per project. */
 function ProjectsScreen({
   projects,
+  orders,
   loading,
   todayStatus,
   onOpen,
@@ -394,6 +522,7 @@ function ProjectsScreen({
   offline,
 }: {
   projects: SiteProject[];
+  orders: SiteOrder[];
   loading: boolean;
   todayStatus: Record<string, DayStatus>;
   onOpen: (p: SiteProject) => void;
@@ -401,15 +530,24 @@ function ProjectsScreen({
   offline: ReactNode;
 }) {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "reported" | "missing">("all");
+  const [filter, setFilter] = useState<"all" | "orders" | "reported" | "missing">("all");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const needle = q.trim().toLowerCase();
+  const byProject = useMemo(() => {
+    const m = new Map<string, SiteOrder[]>();
+    for (const o of orders) m.set(o.project_id, [...(m.get(o.project_id) ?? []), o]);
+    return m;
+  }, [orders]);
   const list = useMemo(() => {
     let l = projects;
     if (needle) l = l.filter((p) => `${p.project_code} ${p.name} ${p.client_name ?? ""} ${p.location ?? ""}`.toLowerCase().includes(needle));
+    if (filter === "orders") l = l.filter((p) => (byProject.get(p.id) ?? []).some((o) => !orderDone(o)));
     if (filter === "reported") l = l.filter((p) => todayStatus[p.id]);
     if (filter === "missing") l = l.filter((p) => !todayStatus[p.id]);
-    return l;
-  }, [projects, needle, filter, todayStatus]);
+    // Projects with open orders first: that is where the day's work is.
+    const open = (p: SiteProject) => ((byProject.get(p.id) ?? []).some((o) => !orderDone(o)) ? 0 : 1);
+    return [...l].sort((a, b) => open(a) - open(b));
+  }, [projects, needle, filter, todayStatus, byProject]);
 
   return (
     <>
@@ -425,6 +563,7 @@ function ProjectsScreen({
           />
           <Select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} aria-label="Filter projects" className="w-[46%] shrink-0">
             <option value="all">All projects</option>
+            <option value="orders">With open orders</option>
             <option value="reported">Reported today</option>
             <option value="missing">No report today</option>
           </Select>
@@ -444,22 +583,54 @@ function ProjectsScreen({
           [0, 1, 2, 3].map((i) => <div key={i} className="sr-skeleton" />)
         ) : list.length === 0 ? (
           <Placeholder icon="🔍" title="No matching projects">
-            {filter === "reported" ? "No report has been started for today yet." : filter === "missing" ? "Every project has a report today." : "Search by project code, name, client or site."}
+            {filter === "orders"
+              ? "No project has an open order yet. Open a project and tap New order."
+              : filter === "reported"
+                ? "No report has been started for today yet."
+                : filter === "missing"
+                  ? "Every project has a report today."
+                  : "Search by project code, name, client or site."}
           </Placeholder>
         ) : (
           list.map((p) => {
             const st = todayStatus[p.id];
+            const mine = byProject.get(p.id) ?? [];
+            const head = projectHeadline(mine);
+            const open = !!expanded[p.id];
+            const report = st === "submitted" ? "today's report submitted" : st === "draft" ? "today's report in draft" : "no report today";
             return (
-              <Card key={p.id} onClick={() => onOpen(p)}>
-                <CardHead
-                  name={p.name}
-                  meta={[p.project_code, p.client_name].filter(Boolean).join(" · ")}
-                  right={
-                    st === "submitted" ? <Chip tone="good">Submitted</Chip> : st === "draft" ? <Chip tone="warn">Draft</Chip> : <Chip tone="pending">No report</Chip>
-                  }
-                />
-                <Note>{[p.location, p.coating_system].filter(Boolean).join(" · ") || "No site or coating system on file."}</Note>
-              </Card>
+              <div key={p.id} className="relative">
+                <Card onClick={() => onOpen(p)}>
+                  <CardHead name={p.name} meta={[p.project_code, p.client_name].filter(Boolean).join(" · ")} right={<Chip tone={head.tone}>{head.text}</Chip>} />
+                  {open && mine.length > 0 ? (
+                    mine.map((o) => {
+                      const c = orderChip(o);
+                      return (
+                        <div key={o.id} className="sr-order-line pr-9">
+                          <span className="sr-dot" style={{ background: c.tone === "good" ? "var(--good)" : "var(--sky)" }} />
+                          <span className="sr-nm">{o.label}</span>
+                          <span className="sr-st">{c.text}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <Note className={mine.length ? "pr-9" : undefined}>
+                      {mine.length ? `${mine.length} order${mine.length > 1 ? "s" : ""} · ${report}` : [p.location, p.coating_system].filter(Boolean).join(" · ") || report}
+                    </Note>
+                  )}
+                </Card>
+                {mine.length > 0 && (
+                  <button
+                    type="button"
+                    className="sr-iconbtn absolute bottom-[22px] right-3 !h-[26px] !w-[26px] !text-[12px]"
+                    aria-expanded={open}
+                    aria-label={`${open ? "Collapse" : "Expand"} the order list of ${p.name}`}
+                    onClick={() => setExpanded((e) => ({ ...e, [p.id]: !open }))}
+                  >
+                    {open ? "▾" : "▸"}
+                  </button>
+                )}
+              </div>
             );
           })
         )}
@@ -558,7 +729,9 @@ function SettingsScreen({ pwa, offline }: { pwa: ReturnType<typeof useSitePwa>; 
 
       <SectionLabel>How it works</SectionLabel>
       <Note>
-        Pick a project, tap <b>New report</b> and save a draft before work starts. At the end of the day open it again, fill in ACTUAL for each activity, then submit. Submitted
+        Open a project and tap <b>New order</b> for each phase of work. An order moves through Project Plan, Kick Off, Schedule Posting, Deployment &amp; Execution, Site Walk / Handover,
+        Transfer / Movement and Completion. In Deployment, allocate the day's manpower and tools; the <b>Manpower</b> and <b>Equipment</b> tabs show where everyone and everything is that day.
+        Allocations belong to their day, so each morning starts empty. For the daily report, tap <b>New report</b> and save a draft before work starts. At the end of the day open it again, fill in ACTUAL for each activity, then submit. Submitted
         reports are read-only until someone reopens them. <b>Plan</b> holds the Monday whiteboard rows, and <b>Progress</b> is the Dashboard Report with its Excel export.
       </Note>
       <a href="/" className="sr-btn sr-btn-line mt-4">
